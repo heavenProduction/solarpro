@@ -17,17 +17,23 @@ function addMonths(date, months) {
 }
 const TODAY = new Date().toISOString().split("T")[0];
 
+// ── INDIA CITIES (typehead) ───────────────────────────────────
+const INDIAN_CITIES = ["Agra","Ahmedabad","Ajmer","Aligarh","Amritsar","Aurangabad","Bengaluru","Bhopal","Bhubaneswar","Chandigarh","Chennai","Coimbatore","Dehradun","Delhi","Dhanbad","Faridabad","Ghaziabad","Gurgaon","Guwahati","Gwalior","Howrah","Hyderabad","Indore","Jaipur","Jalandhar","Jammu","Jodhpur","Kanpur","Kochi","Kolkata","Kota","Kozhikode","Lucknow","Ludhiana","Madurai","Mangaluru","Meerut","Mumbai","Mysuru","Nagpur","Nashik","Navi Mumbai","Noida","Patna","Pune","Raipur","Rajkot","Ranchi","Srinagar","Surat","Thiruvananthapuram","Thane","Tiruchirappalli","Vadodara","Varanasi","Vijayawada","Visakhapatnam"];
+
+// ── SUPER ADMIN SETTINGS (stored per-session in users array) ──
+const SA_DEFAULTS = { bankDetails:"Bank: ICICI\nAccount: 111222333444\nIFSC: ICIC0001111", invoicePrefix:"SP", invoiceNextNum:1001, companyName:"SolarPro Platform", logo:null, stamp:null, signature:null };
+
 // ── THEME CONTEXT ────────────────────────────────────────────
 const ThemeCtx = createContext({ dark: true, toggle: () => {} });
 
 // ── SEED DATA ────────────────────────────────────────────────
 const SEED_DEVELOPERS = [
-  { id:"d1", companyName:"SunPower Solutions", email:"ceo@sunpower.com", phone:"+91-98001-11111", address:"1234 Solar Ave, Mumbai, MH 400001", website:"https://sunpower.com", seats:10, usedSeats:2, active:true, paused:false, plan:"Professional", planDuration:"Annual", subscriptionStart:"2025-01-01", subscriptionEnd:"2026-01-01", logo:null, electricityPrice:8.5, solarGenerationFactor:1400, costPerKW:55000, bankDetails:"Bank: HDFC\nAccount: 1234567890\nIFSC: HDFC0001234", terms:"Payment due within 30 days.", paymentTerms:"50% advance,\n25% on equipment delivery,\n25% on completion", customerScope:"Residential and small commercial customers across Maharashtra", companyScope:"Pan-India solar installation with focus on rooftop systems", createdAt:"2024-01-15" },
-  { id:"d2", companyName:"GreenWatt Energy", email:"admin@greenwatt.com", phone:"+91-98002-22222", address:"5678 Energy Blvd, Pune, MH 411001", website:"https://greenwatt.com", seats:5, usedSeats:1, active:true, paused:false, plan:"Starter", planDuration:"Monthly", subscriptionStart:"2025-12-01", subscriptionEnd:"2026-01-01", logo:null, electricityPrice:7.8, solarGenerationFactor:1350, costPerKW:50000, bankDetails:"Bank: SBI\nAccount: 9876543210\nIFSC: SBIN0001234", terms:"Full payment before installation.", paymentTerms:"100% advance before work begins", customerScope:"Commercial and industrial clients", companyScope:"Western Maharashtra operations", createdAt:"2024-03-01" },
+  { id:"d1", companyName:"SunPower Solutions", email:"ceo@sunpower.com", phone:"+91-98001-11111", address:"1234 Solar Ave", city:"Mumbai", pincode:"400001", website:"https://sunpower.com", seats:10, usedSeats:2, active:true, paused:false, plan:"Professional", planDuration:"Annual", subscriptionStart:"2025-01-01", subscriptionEnd:"2026-01-01", logo:null, stamp:null, signature:null, electricityPrice:8.5, solarGenerationFactor:1400, costPerKW:55000, bankDetails:"Bank: HDFC\nAccount: 1234567890\nIFSC: HDFC0001234", terms:"Payment due within 30 days.", paymentTerms:"50% advance,\n25% on equipment delivery,\n25% on completion", customerScope:"Residential and small commercial customers across Maharashtra", companyScope:"Pan-India solar installation with focus on rooftop systems", invoicePrefix:"INV", invoiceNextNum:1001, createdAt:"2024-01-15" },
+  { id:"d2", companyName:"GreenWatt Energy", email:"admin@greenwatt.com", phone:"+91-98002-22222", address:"5678 Energy Blvd", city:"Pune", pincode:"411001", website:"https://greenwatt.com", seats:5, usedSeats:1, active:true, paused:false, plan:"Starter", planDuration:"Monthly", subscriptionStart:"2025-12-01", subscriptionEnd:"2026-01-01", logo:null, stamp:null, signature:null, electricityPrice:7.8, solarGenerationFactor:1350, costPerKW:50000, bankDetails:"Bank: SBI\nAccount: 9876543210\nIFSC: SBIN0001234", terms:"Full payment before installation.", paymentTerms:"100% advance before work begins", customerScope:"Commercial and industrial clients", companyScope:"Western Maharashtra operations", invoicePrefix:"GW", invoiceNextNum:1001, createdAt:"2024-03-01" },
 ];
 
 const SEED_USERS = [
-  { id:"u1", email:"admin@solarpro.io", password:"Admin@123", name:"Platform Admin", role:ROLES.SUPER_ADMIN, developerId:null, active:true, paused:false, permissions:[], createdAt:"2024-01-01", phone:"" },
+  { id:"u1", email:"admin@solarpro.io", password:"Admin@123", name:"Platform Admin", role:ROLES.SUPER_ADMIN, developerId:null, active:true, paused:false, permissions:[], createdAt:"2024-01-01", phone:"", companyName:"SolarPro Platform", address:"", city:"", pincode:"", logo:null, stamp:null, signature:null, bankDetails:"Bank: ICICI\nAccount: 111222333444\nIFSC: ICIC0001111", invoicePrefix:"SP", invoiceNextNum:1001 },
   { id:"u2", email:"ceo@sunpower.com", password:"Sun@123", name:"James Rivera", role:ROLES.DEV_ADMIN, developerId:"d1", active:true, paused:false, permissions:[], createdAt:"2024-01-15", phone:"+91-98001-11111" },
   { id:"u3", email:"sales@sunpower.com", password:"Sales@123", name:"Mia Chen", role:ROLES.USER, developerId:"d1", active:true, paused:false, permissions:["projects","proposals","notes","documents","invoices"], createdAt:"2024-02-01", phone:"+91-98001-22222" },
   { id:"u4", email:"admin@greenwatt.com", password:"Green@123", name:"Tom Okafor", role:ROLES.DEV_ADMIN, developerId:"d2", active:true, paused:false, permissions:[], createdAt:"2024-03-01", phone:"+91-98002-22222" },
@@ -219,6 +225,29 @@ const Btn = ({ children, onClick, variant="primary", size="md", disabled, classN
   return <button type={type} onClick={onClick} disabled={disabled} className={`inline-flex items-center gap-1.5 rounded-lg transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed ${variants[variant]||variants.primary} ${sizes[size]} ${className}`}>{children}</button>;
 };
 
+// ── CITY FIELD (typeahead) ────────────────────────────────────
+const CityField = ({ value, onChange, label="City", required }) => {
+  const { dark } = useTheme();
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState(value||"");
+  const filtered = q.length>0 ? INDIAN_CITIES.filter(c=>c.toLowerCase().startsWith(q.toLowerCase())).slice(0,8) : [];
+  const pick = (c) => { setQ(c); onChange(c); setOpen(false); };
+  return (
+    <div className="mb-4 relative">
+      {label&&<label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>{label}{required&&<span className="text-amber-400 ml-1">*</span>}</label>}
+      <input value={q} onChange={e=>{setQ(e.target.value);onChange(e.target.value);setOpen(true);}} onFocus={()=>setOpen(true)} onBlur={()=>setTimeout(()=>setOpen(false),200)} placeholder="Type city name…"
+        className={`w-full border rounded-lg px-3 py-2.5 focus:outline-none text-sm transition-colors ${tc(dark,"bg-slate-800 border-slate-600 text-white placeholder-slate-500 focus:border-amber-400","bg-white border-slate-300 text-slate-800 placeholder-slate-400 focus:border-amber-500")}`}/>
+      {open&&filtered.length>0&&(
+        <div className={`absolute z-30 w-full mt-1 border rounded-xl shadow-xl overflow-hidden ${tc(dark,"bg-slate-800 border-slate-600","bg-white border-slate-200")}`}>
+          {filtered.map(c=>(
+            <button key={c} type="button" onMouseDown={()=>pick(c)} className={`w-full text-left px-4 py-2 text-sm transition-colors ${tc(dark,"text-white hover:bg-slate-700","text-slate-800 hover:bg-slate-50")}`}>{c}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ── SEARCH BAR ────────────────────────────────────────────────
 const SearchBar = ({ value, onChange, placeholder="Search..." }) => {
   const { dark } = useTheme();
@@ -365,23 +394,27 @@ const SubscriptionBanner = ({ developer }) => {
     </div>
   );
   if (days <= 15) return (
-    <div className="bg-amber-500/10 border-b border-amber-500/30 px-6 py-2.5 flex items-center gap-3">
-      <Icon name="bell" size={16}/><span className="text-amber-400 text-sm font-medium flex-1">⏰ Your {developer.plan} plan expires in <strong>{days} day{days!==1?"s":""}</strong>. Contact your account manager to renew before losing access.</span>
+    <div className={`border-b px-6 py-2.5 flex items-center gap-3 ${tc(dark,"bg-amber-500/10 border-amber-500/30","bg-amber-50 border-amber-300")}`}>
+      <Icon name="bell" size={16}/><span className={`text-sm font-medium flex-1 ${tc(dark,"text-amber-400","text-slate-900")}`}>⏰ Your {developer.plan} plan expires in <strong>{days} day{days!==1?"s":""}</strong>. Contact your account manager to renew before losing access.</span>
     </div>
   );
   return null;
 };
 
 // ── LOCKED PAGE (subscription expired) ───────────────────────
-const LockedPage = ({ developer }) => {
+const LockedPage = ({ developer, reason }) => {
   const { dark } = useTheme();
   const days = daysUntil(developer?.subscriptionEnd || "2000-01-01");
+  const isInactive = reason === "inactive";
+  const isPaused = reason === "paused" || developer?.paused;
   return (
     <div className={`flex flex-col items-center justify-center min-h-[60vh] text-center p-8`}>
       <div className="w-20 h-20 rounded-3xl bg-red-500/10 flex items-center justify-center mb-6 border border-red-500/20"><Icon name="lock" size={36}/></div>
-      <h2 className={`text-2xl font-black mb-2 ${tc(dark,"text-white","text-slate-800")}`}>{developer?.paused ? "Subscription Paused" : "Subscription Expired"}</h2>
+      <h2 className={`text-2xl font-black mb-2 ${tc(dark,"text-white","text-slate-800")}`}>
+        {isInactive ? "Account Inactive" : isPaused ? "Subscription Paused" : "Subscription Expired"}
+      </h2>
       <p className={`text-base mb-4 max-w-md ${tc(dark,"text-slate-400","text-slate-500")}`}>
-        {developer?.paused ? "Your account has been paused by the platform admin." : `Your ${developer?.plan} plan expired ${Math.abs(days)} day${Math.abs(days)!==1?"s":""} ago.`}
+        {isInactive ? "Your account has been deactivated by the admin." : isPaused ? "Your account has been paused by the platform admin." : `Your ${developer?.plan} plan expired ${Math.abs(days)} day${Math.abs(days)!==1?"s":""} ago.`}
       </p>
       <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl px-8 py-4">
         <p className="text-amber-400 font-bold">📞 Contact your Account Manager to restore access.</p>
@@ -502,7 +535,7 @@ const InvoiceItemEditor = ({ items, setItems }) => {
               <div className="col-span-5"><input value={item.name} onChange={e=>updateItem(i,"name",e.target.value)} placeholder="Description" className={`w-full text-sm px-2 py-1.5 rounded-lg border ${tc(dark,"bg-slate-700 border-slate-600 text-white placeholder-slate-400","bg-white border-slate-300 text-slate-800")} focus:outline-none`}/></div>
               <div className="col-span-2"><input type="number" value={item.qty} onChange={e=>updateItem(i,"qty",parseFloat(e.target.value)||1)} placeholder="Qty" className={`w-full text-sm px-2 py-1.5 rounded-lg border ${tc(dark,"bg-slate-700 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")} focus:outline-none`}/></div>
               <div className="col-span-2"><input type="number" value={item.price} onChange={e=>updateItem(i,"price",parseFloat(e.target.value)||0)} placeholder="Price" className={`w-full text-sm px-2 py-1.5 rounded-lg border ${tc(dark,"bg-slate-700 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")} focus:outline-none`}/></div>
-              <div className="col-span-2"><select value={item.gst} onChange={e=>updateItem(i,"gst",parseFloat(e.target.value))} className={`w-full text-sm px-2 py-1.5 rounded-lg border ${tc(dark,"bg-slate-700 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")} focus:outline-none`}>{[0,5,12,18,28].map(r=><option key={r} value={r}>{r}%</option>)}</select></div>
+              <div className="col-span-2"><select value={item.gst} onChange={e=>updateItem(i,"gst",parseFloat(e.target.value))} className={`w-full text-sm px-2 py-1.5 rounded-lg border ${tc(dark,"bg-slate-700 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")} focus:outline-none`}>{[0,5,8.9,12,13.8,18,28].map(r=><option key={r} value={r}>{r}%</option>)}</select></div>
               <div className="col-span-1 flex items-center justify-center"><button onClick={()=>removeItem(i)} className="text-red-400 hover:text-red-300 transition-colors"><Icon name="trash" size={14}/></button></div>
             </div>
           </div>
@@ -521,47 +554,105 @@ const InvoiceItemEditor = ({ items, setItems }) => {
 // ── INVOICE LIST VIEW (shared) ────────────────────────────────
 const InvoiceListView = ({ invoices, developers, projects, users, onView, onPrint, onMarkPaid, currentUser }) => {
   const { dark } = useTheme();
-  if (!invoices.length) return (
-    <div className={`text-center py-16 border rounded-xl ${tc(dark,"bg-[#0c1929] border-slate-700","bg-white border-slate-200")}`}>
-      <Icon name="invoice" size={28}/><p className={`mt-2 ${tc(dark,"text-slate-400","text-slate-500")}`}>No invoices yet.</p>
-    </div>
-  );
+  const [dateFilter, setDateFilter] = useState("all");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  const now = new Date();
+  const startOfDay = (d) => { const x=new Date(d); x.setHours(0,0,0,0); return x; };
+  const startOfMonth = (d) => new Date(d.getFullYear(), d.getMonth(), 1);
+  const startOfWeek  = (d) => { const x=new Date(d); x.setDate(d.getDate()-d.getDay()); x.setHours(0,0,0,0); return x; };
+  const startOfLastMonth = (d) => new Date(d.getFullYear(), d.getMonth()-1, 1);
+  const endOfLastMonth   = (d) => new Date(d.getFullYear(), d.getMonth(), 0, 23, 59, 59);
+
+  const filtered = [...invoices].sort((a,b)=>new Date(b.date)-new Date(a.date)).filter(inv=>{
+    const invDate = new Date(inv.date);
+    let pass = true;
+    if (dateFilter==="7d")   pass = invDate >= new Date(now - 7*86400000);
+    else if (dateFilter==="15d")  pass = invDate >= new Date(now - 15*86400000);
+    else if (dateFilter==="30d")  pass = invDate >= new Date(now - 30*86400000);
+    else if (dateFilter==="week") pass = invDate >= startOfWeek(now);
+    else if (dateFilter==="month")pass = invDate >= startOfMonth(now);
+    else if (dateFilter==="lastmonth") pass = invDate >= startOfLastMonth(now) && invDate <= endOfLastMonth(now);
+    else if (dateFilter==="custom") pass = (!fromDate||invDate>=startOfDay(fromDate)) && (!toDate||invDate<=new Date(toDate+" 23:59:59"));
+    if (statusFilter!=="all") pass = pass && inv.status===statusFilter;
+    return pass;
+  });
+
+  const selCls = `border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none transition-colors ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`;
+
   return (
-    <div className={`border rounded-xl overflow-hidden ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
-      <table className="w-full text-sm">
-        <thead><tr className={`border-b ${tc(dark,"border-slate-700 bg-slate-800/30","border-slate-200 bg-slate-50")}`}>
-          {["Invoice #","Customer / Developer","Amount","Date","Status","Actions"].map(h=>(
-            <th key={h} className={`text-left px-4 py-3 font-medium text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{h}</th>
-          ))}
-        </tr></thead>
-        <tbody>
-          {invoices.map(inv=>{
-            const dev = developers?.find(d=>d.id===inv.developerId);
-            const proj= projects?.find(p=>p.id===inv.projectId);
-            const { total } = calcInvoiceTotal(inv.items||[]);
-            const displayAmt = total || inv.amount || 0;
-            return (
-              <tr key={inv.id} className={`border-b transition-colors ${tc(dark,"border-slate-700/30 hover:bg-slate-800/20","border-slate-100 hover:bg-slate-50")}`}>
-                <td className={`px-4 py-3 font-mono text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{inv.id.toUpperCase()}</td>
-                <td className="px-4 py-3">
-                  <div className={`font-medium ${tc(dark,"text-white","text-slate-800")}`}>{inv.customerName || dev?.companyName || "—"}</div>
-                  {proj && <div className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{proj.customerName}</div>}
-                </td>
-                <td className={`px-4 py-3 font-bold ${tc(dark,"text-white","text-slate-800")}`}>{fmtINR(displayAmt)}</td>
-                <td className={`px-4 py-3 ${tc(dark,"text-slate-400","text-slate-500")}`}>{fmtDate(inv.date)}</td>
-                <td className="px-4 py-3"><span className={`text-xs px-2 py-0.5 rounded-full ${statusColor(inv.status,dark)}`}>{inv.status}</span></td>
-                <td className="px-4 py-3">
-                  <div className="flex gap-1.5">
-                    <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>onView(inv)}><Icon name="eye" size={13}/>View</Btn>
-                    <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>onPrint(inv)}><Icon name="print" size={13}/>PDF</Btn>
-                    {inv.status==="Pending"&&onMarkPaid&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>onMarkPaid(inv.id)}><Icon name="check" size={13}/>Paid</Btn>}
-                  </div>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+    <div>
+      {/* Advanced filters bar */}
+      <div className={`border rounded-xl p-3 mb-4 flex flex-wrap items-center gap-2 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+        <select value={dateFilter} onChange={e=>setDateFilter(e.target.value)} className={selCls}>
+          <option value="all">All Time</option>
+          <option value="7d">Last 7 Days</option>
+          <option value="15d">Last 15 Days</option>
+          <option value="30d">Last 30 Days</option>
+          <option value="week">This Week</option>
+          <option value="month">This Month</option>
+          <option value="lastmonth">Last Month</option>
+          <option value="custom">Custom Range</option>
+        </select>
+        {dateFilter==="custom"&&<>
+          <input type="date" value={fromDate} onChange={e=>setFromDate(e.target.value)} className={selCls}/>
+          <span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>to</span>
+          <input type="date" value={toDate} onChange={e=>setToDate(e.target.value)} className={selCls}/>
+        </>}
+        <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} className={selCls}>
+          <option value="all">All Status</option>
+          <option value="Pending">Pending</option>
+          <option value="Paid">Paid</option>
+          <option value="Sent">Sent</option>
+          <option value="Draft">Draft</option>
+        </select>
+        <span className={`text-xs ml-auto ${tc(dark,"text-slate-400","text-slate-500")}`}>{filtered.length} invoice{filtered.length!==1?"s":""}</span>
+      </div>
+
+      {!filtered.length ? (
+        <div className={`text-center py-16 border rounded-xl ${tc(dark,"bg-[#0c1929] border-slate-700","bg-white border-slate-200")}`}>
+          <Icon name="invoice" size={28}/><p className={`mt-2 ${tc(dark,"text-slate-400","text-slate-500")}`}>No invoices match filters.</p>
+        </div>
+      ) : (
+        <div className={`border rounded-xl overflow-hidden ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+          <table className="w-full text-sm">
+            <thead><tr className={`border-b ${tc(dark,"border-slate-700 bg-slate-800/30","border-slate-200 bg-slate-50")}`}>
+              {["Invoice #","Customer / Developer","Amount","Date","Status","Actions"].map(h=>(
+                <th key={h} className={`text-left px-4 py-3 font-medium text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {filtered.map(inv=>{
+                const dev = developers?.find(d=>d.id===inv.developerId);
+                const proj= projects?.find(p=>p.id===inv.projectId);
+                const { total } = calcInvoiceTotal(inv.items||[]);
+                const displayAmt = total || inv.amount || 0;
+                return (
+                  <tr key={inv.id} className={`border-b transition-colors ${tc(dark,"border-slate-700/30 hover:bg-slate-800/20","border-slate-100 hover:bg-slate-50")}`}>
+                    <td className={`px-4 py-3 font-mono text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{inv.id.toUpperCase()}</td>
+                    <td className="px-4 py-3">
+                      <div className={`font-medium ${tc(dark,"text-white","text-slate-800")}`}>{inv.customerName || dev?.companyName || "—"}</div>
+                      {proj && <div className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{proj.customerName}</div>}
+                    </td>
+                    <td className={`px-4 py-3 font-bold ${tc(dark,"text-white","text-slate-800")}`}>{fmtINR(displayAmt)}</td>
+                    <td className={`px-4 py-3 ${tc(dark,"text-slate-400","text-slate-500")}`}>{fmtDate(inv.date)}</td>
+                    <td className="px-4 py-3"><span className={`text-xs px-2 py-0.5 rounded-full ${statusColor(inv.status,dark)}`}>{inv.status}</span></td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-1.5">
+                        <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>onView(inv)}><Icon name="eye" size={13}/>View</Btn>
+                        <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>onPrint(inv)}><Icon name="print" size={13}/>PDF</Btn>
+                        {inv.status==="Pending"&&onMarkPaid&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>onMarkPaid(inv.id)}><Icon name="check" size={13}/>Paid</Btn>}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 };
@@ -644,6 +735,7 @@ const Sidebar = ({ user, currentPage, setPage, onLogout, developer }) => {
     {id:"invoices",label:"Invoices",icon:"invoice"},
     {id:"create-invoice",label:"Create Invoice",icon:"plus"},
     {id:"users",label:"All Users",icon:"users"},
+    {id:"my-settings",label:"My Settings",icon:"settings"},
   ];
   const devNav = [
     {id:"dashboard",label:"Dashboard",icon:"home"},
@@ -652,11 +744,13 @@ const Sidebar = ({ user, currentPage, setPage, onLogout, developer }) => {
     {id:"invoices",label:"Invoices",icon:"invoice"},
     {id:"templates",label:"Templates",icon:"template"},
     {id:"settings",label:"Settings",icon:"settings"},
+    {id:"my-settings",label:"My Profile",icon:"user"},
   ];
   const userNav = [
     {id:"dashboard",label:"Dashboard",icon:"home"},
     {id:"projects",label:"Projects",icon:"folder"},
     {id:"invoices",label:"Invoices",icon:"invoice"},
+    {id:"my-settings",label:"My Profile",icon:"user"},
   ];
   const nav = user.role===ROLES.SUPER_ADMIN ? superNav : user.role===ROLES.DEV_ADMIN ? devNav : userNav;
   const bg = tc(dark,"bg-[#070e1c] border-slate-800","bg-white border-slate-200");
@@ -710,7 +804,7 @@ const SuperAdminDashboard = ({ developers, users, projects, invoices, proposals 
     const devProjects = projects.filter(p=>p.developerId===dev.id);
     const devProposals= proposals.filter(pr=>devProjects.some(p=>p.id===pr.projectId));
     const devInvoices = invoices.filter(i=>i.developerId===dev.id && i.type==="project");
-    const score = devUsers.length*10 + devProjects.length*20 + devProposals.length*15 + devInvoices.length*10;
+    const score = devUsers.length*5 + devProjects.length*5 + devProposals.length*5 + devInvoices.length*5;
     return { dev, devUsers, devProjects, devProposals, devInvoices, score };
   }).sort((a,b)=>b.score-a.score);
 
@@ -791,7 +885,7 @@ const DevDashboard = ({ developer, projects, users, proposals, invoices }) => {
     const uProposals = proposals.filter(pr=>uProjects.some(p=>p.id===pr.projectId));
     const uInvoices  = invoices.filter(i=>i.userId===u.id && i.type==="project");
     const revenue    = uInvoices.reduce((s,i)=>s+(calcInvoiceTotal(i.items||[]).total||i.amount||0),0);
-    const score      = uProjects.length*20 + uProposals.length*15 + uInvoices.length*10;
+    const score      = uProjects.length*5 + uProposals.length*5 + uInvoices.length*5;
     return { u, uProjects, uProposals, uInvoices, revenue, score };
   }).sort((a,b)=>b.score-a.score);
   const maxScore = Math.max(...userPerf.map(e=>e.score),1);
@@ -859,7 +953,7 @@ const DevelopersPage = ({ developers, setDevelopers, users, setUsers, invoices, 
   const [viewDev, setViewDev] = useState(null);
   const [showInvForm, setShowInvForm] = useState(null); // developer for quick invoice
 
-  const blank = { companyName:"",email:"",phone:"",address:"",website:"",seats:5,plan:"Starter",planDuration:"Monthly",subscriptionStart:TODAY,subscriptionEnd:addMonths(TODAY,1),logo:null,electricityPrice:8.5,solarGenerationFactor:1350,costPerKW:50000,bankDetails:"",terms:"",paymentTerms:"",customerScope:"",companyScope:"",gstIn:"",adminName:"",adminPassword:"",permissions:[] };
+  const blank = { companyName:"",email:"",phone:"",address:"",city:"",pincode:"",website:"",seats:5,plan:"Starter",planDuration:"Monthly",subscriptionStart:TODAY,subscriptionEnd:addMonths(TODAY,1),logo:null,stamp:null,signature:null,electricityPrice:8.5,solarGenerationFactor:1350,costPerKW:50000,bankDetails:"",terms:"",paymentTerms:"",customerScope:"",companyScope:"",gstIn:"",adminName:"",adminPassword:"",permissions:[],invoicePrefix:"INV",invoiceNextNum:1001 };
   const [form, setForm] = useState(blank);
   const F = (k,v) => setForm(f=>({...f,[k]:v}));
 
@@ -885,7 +979,12 @@ const DevelopersPage = ({ developers, setDevelopers, users, setUsers, invoices, 
   const openEdit     = dev => { setForm({...dev,adminName:"",adminPassword:""}); setEditDev(dev); setShowForm(true); };
 
   const genPlatformInvoice = (dev) => {
-    const inv = { id:`inv${Date.now()}`, type:"platform", developerId:dev.id, amount:PLAN_PRICES[dev.plan]||4999, status:"Pending", date:TODAY, plan:dev.plan, planDuration:dev.planDuration, customerName:dev.companyName, customerAddress:dev.address, customerPhone:dev.phone, customerEmail:dev.email, items:[{name:`${dev.plan} Plan — ${dev.planDuration}`,qty:1,price:PLAN_PRICES[dev.plan]||4999,gst:18}], notes:"" };
+    // Platform invoices use SA's prefix/number from users state
+    const saUser = users.find(u=>u.role===ROLES.SUPER_ADMIN);
+    const prefix = saUser?.invoicePrefix||"SP";
+    const num    = saUser?.invoiceNextNum||1001;
+    if (saUser) setUsers(us=>us.map(u=>u.id===saUser.id?{...u,invoiceNextNum:(u.invoiceNextNum||1001)+1}:u));
+    const inv = { id:`${prefix}-${num}`, type:"platform", developerId:dev.id, amount:PLAN_PRICES[dev.plan]||4999, status:"Pending", date:TODAY, plan:dev.plan, planDuration:dev.planDuration, customerName:dev.companyName, customerAddress:[dev.address,dev.city,dev.pincode].filter(Boolean).join(", "), customerPhone:dev.phone, customerEmail:dev.email, items:[{name:`${dev.plan} Plan — ${dev.planDuration}`,qty:1,price:PLAN_PRICES[dev.plan]||4999,gst:18}], notes:"" };
     setInvoices(is=>[...is,inv]);
   };
 
@@ -957,8 +1056,14 @@ const DevelopersPage = ({ developers, setDevelopers, users, setUsers, invoices, 
             <Field label="Electricity Price (₹/kWh)" type="number" value={form.electricityPrice} onChange={v=>F("electricityPrice",parseFloat(v)||0)}/>
             <Field label="Solar Gen Factor (kWh/kWp/yr)" type="number" value={form.solarGenerationFactor} onChange={v=>F("solarGenerationFactor",parseInt(v)||0)}/>
             <Field label="Cost per kW (₹)" type="number" value={form.costPerKW} onChange={v=>F("costPerKW",parseInt(v)||0)}/>
+            <Field label="Invoice Prefix" value={form.invoicePrefix||"INV"} onChange={v=>F("invoicePrefix",v)} placeholder="INV" hint="e.g. INV, SP, GW"/>
+            <Field label="Invoice Start Number" type="number" value={form.invoiceNextNum||1001} onChange={v=>F("invoiceNextNum",parseInt(v)||1001)} hint="Next invoice will use this number"/>
           </div>
-          <Field label="Address" type="textarea" rows={2} value={form.address} onChange={v=>F("address",v)}/>
+          <Field label="Street Address" type="textarea" rows={2} value={form.address||""} onChange={v=>F("address",v)}/>
+          <div className="grid grid-cols-2 gap-3">
+            <CityField label="City" value={form.city||""} onChange={v=>F("city",v)}/>
+            <Field label="Pincode" value={form.pincode||""} onChange={v=>F("pincode",v)} placeholder="400001"/>
+          </div>
           <Field label="Payment Terms" type="textarea" rows={3} value={form.paymentTerms} onChange={v=>F("paymentTerms",v)} placeholder="e.g. 50% advance,&#10;25% on delivery,&#10;25% on completion"/>
           <Field label="Customer Scope" type="textarea" rows={2} value={form.customerScope} onChange={v=>F("customerScope",v)}/>
           <Field label="Company Scope" type="textarea" rows={2} value={form.companyScope} onChange={v=>F("companyScope",v)}/>
@@ -1041,13 +1146,137 @@ const TeamDetailInModal = ({ devId, users, setUsers }) => {
   );
 };
 
+// ── MY SETTINGS PAGE (for ALL users — profile, logo, bank, stamp, signature, invoice) ──
+const MySettingsPage = ({ currentUser, setUsers, developers, setDevelopers }) => {
+  const { dark } = useTheme();
+  const isSA = currentUser.role === ROLES.SUPER_ADMIN;
+  const dev  = developers?.find(d=>d.id===currentUser.developerId);
+
+  // For SA: edit own user record; for Dev/User: edit developer record + user record
+  const [uForm, setUForm] = useState({ name:currentUser.name||"", phone:currentUser.phone||"", email:currentUser.email||"", password:"", companyName:currentUser.companyName||"SolarPro Platform", address:currentUser.address||"", city:currentUser.city||"", pincode:currentUser.pincode||"", logo:currentUser.logo||null, stamp:currentUser.stamp||null, signature:currentUser.signature||null, bankDetails:currentUser.bankDetails||"", invoicePrefix:currentUser.invoicePrefix||"SP", invoiceNextNum:currentUser.invoiceNextNum||1001 });
+  const [dForm, setDForm] = useState(dev ? {...dev} : null);
+  const UF = (k,v) => setUForm(f=>({...f,[k]:v}));
+  const DF = (k,v) => setDForm(f=>({...f,[k]:v}));
+
+  const saveUser = () => {
+    setUsers(us=>us.map(u=>u.id===currentUser.id?{...u,...uForm,password:uForm.password||u.password}:u));
+    alert("Profile saved!");
+  };
+  const saveDev = () => {
+    if (dForm) setDevelopers(ds=>ds.map(d=>d.id===dForm.id?{...d,...dForm}:d));
+    alert("Company settings saved!");
+  };
+
+  const ImgUpload = ({value, onChange, label}) => {
+    const ref = useRef();
+    return (
+      <div className="mb-4">
+        <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>{label}</label>
+        <div className="flex items-center gap-3">
+          {value
+            ? <img src={value} alt={label} className="w-16 h-16 rounded-xl object-contain border border-slate-600 bg-white p-1"/>
+            : <div className={`w-16 h-16 rounded-xl border-2 border-dashed flex items-center justify-center ${tc(dark,"border-slate-600 text-slate-500","border-slate-300 text-slate-400")}`}><Icon name="image" size={22}/></div>
+          }
+          <div>
+            <input ref={ref} type="file" accept="image/*" onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>onChange(ev.target.result);r.readAsDataURL(f);}} className="hidden"/>
+            <Btn size="sm" variant="outline" onClick={()=>ref.current?.click()}><Icon name="upload" size={14}/>Upload</Btn>
+            {value&&<button onClick={()=>onChange(null)} className="ml-2 text-xs text-red-400 hover:text-red-300">Remove</button>}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      <h1 className={`text-xl font-bold mb-1 ${tc(dark,"text-white","text-slate-800")}`}>My Profile & Settings</h1>
+      <p className={`text-sm mb-5 ${tc(dark,"text-slate-400","text-slate-500")}`}>Update your personal and company information</p>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+        {/* Personal Details */}
+        <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+          <h3 className={`font-bold mb-3 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Personal Details</h3>
+          <Field label="Full Name" value={uForm.name} onChange={v=>UF("name",v)}/>
+          <Field label="Email" type="email" value={uForm.email} onChange={v=>UF("email",v)}/>
+          <Field label="Phone" value={uForm.phone} onChange={v=>UF("phone",v)}/>
+          <Field label="New Password" type="password" value={uForm.password} onChange={v=>UF("password",v)} hint="Leave blank to keep current password"/>
+          <Btn onClick={saveUser}><Icon name="check" size={15}/>Save Profile</Btn>
+        </div>
+
+        {/* Super Admin: own company settings */}
+        {isSA&&(
+          <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+            <h3 className={`font-bold mb-3 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Platform Company Details</h3>
+            <Field label="Company Name" value={uForm.companyName} onChange={v=>UF("companyName",v)}/>
+            <Field label="Address" type="textarea" rows={2} value={uForm.address||""} onChange={v=>UF("address",v)}/>
+            <div className="grid grid-cols-2 gap-3">
+              <CityField label="City" value={uForm.city||""} onChange={v=>UF("city",v)}/>
+              <Field label="Pincode" value={uForm.pincode||""} onChange={v=>UF("pincode",v)} placeholder="400001"/>
+            </div>
+            <Field label="Bank Details" type="textarea" rows={3} value={uForm.bankDetails||""} onChange={v=>UF("bankDetails",v)}/>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Invoice Prefix" value={uForm.invoicePrefix||"SP"} onChange={v=>UF("invoicePrefix",v)} hint="e.g. SP, INV"/>
+              <Field label="Next Invoice #" type="number" value={uForm.invoiceNextNum||1001} onChange={v=>UF("invoiceNextNum",parseInt(v)||1001)}/>
+            </div>
+            <Btn onClick={saveUser}><Icon name="check" size={15}/>Save Platform Settings</Btn>
+          </div>
+        )}
+      </div>
+
+      {/* Branding: Logo, Stamp, Signature (SA edits own; Dev edits developer record) */}
+      <div className={`border rounded-xl p-4 mb-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+        <h3 className={`font-bold mb-3 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Branding & Signatures</h3>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {isSA ? (
+            <>
+              <ImgUpload label="Company Logo" value={uForm.logo} onChange={v=>UF("logo",v)}/>
+              <ImgUpload label="Company Stamp" value={uForm.stamp} onChange={v=>UF("stamp",v)}/>
+              <ImgUpload label="Signature" value={uForm.signature} onChange={v=>UF("signature",v)}/>
+            </>
+          ) : dForm ? (
+            <>
+              <ImgUpload label="Company Logo" value={dForm.logo} onChange={v=>DF("logo",v)}/>
+              <ImgUpload label="Company Stamp" value={dForm.stamp} onChange={v=>DF("stamp",v)}/>
+              <ImgUpload label="Signature" value={dForm.signature} onChange={v=>DF("signature",v)}/>
+            </>
+          ) : null}
+        </div>
+        {!isSA&&dForm&&<Btn onClick={saveDev} className="mt-2"><Icon name="check" size={15}/>Save Branding</Btn>}
+        {isSA&&<Btn onClick={saveUser} className="mt-2"><Icon name="check" size={15}/>Save Branding</Btn>}
+      </div>
+
+      {/* Dev Admin invoice & company settings */}
+      {!isSA&&dForm&&(
+        <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+          <h3 className={`font-bold mb-3 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Company & Invoice Settings</h3>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Company Name" value={dForm.companyName} onChange={v=>DF("companyName",v)}/>
+            <Field label="Phone" value={dForm.phone||""} onChange={v=>DF("phone",v)}/>
+            <Field label="Invoice Prefix" value={dForm.invoicePrefix||"INV"} onChange={v=>DF("invoicePrefix",v)} hint="e.g. INV, SP"/>
+            <Field label="Next Invoice #" type="number" value={dForm.invoiceNextNum||1001} onChange={v=>DF("invoiceNextNum",parseInt(v)||1001)}/>
+          </div>
+          <Field label="Bank Details" type="textarea" rows={3} value={dForm.bankDetails||""} onChange={v=>DF("bankDetails",v)}/>
+          <Btn onClick={saveDev}><Icon name="check" size={15}/>Save Company Settings</Btn>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ── SUPER ADMIN INVOICES PAGE ──────────────────────────────────
-const SuperAdminInvoicesPage = ({ invoices, setInvoices, developers, projects, users }) => {
+const SuperAdminInvoicesPage = ({ invoices, setInvoices, developers, projects, users, currentUser }) => {
   const { dark } = useTheme();
   const [viewInv, setViewInv] = useState(null);
-  const platformInvoices = invoices; // show all
+  const platformInvoices = invoices;
 
-  const getDev = id => developers.find(d=>d.id===id);
+  // For SA-created invoices (no dev), use SA's own profile as the "developer"
+  const getSender = inv => {
+    const dev = developers?.find(d=>d.id===inv.developerId);
+    if (dev) return dev;
+    // SA invoice — use SA user's settings
+    const sa = users?.find(u=>u.role===ROLES.SUPER_ADMIN);
+    return { companyName:sa?.companyName||"SolarPro Platform", address:[sa?.address,sa?.city,sa?.pincode].filter(Boolean).join(", "), phone:sa?.phone||"", email:sa?.email||"", logo:sa?.logo||null, bankDetails:sa?.bankDetails||"", stamp:sa?.stamp||null, signature:sa?.signature||null };
+  };
   const getCustomer = inv => ({ name: inv.customerName, address: inv.customerAddress, phone: inv.customerPhone, email: inv.customerEmail });
 
   return (
@@ -1056,14 +1285,14 @@ const SuperAdminInvoicesPage = ({ invoices, setInvoices, developers, projects, u
       <p className={`text-sm mb-5 ${tc(dark,"text-slate-400","text-slate-500")}`}>Platform subscription and project invoices</p>
       <InvoiceListView invoices={platformInvoices} developers={developers} projects={projects} users={users}
         onView={inv=>setViewInv(inv)}
-        onPrint={inv=>printInvoice(inv, getDev(inv.developerId), getCustomer(inv))}
+        onPrint={inv=>printInvoice(inv, getSender(inv), getCustomer(inv))}
         onMarkPaid={id=>setInvoices(is=>is.map(i=>i.id===id?{...i,status:"Paid"}:i))}
         currentUser={null}/>
       {viewInv&&(
         <Modal title={`Invoice — ${viewInv.id.toUpperCase()}`} onClose={()=>setViewInv(null)} wide>
-          <InvoicePreviewContent inv={viewInv} developer={getDev(viewInv.developerId)} customer={getCustomer(viewInv)}/>
+          <InvoicePreviewContent inv={viewInv} developer={getSender(viewInv)} customer={getCustomer(viewInv)}/>
           <div className="flex gap-3 mt-4 pt-4 border-t border-slate-700">
-            <Btn className="flex-1" onClick={()=>printInvoice(viewInv,getDev(viewInv.developerId),getCustomer(viewInv))}><Icon name="print" size={15}/>Download / Print PDF</Btn>
+            <Btn className="flex-1" onClick={()=>printInvoice(viewInv,getSender(viewInv),getCustomer(viewInv))}><Icon name="print" size={15}/>Download / Print PDF</Btn>
             <Btn variant="secondary" onClick={()=>setViewInv(null)}>Close</Btn>
           </div>
         </Modal>
@@ -1073,7 +1302,7 @@ const SuperAdminInvoicesPage = ({ invoices, setInvoices, developers, projects, u
 };
 
 // ── CREATE INVOICE PAGE (Super Admin) ─────────────────────────
-const CreateInvoicePage = ({ developers, users, projects, invoices, setInvoices }) => {
+const CreateInvoicePage = ({ developers, setDevelopers, users, setUsers, projects, invoices, setInvoices, currentUser }) => {
   const { dark } = useTheme();
   const [selectedDev, setSelectedDev] = useState("");
   const [selectedUser, setSelectedUser] = useState("");
@@ -1088,12 +1317,20 @@ const CreateInvoicePage = ({ developers, users, projects, invoices, setInvoices 
 
   const generate = () => {
     const {total}=calcInvoiceTotal(items);
+    // SA uses their own prefix; else use dev prefix
+    const saUser = users.find(u=>u.id===currentUser?.id);
+    const prefix = dev?.invoicePrefix || saUser?.invoicePrefix || "SP";
+    const num    = dev?.invoiceNextNum || saUser?.invoiceNextNum || 1001;
+    const invId  = `${prefix}-${num}`;
+    // Increment the number
+    if (dev) setDevelopers(ds=>ds.map(d=>d.id===dev.id?{...d,invoiceNextNum:(d.invoiceNextNum||1001)+1}:d));
+    else setUsers(us=>us.map(u=>u.id===currentUser?.id?{...u,invoiceNextNum:(u.invoiceNextNum||1001)+1}:u));
     const inv = {
-      id:`INV-${Date.now().toString().slice(-6)}`,
+      id:invId,
       type:"platform", developerId:selectedDev, userId:selectedUser,
       amount:total, status, date:TODAY,
       customerName: targetUser?.name || dev?.companyName || "",
-      customerAddress: dev?.address || "",
+      customerAddress: [dev?.address,dev?.city,dev?.pincode].filter(Boolean).join(", "),
       customerPhone: targetUser?.phone || dev?.phone || "",
       customerEmail: targetUser?.email || dev?.email || "",
       items:[...items], notes,
@@ -1198,6 +1435,9 @@ const InvoicePreviewContent = ({ inv, developer, customer }) => {
 const UsersPage = ({ users, setUsers, currentUser, developers }) => {
   const { dark } = useTheme();
   const [search, setSearch]   = useState("");
+  const [filterRole, setFilterRole] = useState("all");
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [filterCompany, setFilterCompany] = useState("all");
   const [showAdd, setShowAdd] = useState(false);
   const [editUser, setEditUser] = useState(null);
 
@@ -1211,10 +1451,16 @@ const UsersPage = ({ users, setUsers, currentUser, developers }) => {
     ? users.filter(u => u.role !== ROLES.SUPER_ADMIN)
     : users.filter(u => u.developerId === currentUser.developerId && u.id !== currentUser.id);
 
-  const filtered = visibleUsers.filter(u =>
-    u.name.toLowerCase().includes(search.toLowerCase()) ||
-    u.email.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = visibleUsers.filter(u => {
+    const matchSearch = u.name.toLowerCase().includes(search.toLowerCase()) ||
+      u.email.toLowerCase().includes(search.toLowerCase()) ||
+      (u.phone||"").includes(search);
+    const matchRole    = filterRole==="all" || u.role===filterRole;
+    const matchCompany = filterCompany==="all" || u.developerId===filterCompany;
+    const uStatus = u.paused?"paused":u.active?"active":"inactive";
+    const matchStatus  = filterStatus==="all" || uStatus===filterStatus;
+    return matchSearch && matchRole && matchCompany && matchStatus;
+  });
 
   const save = () => {
     if (editUser) {
@@ -1245,7 +1491,24 @@ const UsersPage = ({ users, setUsers, currentUser, developers }) => {
         </div>
         <Btn onClick={()=>{setForm(blank);setEditUser(null);setShowAdd(true);}}><Icon name="plus" size={15}/>Add User</Btn>
       </div>
-      <div className="mb-4"><SearchBar value={search} onChange={setSearch} placeholder="Search by name or email…"/></div>
+      <div className="mb-4 flex flex-wrap gap-2">
+        <div className="flex-1 min-w-48"><SearchBar value={search} onChange={setSearch} placeholder="Search name, email, phone…"/></div>
+        {isSuperAdmin&&<select value={filterCompany} onChange={e=>setFilterCompany(e.target.value)} className={`border rounded-lg px-2.5 py-2 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+          <option value="all">All Companies</option>
+          {developers.map(d=><option key={d.id} value={d.id}>{d.companyName}</option>)}
+        </select>}
+        <select value={filterRole} onChange={e=>setFilterRole(e.target.value)} className={`border rounded-lg px-2.5 py-2 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+          <option value="all">All Roles</option>
+          <option value={ROLES.DEV_ADMIN}>Dev Admin</option>
+          <option value={ROLES.USER}>User</option>
+        </select>
+        <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} className={`border rounded-lg px-2.5 py-2 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+          <option value="all">All Status</option>
+          <option value="active">Active</option>
+          <option value="paused">Paused</option>
+          <option value="inactive">Inactive</option>
+        </select>
+      </div>
 
       <div className={`border rounded-xl overflow-x-auto ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
         <table className="w-full text-sm">
@@ -1382,7 +1645,11 @@ const SettingsPage = ({ developer, setDevelopers }) => {
           <Field label="Phone" value={form.phone} onChange={v=>F("phone",v)}/>
           <Field label="Website" value={form.website||""} onChange={v=>F("website",v)}/>
           <Field label="GSTIN" value={form.gstIn||""} onChange={v=>F("gstIn",v)}/>
-          <Field label="Address" type="textarea" rows={2} value={form.address} onChange={v=>F("address",v)}/>
+          <Field label="Street Address" type="textarea" rows={2} value={form.address||""} onChange={v=>F("address",v)}/>
+          <div className="grid grid-cols-2 gap-3">
+            <CityField label="City" value={form.city||""} onChange={v=>F("city",v)}/>
+            <Field label="Pincode" value={form.pincode||""} onChange={v=>F("pincode",v)} placeholder="400001"/>
+          </div>
         </div>
         <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
           <h3 className={`font-bold mb-3 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Solar Variables</h3>
@@ -1408,15 +1675,15 @@ const SettingsPage = ({ developer, setDevelopers }) => {
 };
 
 // ── PROJECTS PAGE ─────────────────────────────────────────────
-const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId, developer }) => {
+const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId, developer, users }) => {
   const { dark } = useTheme();
   const [search, setSearch]   = useState("");
   const [filterType, setFilterType] = useState("All");
   const [showAdd, setShowAdd] = useState(false);
-  const blank = { customerName:"",customerPhone:"",customerEmail:"",customerAddress:"",projectSize:"",projectType:"Residential",status:"Active" };
+  const blank = { customerName:"",customerPhone:"",customerEmail:"",customerAddress:"",customerCity:"",customerPincode:"",projectSize:"",projectType:"Residential",status:"Active",assignedUserId:"" };
   const [form, setForm] = useState(blank);
 
-  const isLocked = developer && (developer.paused || (developer.subscriptionEnd && new Date(developer.subscriptionEnd)<new Date()));
+  const isLocked = !currentUser?.active || (developer && (developer.paused || (developer.subscriptionEnd && new Date(developer.subscriptionEnd)<new Date())));
 
   const myProjects = projects.filter(p=>{
     const mine = currentUser.role===ROLES.DEV_ADMIN ? p.developerId===currentUser.developerId : p.userId===currentUser.id || p.developerId===currentUser.developerId;
@@ -1425,8 +1692,12 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
     return mine && matchS && matchT;
   });
 
+  const devTeam = users ? users.filter(u=>u.developerId===currentUser.developerId && u.role!==ROLES.SUPER_ADMIN && u.active && !u.paused) : [];
+
   const save = () => {
-    setProjects(ps=>[...ps,{...form,id:`p${Date.now()}`,developerId:currentUser.developerId,userId:currentUser.id,createdAt:TODAY}]);
+    const assignedTo = form.assignedUserId || currentUser.id;
+    const fullAddress = [form.customerAddress, form.customerCity, form.customerPincode].filter(Boolean).join(", ");
+    setProjects(ps=>[...ps,{...form,customerAddress:fullAddress,id:`p${Date.now()}`,developerId:currentUser.developerId,userId:assignedTo,createdAt:TODAY}]);
     setShowAdd(false); setForm(blank);
   };
 
@@ -1486,7 +1757,15 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
             <Field label="Type" type="select" value={form.projectType} onChange={v=>setForm(f=>({...f,projectType:v}))} options={["Residential","Commercial","Industrial"]}/>
             <Field label="Status" type="select" value={form.status} onChange={v=>setForm(f=>({...f,status:v}))} options={["Active","Proposal Sent","Completed","Cancelled"]}/>
           </div>
-          <Field label="Address" type="textarea" rows={2} value={form.customerAddress} onChange={v=>setForm(f=>({...f,customerAddress:v}))}/>
+          <Field label="Street Address" type="textarea" rows={2} value={form.customerAddress} onChange={v=>setForm(f=>({...f,customerAddress:v}))}/>
+          <div className="grid grid-cols-2 gap-3">
+            <CityField label="City" value={form.customerCity||""} onChange={v=>setForm(f=>({...f,customerCity:v}))}/>
+            <Field label="Pincode" value={form.customerPincode||""} onChange={v=>setForm(f=>({...f,customerPincode:v}))} placeholder="400001"/>
+          </div>
+          {currentUser.role===ROLES.DEV_ADMIN&&devTeam.length>0&&(
+            <Field label="Assign To Team Member" type="select" value={form.assignedUserId||""} onChange={v=>setForm(f=>({...f,assignedUserId:v}))}
+              options={[{value:"",label:"— Assign to myself —"},...devTeam.map(u=>({value:u.id,label:u.name}))]}/>
+          )}
           <div className="flex gap-3 mt-2">
             <Btn onClick={save} className="flex-1" disabled={!form.customerName||!form.projectSize}>Create Project</Btn>
             <Btn variant="secondary" onClick={()=>setShowAdd(false)}>Cancel</Btn>
@@ -1498,7 +1777,7 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
 };
 
 // ── PROJECT INVOICES PAGE (Dev + User) ────────────────────────
-const ProjectInvoicesPage = ({ invoices, setInvoices, projects, developer, currentUser }) => {
+const ProjectInvoicesPage = ({ invoices, setInvoices, projects, developer, currentUser, setDevelopers }) => {
   const { dark } = useTheme();
   const [showCreate, setShowCreate] = useState(false);
   const [viewInv, setViewInv] = useState(null);
@@ -1534,8 +1813,12 @@ const ProjectInvoicesPage = ({ invoices, setInvoices, projects, developer, curre
     if (!selectedProject) return;
     const p = myProjects.find(x=>x.id===selectedProject);
     const {total} = calcInvoiceTotal(items);
+    const prefix = developer?.invoicePrefix || "INV";
+    const num    = developer?.invoiceNextNum || 1001;
+    const invId  = `${prefix}-${num}`;
+    setDevelopers(ds=>ds.map(d=>d.id===developer.id?{...d,invoiceNextNum:(d.invoiceNextNum||1001)+1}:d));
     const inv = {
-      id:`INV-${Date.now().toString().slice(-6)}`,
+      id:invId,
       type:"project", developerId:developer.id,
       projectId:selectedProject, userId:currentUser.id,
       amount:total, status, date:TODAY,
@@ -1550,7 +1833,7 @@ const ProjectInvoicesPage = ({ invoices, setInvoices, projects, developer, curre
     setSelectedProject(""); setItems([{name:"",qty:1,price:0,gst:12}]); setNotes(""); setStatus("Pending");
   };
 
-  const isLocked = developer && (developer.paused || (developer.subscriptionEnd && new Date(developer.subscriptionEnd)<new Date()));
+  const isLocked = !currentUser?.active || (developer && (developer.paused || (developer.subscriptionEnd && new Date(developer.subscriptionEnd)<new Date())));
   if (isLocked) return <LockedPage developer={developer}/>;
 
   return (
@@ -2155,7 +2438,11 @@ export default function SolarProApp() {
 
     // Subscription lock: show LockedPage for non-dashboard pages
     if (subscriptionLocked && currentUser.role !== ROLES.SUPER_ADMIN && isProtectedPage(currentPage)) {
-      return <LockedPage developer={developer}/>;
+      return <LockedPage developer={developer} reason={developer?.paused?"paused":"expired"}/>;
+    }
+    // Inactive user lock (non-SA, non-dashboard)
+    if (!currentUser.active && currentUser.role !== ROLES.SUPER_ADMIN && isProtectedPage(currentPage)) {
+      return <LockedPage developer={developer} reason="inactive"/>;
     }
 
     switch (currentPage) {
@@ -2165,18 +2452,17 @@ export default function SolarProApp() {
           return <SuperAdminDashboard developers={developers} users={users} projects={projects} invoices={invoices} proposals={proposals}/>;
         if (currentUser.role === ROLES.DEV_ADMIN)
           return <DevDashboard developer={developer} projects={projects} users={users} proposals={proposals} invoices={invoices}/>;
-        // Regular user dashboard
         return <UserDashboard developer={developer} currentUser={currentUser} projects={projects} proposals={proposals} invoices={invoices}/>;
 
       // ── SUPER ADMIN ONLY ──
       case "developers":
         return <DevelopersPage developers={developers} setDevelopers={setDevelopers} users={users} setUsers={setUsers} invoices={invoices} setInvoices={setInvoices}/>;
       case "create-invoice":
-        return <CreateInvoicePage developers={developers} users={users} projects={projects} invoices={invoices} setInvoices={setInvoices}/>;
+        return <CreateInvoicePage developers={developers} setDevelopers={setDevelopers} users={users} setUsers={setUsers} projects={projects} invoices={invoices} setInvoices={setInvoices} currentUser={currentUser}/>;
       case "invoices":
         if (currentUser.role === ROLES.SUPER_ADMIN)
-          return <SuperAdminInvoicesPage invoices={invoices} setInvoices={setInvoices} developers={developers} projects={projects} users={users}/>;
-        return <ProjectInvoicesPage invoices={invoices} setInvoices={setInvoices} projects={projects} developer={developer} currentUser={currentUser}/>;
+          return <SuperAdminInvoicesPage invoices={invoices} setInvoices={setInvoices} developers={developers} projects={projects} users={users} currentUser={currentUser}/>;
+        return <ProjectInvoicesPage invoices={invoices} setInvoices={setInvoices} projects={projects} developer={developer} currentUser={currentUser} setDevelopers={setDevelopers}/>;
 
       // ── SHARED: TEMPLATES ──
       case "templates":
@@ -2189,11 +2475,15 @@ export default function SolarProApp() {
 
       // ── DEV + USER: PROJECTS ──
       case "projects":
-        return <ProjectsPage projects={projects} setProjects={setProjects} currentUser={currentUser} setCurrentProjectId={setCurrentProjectId} developer={developer}/>;
+        return <ProjectsPage projects={projects} setProjects={setProjects} currentUser={currentUser} setCurrentProjectId={setCurrentProjectId} developer={developer} users={users}/>;
 
       // ── DEV ADMIN: SETTINGS ──
       case "settings":
         return developer ? <SettingsPage developer={developer} setDevelopers={setDevelopers}/> : null;
+
+      // ── ALL USERS: MY PROFILE/SETTINGS ──
+      case "my-settings":
+        return <MySettingsPage currentUser={currentUser} setUsers={setUsers} developers={developers} setDevelopers={setDevelopers}/>;
 
       default:
         return null;
