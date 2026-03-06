@@ -1341,7 +1341,7 @@ const TemplatesPage = ({ templates, setTemplates, developers, currentUser }) => 
                 <div className="w-9 h-9 rounded-lg bg-amber-500/15 flex items-center justify-center text-amber-400 flex-shrink-0"><Icon name="template" size={18}/></div>
                 <div><h3 className={`font-bold ${tc(dark,"text-white","text-slate-800")}`}>{t.name}</h3><p className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{t.description}</p></div>
               </div>
-              <div className="flex flex-wrap gap-1 mb-3">{t.variables.map(v=><span key={v} className={`text-xs px-1.5 py-0.5 rounded font-mono ${tc(dark,"bg-slate-700/50 text-slate-400","bg-slate-100 text-slate-600")}`)}>{"{{"+v+"}}"}</span>)}</div>
+              <div className="flex flex-wrap gap-1 mb-3">{t.variables.map(v=><span key={v} className={`text-xs px-1.5 py-0.5 rounded font-mono ${tc(dark,"bg-slate-700/50 text-slate-400","bg-slate-100 text-slate-600")}`}>{"{{"+v+"}}"}</span>)}</div>
               <div className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>Assigned: {assignedDevs.length ? assignedDevs.map(d=>d.companyName).join(", ") : "None"}</div>
             </div>
           );
