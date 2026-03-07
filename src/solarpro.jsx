@@ -2088,8 +2088,6 @@ const SettingsPage = ({ developer, setDevelopers, dateFormat, setDateFormat, pro
               <Btn size="sm" onClick={addLane} disabled={!newLane.name.trim()}><Icon name="plus" size={13}/>Add</Btn>
             </div>
           </div>
-        </div>
-      </div>
       )}
 
       <div className="mt-4"><Btn onClick={save} size="lg"><Icon name="check" size={16}/>Save All Settings</Btn></div>
