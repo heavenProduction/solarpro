@@ -2018,6 +2018,7 @@ const SettingsPage = ({ developer, setDevelopers, dateFormat, setDateFormat, pro
               <Btn size="sm" onClick={()=>{const inp=document.getElementById("defTagInput");if(inp?.value.trim()){F("defaultTags",[...(form.defaultTags||[]),inp.value.trim()]);inp.value="";}}}>Add</Btn>
             </div>
           </div>
+          </div>
         </div>
       )}
 
@@ -2089,8 +2090,6 @@ const SettingsPage = ({ developer, setDevelopers, dateFormat, setDateFormat, pro
             </div>
           </div>
         </div>
-      </div>
-      </div>
       </div>
       )}
 
