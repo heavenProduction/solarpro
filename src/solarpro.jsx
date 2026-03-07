@@ -48,9 +48,14 @@ const PINCODE_MAP = {
 // ── INVOICE DOCUMENT TYPES ────────────────────────────────────
 const INV_DOC_TYPES = ["Proforma Invoice","Tax Invoice","Sales Order","Purchase Order","Delivery Challan"];
 
-// Invoice flow: ProformaInvoice → (accepted) → SalesOrder → (delivery) → DeliveryChallan → TaxInvoice
-const INV_FLOW_NEXT = { "Proforma Invoice":"Sales Order", "Sales Order":"Delivery Challan", "Delivery Challan":"Tax Invoice" };
-const INV_FLOW_LABEL = { "Proforma Invoice":"Convert to Sales Order", "Sales Order":"Create Delivery Challan", "Delivery Challan":"Convert to Tax Invoice" };
+// All possible conversions from each doc type
+const INV_CONVERT_TARGETS = {
+  "Proforma Invoice": ["Sales Order","Tax Invoice","Purchase Order","Delivery Challan"],
+  "Sales Order":      ["Delivery Challan","Tax Invoice","Purchase Order"],
+  "Delivery Challan": ["Tax Invoice","Sales Order"],
+  "Purchase Order":   ["Delivery Challan","Tax Invoice"],
+  "Tax Invoice":      [],
+};
 
 // ── PROJECT UNITS ─────────────────────────────────────────────
 const PROJECT_UNITS = ["kW","kWp","MW","HP","Liter","Meter","Unit"];
@@ -65,11 +70,94 @@ const COUNTRY_CODES = [
   {code:"+92",label:"🇵🇰 +92 Pakistan"},{code:"+880",label:"🇧🇩 +880 Bangladesh"},{code:"+94",label:"🇱🇰 +94 Sri Lanka"},
 ];
 
+// ── INDIA STATES & UTs ────────────────────────────────────────
+const INDIA_STATES = ["Andhra Pradesh","Arunachal Pradesh","Assam","Bihar","Chhattisgarh","Goa","Gujarat","Haryana","Himachal Pradesh","Jharkhand","Karnataka","Kerala","Madhya Pradesh","Maharashtra","Manipur","Meghalaya","Mizoram","Nagaland","Odisha","Punjab","Rajasthan","Sikkim","Tamil Nadu","Telangana","Tripura","Uttar Pradesh","Uttarakhand","West Bengal","Andaman & Nicobar Islands","Chandigarh","Dadra & Nagar Haveli and Daman & Diu","Delhi","Jammu & Kashmir","Ladakh","Lakshadweep","Puducherry"];
+
+// ── DATE FORMATS ──────────────────────────────────────────────
+const DATE_FORMATS = [
+  { key:"DD/MM/YYYY", label:"DD/MM/YYYY (31/01/2025)", fn: d => { const x=new Date(d); return `${String(x.getDate()).padStart(2,"0")}/${String(x.getMonth()+1).padStart(2,"0")}/${x.getFullYear()}`; }},
+  { key:"MM/DD/YYYY", label:"MM/DD/YYYY (01/31/2025)", fn: d => { const x=new Date(d); return `${String(x.getMonth()+1).padStart(2,"0")}/${String(x.getDate()).padStart(2,"0")}/${x.getFullYear()}`; }},
+  { key:"YYYY-MM-DD", label:"YYYY-MM-DD (2025-01-31)", fn: d => String(d).slice(0,10) },
+  { key:"DD-MM-YYYY", label:"DD-MM-YYYY (31-01-2025)", fn: d => { const x=new Date(d); return `${String(x.getDate()).padStart(2,"0")}-${String(x.getMonth()+1).padStart(2,"0")}-${x.getFullYear()}`; }},
+  { key:"DD MMM YYYY", label:"DD MMM YYYY (31 Jan 2025)", fn: d => new Date(d).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}) },
+  { key:"DD MMMM YYYY", label:"DD MMMM YYYY (31 January 2025)", fn: d => new Date(d).toLocaleDateString("en-IN",{day:"2-digit",month:"long",year:"numeric"}) },
+  { key:"MMM DD, YYYY", label:"MMM DD, YYYY (Jan 31, 2025)", fn: d => new Date(d).toLocaleDateString("en-US",{month:"short",day:"2-digit",year:"numeric"}) },
+  { key:"D/M/YY", label:"D/M/YY (31/1/25 Short)", fn: d => { const x=new Date(d); return `${x.getDate()}/${x.getMonth()+1}/${String(x.getFullYear()).slice(2)}`; }},
+];
+
+// ── LANE COLORS ───────────────────────────────────────────────
+const LANE_COLORS = [
+  {key:"slate",    label:"Slate Gray",   tw:"bg-slate-400",    border:"border-slate-400"},
+  {key:"sky",      label:"Sky Blue",     tw:"bg-sky-400",      border:"border-sky-400"},
+  {key:"blue",     label:"Royal Blue",   tw:"bg-blue-500",     border:"border-blue-500"},
+  {key:"indigo",   label:"Indigo",       tw:"bg-indigo-500",   border:"border-indigo-500"},
+  {key:"violet",   label:"Violet",       tw:"bg-violet-500",   border:"border-violet-500"},
+  {key:"purple",   label:"Purple",       tw:"bg-purple-500",   border:"border-purple-500"},
+  {key:"pink",     label:"Pink",         tw:"bg-pink-400",     border:"border-pink-400"},
+  {key:"rose",     label:"Rose",         tw:"bg-rose-500",     border:"border-rose-500"},
+  {key:"red",      label:"Red",          tw:"bg-red-500",      border:"border-red-500"},
+  {key:"orange",   label:"Orange",       tw:"bg-orange-400",   border:"border-orange-400"},
+  {key:"amber",    label:"Amber",        tw:"bg-amber-400",    border:"border-amber-400"},
+  {key:"yellow",   label:"Yellow",       tw:"bg-yellow-400",   border:"border-yellow-400"},
+  {key:"lime",     label:"Lime Green",   tw:"bg-lime-400",     border:"border-lime-400"},
+  {key:"green",    label:"Green",        tw:"bg-green-500",    border:"border-green-500"},
+  {key:"emerald",  label:"Emerald",      tw:"bg-emerald-400",  border:"border-emerald-400"},
+  {key:"teal",     label:"Teal",         tw:"bg-teal-400",     border:"border-teal-400"},
+  {key:"cyan",     label:"Cyan",         tw:"bg-cyan-400",     border:"border-cyan-400"},
+];
+
+// ── DATE FILTER HELPER ────────────────────────────────────────
+function applyDateFilter(dateStr, filter, customFrom, customTo) {
+  if (filter==="all") return true;
+  const d = new Date(dateStr); const now = new Date();
+  const sm = d2 => new Date(d2.getFullYear(),d2.getMonth(),1);
+  const sw = d2 => { const x=new Date(d2); x.setDate(d2.getDate()-d2.getDay()); x.setHours(0,0,0,0); return x; };
+  if (filter==="7d")  return d>=new Date(now-7*86400000);
+  if (filter==="15d") return d>=new Date(now-15*86400000);
+  if (filter==="30d") return d>=new Date(now-30*86400000);
+  if (filter==="week")  return d>=sw(now);
+  if (filter==="month") return d>=sm(now);
+  if (filter==="lastmonth") return d>=new Date(now.getFullYear(),now.getMonth()-1,1)&&d<=new Date(now.getFullYear(),now.getMonth(),0,23,59,59);
+  if (filter==="custom") return (!customFrom||d>=new Date(customFrom))&&(!customTo||d<=new Date(customTo+" 23:59:59"));
+  return true;
+}
+
 // ── SUPER ADMIN SETTINGS (stored per-session in users array) ──
 const SA_DEFAULTS = { bankDetails:"Bank: ICICI\nAccount: 111222333444\nIFSC: ICIC0001111", invoicePrefix:"SP", invoiceNextNum:1001, companyName:"SolarPro Platform", logo:null, stamp:null, signature:null };
 
 // ── THEME CONTEXT ────────────────────────────────────────────
 const ThemeCtx = createContext({ dark: true, toggle: () => {} });
+
+// ── TOAST CONTEXT ─────────────────────────────────────────────
+const ToastCtx = createContext({ toast:()=>{}, undoToast:()=>{} });
+const useToast = () => useContext(ToastCtx);
+
+// ── TOAST PROVIDER ────────────────────────────────────────────
+const ToastProvider = ({ children }) => {
+  const { dark } = useContext(ThemeCtx);
+  const [toasts, setToasts] = useState([]);
+  const add = (msg, onUndo=null, duration=5000) => {
+    const id = Date.now();
+    setToasts(t=>[...t, {id, msg, onUndo, expiry: Date.now()+duration}]);
+    setTimeout(()=>setToasts(t=>t.filter(x=>x.id!==id)), duration);
+    return id;
+  };
+  const dismiss = (id) => setToasts(t=>t.filter(x=>x.id!==id));
+  return (
+    <ToastCtx.Provider value={{toast:add}}>
+      {children}
+      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none" style={{maxWidth:340}}>
+        {toasts.map(t=>(
+          <div key={t.id} className={`pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl text-sm font-medium animate-slide-in border ${dark?"bg-slate-800 border-slate-700 text-white":"bg-white border-slate-200 text-slate-800"}`}>
+            <span className="flex-1">{t.msg}</span>
+            {t.onUndo&&<button onClick={()=>{t.onUndo();dismiss(t.id);}} className="text-amber-400 font-bold text-xs px-2 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 transition-colors">UNDO</button>}
+            <button onClick={()=>dismiss(t.id)} className="text-slate-400 hover:text-slate-300 ml-1">✕</button>
+          </div>
+        ))}
+      </div>
+    </ToastCtx.Provider>
+  );
+};
 
 // ── SEED DATA ────────────────────────────────────────────────
 const SEED_DEVELOPERS = [
@@ -120,7 +208,8 @@ const useLS = (key, init) => {
   return [val, setVal];
 };
 
-const fmtDate = (d) => { try { return new Date(d).toLocaleDateString("en-IN",{year:"numeric",month:"short",day:"numeric"}); } catch { return d||""; }};
+let _dateFormatKey = "DD MMM YYYY"; // default, overridden by app
+const fmtDate = (d) => { if (!d) return ""; try { const fmt = DATE_FORMATS.find(f=>f.key===_dateFormatKey)||DATE_FORMATS[4]; return fmt.fn(d); } catch { return String(d); }};
 const fmtINR  = (n) => new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR",maximumFractionDigits:0}).format(n||0);
 
 const daysUntil = (dateStr) => {
@@ -557,20 +646,22 @@ const buildInvoiceHTML = ({ inv, developer, customer }) => {
     </tr>`;
   }).join("");
   const logoTag = developer?.logo ? `<img src="${developer.logo}" style="height:48px;margin-bottom:8px;display:block"/>` : `<div style="font-size:20px;font-weight:900;color:#5c6ac4;margin-bottom:8px">${developer?.companyName||"Company"}</div>`;
-  return `<!DOCTYPE html><html><head><title>Invoice ${inv.id}</title>
+  const displayDate = fmtDate(inv.date||new Date().toISOString().slice(0,10));
+  return `<!DOCTYPE html><html><head><title>${docType} - ${inv.id.toUpperCase()}</title>
   <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;color:#404040;background:#fff}@page{margin:0}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style>
   </head><body>
   <div style="padding:40px 56px">
+    <div style="text-align:center;margin-bottom:24px;padding-bottom:16px;border-bottom:3px solid #5c6ac4">
+      <div style="font-size:22px;font-weight:900;color:#5c6ac4;letter-spacing:2px;text-transform:uppercase">${docType}</div>
+    </div>
     <table style="width:100%;border-collapse:collapse;margin-bottom:24px">
       <tr>
         <td style="vertical-align:top;width:100%">${logoTag}<div style="font-size:13px;color:#525252">${developer?.address||""}<br/>${developer?.phone||""} | ${developer?.email||""}</div></td>
         <td style="vertical-align:top;white-space:nowrap;text-align:right">
           <div style="font-size:13px;color:#94a3b8">Date</div>
-          <div style="font-size:14px;font-weight:700;color:#5c6ac4">${inv.date}</div>
-          <div style="font-size:13px;color:#94a3b8;margin-top:8px">Invoice #</div>
+          <div style="font-size:14px;font-weight:700;color:#5c6ac4">${displayDate}</div>
+          <div style="font-size:13px;color:#94a3b8;margin-top:8px">Doc #</div>
           <div style="font-size:14px;font-weight:700;color:#5c6ac4">${inv.id.toUpperCase()}</div>
-          <div style="font-size:13px;color:#94a3b8;margin-top:8px">Document Type</div>
-          <div style="font-size:13px;font-weight:700;color:#d97706">${docType}</div>
         </td>
       </tr>
     </table>
@@ -634,8 +725,8 @@ const printInvoice = (inv, developer, customer) => {
 const downloadInvoice = (inv, developer, customer) => {
   const html = buildInvoiceHTML({ inv, developer, customer });
   const cxName = (inv.customerName||"Customer").replace(/\s+/g,"_");
-  const {total}=calcInvoiceTotal(inv.items||[]);
-  const filename = `Invoice_${cxName}_${inv.id}.html`;
+  const docType = (inv.docType||"Invoice").replace(/\s+/g,"_");
+  const filename = `${docType}_${cxName}_${inv.id}.html`;
   downloadHTML(html, filename);
 };
 
@@ -678,32 +769,33 @@ const InvoiceItemEditor = ({ items, setItems }) => {
 // ── INVOICE LIST VIEW (shared) ────────────────────────────────
 const InvoiceListView = ({ invoices, developers, projects, users, onView, onPrint, onDownload, onMarkPaid, onConvert, currentUser, developer }) => {
   const { dark } = useTheme();
+  const [q, setQ] = useState("");
   const [dateFilter, setDateFilter] = useState("all");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [docTypeFilter, setDocTypeFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("date-desc");
 
-  const now = new Date();
-  const startOfMonth = (d) => new Date(d.getFullYear(), d.getMonth(), 1);
-  const startOfWeek  = (d) => { const x=new Date(d); x.setDate(d.getDate()-d.getDay()); x.setHours(0,0,0,0); return x; };
-  const startOfLastMonth = (d) => new Date(d.getFullYear(), d.getMonth()-1, 1);
-  const endOfLastMonth   = (d) => new Date(d.getFullYear(), d.getMonth(), 0, 23, 59, 59);
-
-  const filtered = [...invoices].sort((a,b)=>new Date(b.date)-new Date(a.date)).filter(inv=>{
-    const invDate = new Date(inv.date);
-    let pass = true;
-    if (dateFilter==="7d")   pass = invDate >= new Date(now - 7*86400000);
-    else if (dateFilter==="15d")  pass = invDate >= new Date(now - 15*86400000);
-    else if (dateFilter==="30d")  pass = invDate >= new Date(now - 30*86400000);
-    else if (dateFilter==="week") pass = invDate >= startOfWeek(now);
-    else if (dateFilter==="month")pass = invDate >= startOfMonth(now);
-    else if (dateFilter==="lastmonth") pass = invDate >= startOfLastMonth(now) && invDate <= endOfLastMonth(now);
-    else if (dateFilter==="custom") pass = (!fromDate||invDate>=new Date(fromDate)) && (!toDate||invDate<=new Date(toDate+" 23:59:59"));
-    if (statusFilter!=="all") pass = pass && inv.status===statusFilter;
-    if (docTypeFilter!=="all") pass = pass && (inv.docType||"Tax Invoice")===docTypeFilter;
-    return pass;
-  });
+  const filtered = [...invoices]
+    .sort((a,b)=>{
+      if (sortBy==="date-desc") return new Date(b.date)-new Date(a.date);
+      if (sortBy==="date-asc")  return new Date(a.date)-new Date(b.date);
+      if (sortBy==="amount-desc") return (calcInvoiceTotal(b.items||[]).total||b.amount||0)-(calcInvoiceTotal(a.items||[]).total||a.amount||0);
+      if (sortBy==="amount-asc")  return (calcInvoiceTotal(a.items||[]).total||a.amount||0)-(calcInvoiceTotal(b.items||[]).total||b.amount||0);
+      return 0;
+    })
+    .filter(inv=>{
+      if (!applyDateFilter(inv.date, dateFilter, fromDate, toDate)) return false;
+      if (statusFilter!=="all" && inv.status!==statusFilter) return false;
+      if (docTypeFilter!=="all" && (inv.docType||"Tax Invoice")!==docTypeFilter) return false;
+      if (q) {
+        const qs=q.toLowerCase();
+        const proj=projects?.find(p=>p.id===inv.projectId);
+        if (![inv.id,inv.customerName,proj?.customerName,inv.docType].some(x=>(x||"").toLowerCase().includes(qs))) return false;
+      }
+      return true;
+    });
 
   const selCls = `border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none transition-colors ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`;
 
@@ -715,44 +807,58 @@ const InvoiceListView = ({ invoices, developers, projects, users, onView, onPrin
     const email = inv.customerEmail || proj?.customerEmail || "";
     const cxName = inv.customerName || proj?.customerName || "Customer";
     const size = proj ? `${proj.projectSize} ${proj.projectUnit||"kW"}` : "";
-    const type = proj?.customerType || proj?.projectType || "";
-    const invoiceMsg = `Hi ${cxName},\n\nHere is your ${inv.docType||"Tax Invoice"} (${inv.id.toUpperCase()}) for your ${size} ${type} solar project worth ${fmtINR(total)}.\n\nPlease review and let us know if you have any questions.\n\nRegards,\n${dev?.companyName||""}`;
-    const invSubject = `${inv.docType||"Invoice"} - ${inv.id.toUpperCase()} | ${dev?.companyName||""}`;
+    const type = proj?.customerType || "";
+    const docT = inv.docType||"Tax Invoice";
+    const invoiceMsg = `Hi ${cxName},\n\nHere is your ${docT} (${inv.id.toUpperCase()}) for your ${size} ${type} solar project worth ${fmtINR(total)}.\n\nPlease review and let us know if you have any questions.\n\nRegards,\n${dev?.companyName||""}`;
+    const invSubject = `${docT} - ${inv.id.toUpperCase()} | ${dev?.companyName||""}`;
     return {phone, email, msg:invoiceMsg, subject:invSubject};
   };
 
   return (
     <div>
-      {/* Advanced filters bar */}
-      <div className={`border rounded-xl p-3 mb-4 flex flex-wrap items-center gap-2 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
-        <select value={dateFilter} onChange={e=>setDateFilter(e.target.value)} className={selCls}>
-          <option value="all">All Time</option>
-          <option value="7d">Last 7 Days</option>
-          <option value="15d">Last 15 Days</option>
-          <option value="30d">Last 30 Days</option>
-          <option value="week">This Week</option>
-          <option value="month">This Month</option>
-          <option value="lastmonth">Last Month</option>
-          <option value="custom">Custom Range</option>
-        </select>
-        {dateFilter==="custom"&&<>
-          <input type="date" value={fromDate} onChange={e=>setFromDate(e.target.value)} className={selCls}/>
-          <span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>to</span>
-          <input type="date" value={toDate} onChange={e=>setToDate(e.target.value)} className={selCls}/>
-        </>}
-        <select value={docTypeFilter} onChange={e=>setDocTypeFilter(e.target.value)} className={selCls}>
-          <option value="all">All Doc Types</option>
-          {INV_DOC_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
-        </select>
-        <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} className={selCls}>
-          <option value="all">All Status</option>
-          <option value="Draft">Draft</option>
-          <option value="Pending">Pending</option>
-          <option value="Sent">Sent</option>
-          <option value="Accepted">Accepted</option>
-          <option value="Paid">Paid</option>
-        </select>
-        <span className={`text-xs ml-auto ${tc(dark,"text-slate-400","text-slate-500")}`}>{filtered.length} record{filtered.length!==1?"s":""}</span>
+      {/* Filter + Search bar */}
+      <div className={`border rounded-xl p-3 mb-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+        <div className="flex flex-wrap items-center gap-2 mb-2">
+          <div className="flex-1 min-w-40">
+            <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search invoice #, customer, type…" className={`w-full ${selCls}`}/>
+          </div>
+          <select value={sortBy} onChange={e=>setSortBy(e.target.value)} className={selCls}>
+            <option value="date-desc">Newest First</option>
+            <option value="date-asc">Oldest First</option>
+            <option value="amount-desc">Highest Amount</option>
+            <option value="amount-asc">Lowest Amount</option>
+          </select>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <select value={dateFilter} onChange={e=>setDateFilter(e.target.value)} className={selCls}>
+            <option value="all">All Time</option>
+            <option value="7d">Last 7 Days</option>
+            <option value="15d">Last 15 Days</option>
+            <option value="30d">Last 30 Days</option>
+            <option value="week">This Week</option>
+            <option value="month">This Month</option>
+            <option value="lastmonth">Last Month</option>
+            <option value="custom">Custom Range</option>
+          </select>
+          {dateFilter==="custom"&&<>
+            <input type="date" value={fromDate} onChange={e=>setFromDate(e.target.value)} className={selCls}/>
+            <span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>to</span>
+            <input type="date" value={toDate} onChange={e=>setToDate(e.target.value)} className={selCls}/>
+          </>}
+          <select value={docTypeFilter} onChange={e=>setDocTypeFilter(e.target.value)} className={selCls}>
+            <option value="all">All Doc Types</option>
+            {INV_DOC_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+          </select>
+          <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} className={selCls}>
+            <option value="all">All Status</option>
+            <option value="Draft">Draft</option>
+            <option value="Pending">Pending</option>
+            <option value="Sent">Sent</option>
+            <option value="Accepted">Accepted</option>
+            <option value="Paid">Paid</option>
+          </select>
+          <span className={`text-xs ml-auto ${tc(dark,"text-slate-400","text-slate-500")}`}>{filtered.length} record{filtered.length!==1?"s":""}</span>
+        </div>
       </div>
 
       {!filtered.length ? (
@@ -774,31 +880,33 @@ const InvoiceListView = ({ invoices, developers, projects, users, onView, onPrin
                 const { total } = calcInvoiceTotal(inv.items||[]);
                 const displayAmt = total || inv.amount || 0;
                 const share = getShareData(inv);
-                const nextFlow = INV_FLOW_NEXT[inv.docType];
+                const convertTargets = INV_CONVERT_TARGETS[inv.docType]||[];
                 return (
                   <tr key={inv.id} className={`border-b transition-colors ${tc(dark,"border-slate-700/30 hover:bg-slate-800/20","border-slate-100 hover:bg-slate-50")}`}>
                     <td className={`px-3 py-3 font-mono text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{inv.id.toUpperCase()}</td>
                     <td className="px-3 py-3">
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${tc(dark,"bg-amber-500/20 text-amber-300","bg-amber-100 text-amber-700")}`}>{inv.docType||"Tax Invoice"}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap ${tc(dark,"bg-amber-500/20 text-amber-300","bg-amber-100 text-amber-700")}`}>{inv.docType||"Tax Invoice"}</span>
                     </td>
                     <td className="px-3 py-3">
                       <div className={`font-medium text-xs ${tc(dark,"text-white","text-slate-800")}`}>{inv.customerName || dev?.companyName || "—"}</div>
                       {proj && <div className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{proj.customerName}</div>}
                     </td>
                     <td className={`px-3 py-3 font-bold text-xs ${tc(dark,"text-white","text-slate-800")}`}>{fmtINR(displayAmt)}</td>
-                    <td className={`px-3 py-3 text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{fmtDate(inv.date)}</td>
+                    <td className={`px-3 py-3 text-xs whitespace-nowrap ${tc(dark,"text-slate-400","text-slate-500")}`}>{fmtDate(inv.date)}</td>
                     <td className="px-3 py-3"><span className={`text-xs px-2 py-0.5 rounded-full ${statusColor(inv.status,dark)}`}>{inv.status}</span></td>
                     <td className="px-3 py-3">
                       <div className="flex gap-1 flex-wrap">
                         <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>onView(inv)}><Icon name="eye" size={12}/></Btn>
                         <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>onPrint(inv)}><Icon name="print" size={12}/>Print</Btn>
                         <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>onDownload&&onDownload(inv)}><Icon name="download" size={12}/>PDF</Btn>
-                        {share.phone&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>shareWhatsApp(share.phone, share.msg)} title="WhatsApp"><span className="text-emerald-400 font-bold text-xs">WA</span></Btn>}
-                        {share.email&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>shareMail(share.email, share.subject, share.msg)} title="Email"><Icon name="mail" size={12}/></Btn>}
+                        {share.phone&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>shareWhatsApp(share.phone, share.msg)}><span className="text-emerald-400 font-bold text-xs">WA</span></Btn>}
+                        {share.email&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>shareMail(share.email, share.subject, share.msg)}><Icon name="mail" size={12}/></Btn>}
                         {inv.status==="Pending"&&onMarkPaid&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>onMarkPaid(inv.id)}><Icon name="check" size={12}/>Paid</Btn>}
-                        {nextFlow&&onConvert&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>onConvert(inv,nextFlow)} title={INV_FLOW_LABEL[inv.docType]}>
-                          <span className="text-sky-400 text-xs">→{nextFlow.split(" ").pop()}</span>
-                        </Btn>}
+                        {convertTargets.length>0&&onConvert&&convertTargets.map(target=>(
+                          <Btn key={target} size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>onConvert(inv,target)} title={`Convert to ${target}`}>
+                            <span className="text-sky-400 text-xs whitespace-nowrap">→ {target.replace("Invoice","Inv.").replace("Challan","Challan").replace("Order","Order")}</span>
+                          </Btn>
+                        ))}
                       </div>
                     </td>
                   </tr>
@@ -811,9 +919,6 @@ const InvoiceListView = ({ invoices, developers, projects, users, onView, onPrin
     </div>
   );
 };
-// ============================================================
-// SOLARPRO v3 - PART 4: AUTH, SIDEBAR, DASHBOARDS
-// ============================================================
 
 // ── LOGIN ─────────────────────────────────────────────────────
 const LoginPage = ({ onLogin, allUsers }) => {
@@ -1802,12 +1907,14 @@ const TemplatesPage = ({ templates, setTemplates, developers, currentUser }) => 
 };
 
 // ── SETTINGS PAGE (Dev Admin) ─────────────────────────────────
-const SettingsPage = ({ developer, setDevelopers }) => {
+const SettingsPage = ({ developer, setDevelopers, dateFormat, setDateFormat, projects, setProjects }) => {
   const { dark } = useTheme();
   const [form, setForm] = useState({...developer});
   const [settingsTab, setSettingsTab] = useState("company");
   const [newLane, setNewLane] = useState({name:"",color:"slate"});
   const [newUnit, setNewUnit] = useState("");
+  const [confirmDeleteLane, setConfirmDeleteLane] = useState(null);
+  const [laneTransferTarget, setLaneTransferTarget] = useState("");
   const F = (k,v) => setForm(f=>({...f,[k]:v}));
   const save = () => { setDevelopers(ds=>ds.map(d=>d.id===developer.id?{...d,...form}:d)); alert("Settings saved!"); };
 
@@ -1818,16 +1925,7 @@ const SettingsPage = ({ developer, setDevelopers }) => {
     setNewLane({name:"",color:"slate"});
   };
   const updateLane = (id,changes) => F("lanes",(form.lanes||[]).map(l=>l.id===id?{...l,...changes}:l));
-  const removeLane = (id) => F("lanes",(form.lanes||[]).filter(l=>l.id!==id));
-  const moveLane = (id,dir) => {
-    const lanes=[...(form.lanes||[])].sort((a,b)=>a.order-b.order);
-    const idx=lanes.findIndex(l=>l.id===id);
-    if (dir===-1&&idx===0||dir===1&&idx===lanes.length-1) return;
-    [lanes[idx].order,lanes[idx+dir].order]=[lanes[idx+dir].order,lanes[idx].order];
-    F("lanes",lanes);
-  };
   const addCustomUnit = () => { if(newUnit.trim()) { F("customUnits",[...(form.customUnits||[]),newUnit.trim()]); setNewUnit(""); }};
-  const laneColors = ["slate","sky","amber","orange","emerald","red","purple","pink"];
 
   return (
     <div>
@@ -1881,6 +1979,13 @@ const SettingsPage = ({ developer, setDevelopers }) => {
             <Field label="Invoice Prefix" value={form.invoicePrefix||"INV"} onChange={v=>F("invoicePrefix",v)} hint="e.g. INV, SP, GW"/>
             <Field label="Invoice Start Number" type="number" value={form.invoiceNextNum||1001} onChange={v=>F("invoiceNextNum",parseInt(v)||1001)} hint="Next invoice number"/>
           </div>
+          <div className="mb-4">
+            <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Date Format on Invoices & Documents</label>
+            <select value={dateFormat} onChange={e=>setDateFormat(e.target.value)} className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+              {DATE_FORMATS.map(f=><option key={f.key} value={f.key}>{f.label}</option>)}
+            </select>
+            <p className={`text-xs mt-1 ${tc(dark,"text-slate-500","text-slate-400")}`}>Preview: {fmtDate(TODAY)}</p>
+          </div>
         </div>
       )}
 
@@ -1902,8 +2007,15 @@ const SettingsPage = ({ developer, setDevelopers }) => {
               <input value={newUnit} onChange={e=>setNewUnit(e.target.value)} placeholder="Add unit (e.g. kVA, TR)" className={`flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white placeholder-slate-500","bg-white border-slate-300 text-slate-800")}`}/>
               <Btn size="sm" onClick={addCustomUnit}><Icon name="plus" size={13}/>Add</Btn>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {(form.customUnits||[]).map(u=><span key={u} className={`text-xs px-2 py-1 rounded-lg flex items-center gap-1 ${tc(dark,"bg-slate-700 text-slate-300","bg-slate-100 text-slate-600")}`}>{u}<button onClick={()=>F("customUnits",(form.customUnits||[]).filter(x=>x!==u))} className="text-red-400 ml-1">×</button></span>)}
+            <div className="mb-4">
+            <label className={`block text-sm font-medium mb-2 ${tc(dark,"text-slate-300","text-slate-700")}`}>Default Project Tags</label>
+            <p className={`text-xs mb-2 ${tc(dark,"text-slate-400","text-slate-500")}`}>These tags are auto-suggested when creating new projects.</p>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {(form.defaultTags||[]).map(t=><span key={t} className={`text-xs px-2 py-1 rounded-lg flex items-center gap-1 ${tc(dark,"bg-indigo-500/20 text-indigo-300","bg-indigo-100 text-indigo-700")}`}>#{t}<button onClick={()=>F("defaultTags",(form.defaultTags||[]).filter(x=>x!==t))} className="text-red-400 ml-1">×</button></span>)}
+            </div>
+            <div className="flex gap-2">
+              <input id="defTagInput" placeholder="e.g. residential, rooftop…" onKeyDown={e=>{if(e.key==="Enter"&&e.target.value.trim()){F("defaultTags",[...(form.defaultTags||[]),e.target.value.trim()]);e.target.value="";}}} className={`flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white placeholder-slate-500","bg-white border-slate-300 text-slate-800")}`}/>
+              <Btn size="sm" onClick={()=>{const inp=document.getElementById("defTagInput");if(inp?.value.trim()){F("defaultTags",[...(form.defaultTags||[]),inp.value.trim()]);inp.value="";}}}>Add</Btn>
             </div>
           </div>
         </div>
@@ -1912,28 +2024,67 @@ const SettingsPage = ({ developer, setDevelopers }) => {
       {settingsTab==="lanes"&&(
         <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
           <h3 className={`font-bold mb-3 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Project Lanes / Status</h3>
+          <p className={`text-xs mb-3 ${tc(dark,"text-slate-400","text-slate-500")}`}>Drag to reorder. Disabled lanes won't appear in project assignment.</p>
           <div className="space-y-2 mb-4">
-            {[...(form.lanes||[])].sort((a,b)=>a.order-b.order).map((lane,i,arr)=>(
-              <div key={lane.id} className={`flex items-center gap-2 border rounded-xl p-3 ${tc(dark,"bg-slate-800/40 border-slate-700","bg-slate-50 border-slate-200")}`}>
-                <div className={`w-3 h-3 rounded-full bg-${lane.color}-400 flex-shrink-0`}/>
+            {[...(form.lanes||[])].sort((a,b)=>a.order-b.order).map((lane,i,arr)=>{
+              const lc = LANE_COLORS.find(c=>c.key===lane.color)||LANE_COLORS[0];
+              return (
+              <div key={lane.id} draggable
+                onDragStart={e=>e.dataTransfer.setData("laneId",lane.id)}
+                onDragOver={e=>{e.preventDefault();}}
+                onDrop={e=>{
+                  e.preventDefault();
+                  const dragId=e.dataTransfer.getData("laneId");
+                  if(dragId===lane.id) return;
+                  const lanes2=[...(form.lanes||[])].sort((a,b)=>a.order-b.order);
+                  const fromIdx=lanes2.findIndex(l=>l.id===dragId);
+                  const toIdx=lanes2.findIndex(l=>l.id===lane.id);
+                  const item=lanes2.splice(fromIdx,1)[0];
+                  lanes2.splice(toIdx,0,item);
+                  lanes2.forEach((l,idx)=>l.order=idx);
+                  F("lanes",[...lanes2]);
+                }}
+                className={`flex items-center gap-2 border rounded-xl p-3 cursor-grab ${tc(dark,"bg-slate-800/40 border-slate-700 hover:border-slate-500","bg-slate-50 border-slate-200 hover:border-slate-300")}`}>
+                <span className={`text-slate-400 text-xs`}>⠿</span>
+                <div className={`w-3 h-3 rounded-full flex-shrink-0 ${lc.tw}`}/>
                 <span className={`flex-1 text-sm font-medium ${lane.disabled?tc(dark,"text-slate-500 line-through","text-slate-400 line-through"):tc(dark,"text-white","text-slate-800")}`}>{lane.name}</span>
                 <span className={`text-xs px-2 py-0.5 rounded-full ${lane.disabled?tc(dark,"bg-red-500/20 text-red-400","bg-red-100 text-red-600"):tc(dark,"bg-emerald-500/20 text-emerald-400","bg-emerald-100 text-emerald-700")}`}>{lane.disabled?"Disabled":"Active"}</span>
-                <div className="flex gap-1">
-                  {i>0&&<button onClick={()=>moveLane(lane.id,-1)} className={`p-1 rounded ${tc(dark,"hover:bg-slate-700 text-slate-400","hover:bg-slate-200 text-slate-500")}`}><Icon name="up" size={12}/></button>}
-                  {i<arr.length-1&&<button onClick={()=>moveLane(lane.id,1)} className={`p-1 rounded ${tc(dark,"hover:bg-slate-700 text-slate-400","hover:bg-slate-200 text-slate-500")}`}><Icon name="down" size={12}/></button>}
-                  <button onClick={()=>updateLane(lane.id,{disabled:!lane.disabled})} className={`p-1 rounded text-xs ${tc(dark,"hover:bg-slate-700 text-amber-400","hover:bg-amber-50 text-amber-600")}`}>{lane.disabled?"Enable":"Disable"}</button>
-                  <button onClick={()=>removeLane(lane.id)} className={`p-1 rounded ${tc(dark,"hover:bg-slate-700 text-red-400","hover:bg-red-50 text-red-500")}`}><Icon name="trash" size={12}/></button>
+                <button onClick={()=>updateLane(lane.id,{disabled:!lane.disabled})} className={`text-xs px-2 py-1 rounded-lg transition-colors ${tc(dark,"bg-slate-700 text-amber-400 hover:bg-slate-600","bg-amber-50 text-amber-600 hover:bg-amber-100")}`}>{lane.disabled?"Enable":"Disable"}</button>
+                <button onClick={()=>setConfirmDeleteLane(lane)} className={`p-1.5 rounded-lg transition-colors ${tc(dark,"bg-slate-700 text-red-400 hover:bg-red-500/20","bg-red-50 text-red-500 hover:bg-red-100")}`}><Icon name="trash" size={12}/></button>
+              </div>
+            );})}
+          </div>
+          {/* Confirm delete lane modal */}
+          {confirmDeleteLane&&(
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+              <div className={`border rounded-2xl p-6 max-w-sm w-full shadow-2xl ${tc(dark,"bg-[#0c1929] border-slate-700","bg-white border-slate-200")}`}>
+                <h3 className={`font-bold mb-2 ${tc(dark,"text-white","text-slate-800")}`}>Delete Lane: "{confirmDeleteLane.name}"?</h3>
+                <p className={`text-sm mb-4 ${tc(dark,"text-slate-400","text-slate-500")}`}>All projects in this lane must be moved first. Where should they go?</p>
+                <Field label="Move projects to" type="select" value={laneTransferTarget} onChange={setLaneTransferTarget}
+                  options={[{value:"",label:"— Select target lane —"},...(form.lanes||[]).filter(l=>l.id!==confirmDeleteLane.id&&!l.disabled).map(l=>({value:l.id,label:l.name}))]}/>
+                <div className="flex gap-3">
+                  <Btn onClick={()=>{
+                    if (!laneTransferTarget) return alert("Please select a target lane");
+                    // move projects
+                    setProjects && setProjects(ps=>ps.map(p=>p.laneId===confirmDeleteLane.id?{...p,laneId:laneTransferTarget}:p));
+                    F("lanes",(form.lanes||[]).filter(l=>l.id!==confirmDeleteLane.id));
+                    setConfirmDeleteLane(null); setLaneTransferTarget("");
+                  }} disabled={!laneTransferTarget} className="flex-1">Confirm Delete</Btn>
+                  <Btn variant="secondary" onClick={()=>{setConfirmDeleteLane(null);setLaneTransferTarget("");}}>Cancel</Btn>
                 </div>
               </div>
-            ))}
-          </div>
+            </div>
+          )}
           <div className={`border rounded-xl p-3 ${tc(dark,"bg-slate-800/30 border-slate-700","bg-slate-50 border-slate-200")}`}>
             <h4 className={`text-xs font-bold mb-2 ${tc(dark,"text-slate-400","text-slate-500")}`}>Add New Lane</h4>
             <div className="flex gap-2">
               <input value={newLane.name} onChange={e=>setNewLane(n=>({...n,name:e.target.value}))} placeholder="Lane name" className={`flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none ${tc(dark,"bg-slate-700 border-slate-600 text-white placeholder-slate-500","bg-white border-slate-300 text-slate-800")}`}/>
-              <select value={newLane.color} onChange={e=>setNewLane(n=>({...n,color:e.target.value}))} className={`border rounded-lg px-2 py-2 text-sm ${tc(dark,"bg-slate-700 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
-                {laneColors.map(c=><option key={c} value={c}>{c}</option>)}
-              </select>
+              <div className="relative">
+                <select value={newLane.color} onChange={e=>setNewLane(n=>({...n,color:e.target.value}))} className={`border rounded-lg pl-7 pr-3 py-2 text-sm ${tc(dark,"bg-slate-700 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+                  {LANE_COLORS.map(c=><option key={c.key} value={c.key}>{c.label}</option>)}
+                </select>
+                <div className={`absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full ${(LANE_COLORS.find(c=>c.key===newLane.color)||LANE_COLORS[0]).tw}`}/>
+              </div>
               <Btn size="sm" onClick={addLane} disabled={!newLane.name.trim()}><Icon name="plus" size={13}/>Add</Btn>
             </div>
           </div>
@@ -1945,22 +2096,37 @@ const SettingsPage = ({ developer, setDevelopers }) => {
   );
 };
 
-// ── PROJECTS PAGE — Kanban + Advanced Filters + Bulk Upload ──
+// ── PROJECTS PAGE — Complete v6 ──────────────────────────────
 const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId, developer, users, setDevelopers }) => {
   const { dark } = useTheme();
-  const [view, setView] = useState("kanban"); // kanban | list
+  const { toast } = useToast();
+  const [view, setView] = useState("kanban");
   const [showAdd, setShowAdd] = useState(false);
   const [editProject, setEditProject] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [bulkAction, setBulkAction] = useState("");
+  const [bulkTarget, setBulkTarget] = useState("");
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null);
   const fileInputRef = useRef();
 
-  const lanes = developer?.lanes?.filter(l=>!l.disabled).sort((a,b)=>a.order-b.order) || [{id:"default",name:"All Projects",color:"slate"}];
+  const allLanes = developer?.lanes?.sort((a,b)=>a.order-b.order) || [];
+  const lanes = allLanes.filter(l=>!l.disabled);
   const devTeam = users ? users.filter(u=>u.developerId===currentUser.developerId && u.role!==ROLES.SUPER_ADMIN && u.active) : [];
   const customCities = developer?.customCities||[];
 
-  // Filter state
-  const [filters, setFilters] = useState({ q:"", projectId:"", customerName:"", customerPhone:"", customerType:"all", assignedTo:"all", minSize:"", maxSize:"", enquiryType:"all" });
+  // Filters
+  const [filters, setFilters] = useState({
+    q:"", projectId:"", customerName:"", customerPhone:"",
+    customerTypes:[], assignedTos:[], enquiryTypes:[], laneIds:[],
+    minSize:"", maxSize:"",
+    dateFilter:"all", dateFrom:"", dateTo:"",
+    city:"", pincode:"", state:"", address:"", tags:[],
+  });
   const FF = (k,v) => setFilters(f=>({...f,[k]:v}));
+  const toggleArrFilter = (k,v) => setFilters(f=>({...f,[k]:f[k].includes(v)?f[k].filter(x=>x!==v):[...f[k],v]}));
 
   const myProjects = projects.filter(p => {
     if (currentUser.role===ROLES.USER) return p.assignedUserId===currentUser.id || p.userId===currentUser.id;
@@ -1969,31 +2135,38 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
 
   const applyFilters = (list) => list.filter(p => {
     const qs = filters.q.toLowerCase();
-    if (qs && !p.customerName?.toLowerCase().includes(qs) && !p.projectId?.toLowerCase().includes(qs) && !(p.customerAddress||"").toLowerCase().includes(qs)) return false;
+    if (qs && ![p.customerName,p.projectId,p.customerAddress,p.customerCity,p.customerPincode,p.customerState,p.customerPhone,p.customerEmail].some(x=>(x||"").toLowerCase().includes(qs))) return false;
     if (filters.projectId && !p.projectId?.toLowerCase().includes(filters.projectId.toLowerCase())) return false;
     if (filters.customerName && !p.customerName?.toLowerCase().includes(filters.customerName.toLowerCase())) return false;
     if (filters.customerPhone && !(p.customerPhone||"").includes(filters.customerPhone)) return false;
-    if (filters.customerType!=="all" && p.customerType!==filters.customerType) return false;
-    if (filters.assignedTo!=="all" && p.assignedUserId!==filters.assignedTo && p.userId!==filters.assignedTo) return false;
+    if (filters.city && !(p.customerCity||"").toLowerCase().includes(filters.city.toLowerCase())) return false;
+    if (filters.pincode && !(p.customerPincode||"").includes(filters.pincode)) return false;
+    if (filters.state && !(p.customerState||"").toLowerCase().includes(filters.state.toLowerCase())) return false;
+    if (filters.address && !(p.customerAddress||"").toLowerCase().includes(filters.address.toLowerCase())) return false;
+    if (filters.customerTypes.length && !filters.customerTypes.includes(p.customerType)) return false;
+    if (filters.assignedTos.length && !filters.assignedTos.includes(p.assignedUserId||p.userId)) return false;
+    if (filters.enquiryTypes.length && !filters.enquiryTypes.includes(p.enquiryType)) return false;
+    if (filters.laneIds.length && !filters.laneIds.includes(p.laneId)) return false;
     if (filters.minSize && parseFloat(p.projectSize)<parseFloat(filters.minSize)) return false;
     if (filters.maxSize && parseFloat(p.projectSize)>parseFloat(filters.maxSize)) return false;
-    if (filters.enquiryType!=="all" && p.enquiryType!==filters.enquiryType) return false;
+    if (filters.tags.length && !filters.tags.some(t=>(p.tags||[]).includes(t))) return false;
+    if (!applyDateFilter(p.createdAt, filters.dateFilter, filters.dateFrom, filters.dateTo)) return false;
     return true;
   });
 
   const filteredProjects = applyFilters(myProjects);
 
-  const blankForm = { customerName:"", customerType:"Residential", pocName:"", countryCode:"+91", customerPhone:"", customerEmail:"", customerPincode:"", customerCity:"", customerState:"", customerAddress:"", projectSize:"", projectUnit:developer?.defaultProjectUnit||"kW", enquiryType:"Warm", laneId:lanes[0]?.id||"", assignedUserId:currentUser.id, projectIdOverride:"" };
+  const blankForm = { customerName:"", customerType:"Residential", pocName:"", countryCode:"+91", customerPhone:"", customerEmail:"", customerPincode:"", customerCity:"", customerState:"", customerAddress:"", projectSize:"", projectUnit:developer?.defaultProjectUnit||"kW", enquiryType:"Warm", laneId:lanes[0]?.id||"", assignedUserId:currentUser.id, tags:[] };
   const [form, setForm] = useState(blankForm);
   const SF = (k,v) => setForm(f=>({...f,[k]:v}));
 
-  const autoProjectId = () => {
+  // Auto Project ID (always based on latest, not editable by user)
+  const getNextProjectId = () => {
     const prefix = developer?.projectPrefix || "PRJ";
     const num = developer?.projectNextNum || 1001;
     return `${prefix}-${num}`;
   };
 
-  // Pincode lookup
   const onPincodeChange = (pin) => {
     SF("customerPincode", pin);
     if (pin.length===6 && PINCODE_MAP[pin]) {
@@ -2003,8 +2176,8 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
   };
 
   const saveProject = (isEdit) => {
-    const phone = `${form.countryCode} ${form.customerPhone}`.trim();
-    const pid = isEdit ? editProject.projectId : (form.projectIdOverride || autoProjectId());
+    const phone = form.customerPhone ? `${form.countryCode} ${form.customerPhone}`.trim() : "";
+    let pid = isEdit ? editProject.projectId : getNextProjectId();
     if (!isEdit) setDevelopers(ds=>ds.map(d=>d.id===developer.id?{...d,projectNextNum:(d.projectNextNum||1001)+1}:d));
     const proj = {
       ...form,
@@ -2016,46 +2189,124 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
       assignedUserId: form.assignedUserId||currentUser.id,
       createdAt: isEdit ? editProject.createdAt : TODAY,
       lastActivity: TODAY,
+      activityLog: isEdit ? (editProject.activityLog||[]) : [],
     };
+    // add activity entry
+    const entry = { action: isEdit?"Project Updated":"Project Created", date:TODAY, time:new Date().toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"}), by:currentUser.name };
+    proj.activityLog = [...(proj.activityLog||[]), entry];
     if (isEdit) setProjects(ps=>ps.map(p=>p.id===editProject.id?proj:p));
     else setProjects(ps=>[...ps,proj]);
     setShowAdd(false); setEditProject(null); setForm(blankForm);
+    toast(isEdit?"Project updated successfully ✓":"Project created: "+pid);
   };
 
   const openEdit = (p) => {
-    const [cc, ...numParts] = (p.customerPhone||"").split(" ");
-    setForm({...blankForm, ...p, countryCode:COUNTRY_CODES.find(c=>c.code===cc)?cc:"+91", customerPhone:numParts.join(" ")||p.customerPhone, projectIdOverride:p.projectId});
+    const parts = (p.customerPhone||"").split(" ");
+    const cc = COUNTRY_CODES.find(c=>c.code===parts[0]) ? parts[0] : "+91";
+    const num = COUNTRY_CODES.find(c=>c.code===parts[0]) ? parts.slice(1).join(" ") : p.customerPhone||"";
+    setForm({...blankForm, ...p, countryCode:cc, customerPhone:num, tags:p.tags||[]});
     setEditProject(p);
     setShowAdd(true);
   };
 
+  // Drag-drop lane change
+  const handleDrop = (e, targetLaneId) => {
+    e.preventDefault();
+    const pid = e.dataTransfer.getData("projectId");
+    if (!pid) return;
+    const p = projects.find(x=>x.id===pid);
+    if (!p) return;
+    const entry = { action:`Moved to ${lanes.find(l=>l.id===targetLaneId)?.name||targetLaneId}`, date:TODAY, time:new Date().toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"}), by:currentUser.name };
+    setProjects(ps=>ps.map(x=>x.id===pid?{...x,laneId:targetLaneId,lastActivity:TODAY,activityLog:[...(x.activityLog||[]),entry]}:x));
+    toast(`Moved to ${lanes.find(l=>l.id===targetLaneId)?.name||"lane"}`);
+  };
+
+  // Bulk operations
+  const execBulkAction = () => {
+    const ids = [...selectedIds];
+    if (bulkAction==="move" && bulkTarget) {
+      setProjects(ps=>ps.map(p=>ids.includes(p.id)?{...p,laneId:bulkTarget,lastActivity:TODAY}:p));
+      toast(`Moved ${ids.length} project(s) to ${lanes.find(l=>l.id===bulkTarget)?.name}`);
+    } else if (bulkAction==="assign" && bulkTarget) {
+      setProjects(ps=>ps.map(p=>ids.includes(p.id)?{...p,assignedUserId:bulkTarget,lastActivity:TODAY}:p));
+      toast(`Assigned ${ids.length} project(s) to ${devTeam.find(u=>u.id===bulkTarget)?.name}`);
+    } else if (bulkAction==="delete") {
+      const backup = projects.filter(p=>ids.includes(p.id));
+      setProjects(ps=>ps.filter(p=>!ids.includes(p.id)));
+      toast(`Deleted ${ids.length} project(s)`, ()=>setProjects(ps=>[...ps,...backup]), 30000);
+    }
+    setSelectedIds(new Set()); setShowBulkModal(false); setBulkAction(""); setBulkTarget("");
+  };
+
+  // Delete single
+  const deleteProject = (p) => {
+    setProjects(ps=>ps.filter(x=>x.id!==p.id));
+    setConfirmDelete(null);
+    toast(`Deleted "${p.customerName}"`, ()=>setProjects(ps=>[...ps,p]), 30000);
+  };
+
+  // Quick lane/assign change from card
+  const quickUpdate = (pid, changes) => {
+    const entry = Object.entries(changes).map(([k,v])=>`${k}→${v}`).join(", ");
+    const logEntry = { action:`Updated: ${entry}`, date:TODAY, time:new Date().toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"}), by:currentUser.name };
+    setProjects(ps=>ps.map(p=>p.id===pid?{...p,...changes,lastActivity:TODAY,activityLog:[...(p.activityLog||[]),logEntry]}:p));
+  };
+
   // Excel export
   const exportExcel = () => {
-    const rows = [["Project ID","Customer","Type","Phone","Email","Pincode","City","State","Address","Size","Unit","Lane","Enquiry","Assigned To","Created At"]];
+    const allUnits = [...new Set([...PROJECT_UNITS,...(developer?.customUnits||[])])];
+    const rows = [["Project ID","Customer Name","Customer Type","Phone","Email","Pincode","City","State","Address","Project Size","Project Unit","Lane","Enquiry Type","Assigned To","Tags","Created At"]];
     filteredProjects.forEach(p=>{
       const user = devTeam.find(u=>u.id===(p.assignedUserId||p.userId));
       const lane = lanes.find(l=>l.id===p.laneId);
-      rows.push([p.projectId||"",p.customerName||"",p.customerType||"",p.customerPhone||"",p.customerEmail||"",p.customerPincode||"",p.customerCity||"",p.customerState||"",p.customerAddress||"",p.projectSize||"",p.projectUnit||"kW",lane?.name||"",p.enquiryType||"",user?.name||"",p.createdAt||""]);
+      rows.push([p.projectId||"",p.customerName||"",p.customerType||"",p.customerPhone||"",p.customerEmail||"",p.customerPincode||"",p.customerCity||"",p.customerState||"",p.customerAddress||"",p.projectSize||"",p.projectUnit||"kW",lane?.name||"",p.enquiryType||"",user?.name||"",(p.tags||[]).join("|"),p.createdAt||""]);
     });
     const csv = rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], {type:"text/csv"});
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href=url; a.download="projects.csv"; a.click();
+    const a = document.createElement("a"); a.href=url; a.download="projects_export.csv"; a.click();
     URL.revokeObjectURL(url);
   };
 
-  // Excel import
+  // Download template with dropdowns (XLSX approach using CSV with data validation note)
+  const downloadTemplate = () => {
+    const laneNames = lanes.map(l=>l.name).join("|");
+    const unitNames = [...new Set([...PROJECT_UNITS,...(developer?.customUnits||[])])].join("|");
+    const enquiryOpts = "Hot|Warm|Cold";
+    const typeOpts = "Residential|Commercial|Industrial|Government|Other";
+    const assignedOpts = devTeam.map(u=>u.name).join("|");
+    const header = ["Project ID (auto)","Customer Name*","Customer Type ("+typeOpts+")","Phone","Email","Pincode","City","State","Address","Project Size*","Unit ("+unitNames+")","Lane ("+laneNames+")","Enquiry ("+enquiryOpts+")","Assigned To ("+assignedOpts+")","Tags (pipe separated)"];
+    const example = [getNextProjectId(),"John Doe","Residential","+91 9800000000","john@email.com","400001","Mumbai","Maharashtra","123 Street",10,"kW",lanes[0]?.name||"New Enquiry","Warm",devTeam[0]?.name||"","solar|residential"];
+    const csv = [header,example].map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], {type:"text/csv"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href=url; a.download="projects_import_template.csv"; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Import CSV
   const importExcel = (e) => {
     const file = e.target.files[0]; if(!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
       const text = ev.target.result;
-      const lines = text.split("\n").slice(1); // skip header
-      const imported = lines.filter(l=>l.trim()).map((line,i)=>{
-        const cols = line.split(",").map(c=>c.replace(/^"|"$/g,"").trim());
-        return { id:`p${Date.now()}${i}`, projectId:cols[0]||autoProjectId(), customerName:cols[1]||"", customerType:cols[2]||"Residential", customerPhone:cols[3]||"", customerEmail:cols[4]||"", customerPincode:cols[5]||"", customerCity:cols[6]||"", customerState:cols[7]||"", customerAddress:cols[8]||"", projectSize:parseFloat(cols[9])||0, projectUnit:cols[10]||"kW", enquiryType:cols[12]||"Warm", laneId:lanes[0]?.id||"", developerId:currentUser.developerId, userId:currentUser.id, assignedUserId:currentUser.id, createdAt:TODAY, lastActivity:TODAY };
+      const lines = text.split("\n").slice(1).filter(l=>l.trim());
+      let nextNum = developer?.projectNextNum || 1001;
+      const imported = lines.map((line,i)=>{
+        const cols = line.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(c=>c.replace(/^"|"$/g,"").trim());
+        const prefix = developer?.projectPrefix || "PRJ";
+        // Use existing project ID from col[0] if it looks valid, else auto-generate
+        const rawId = cols[0]?.trim();
+        const pid = (rawId && rawId !== "Project ID (auto)" && rawId.includes("-")) ? rawId : `${prefix}-${nextNum++}`;
+        const laneByName = lanes.find(l=>l.name.toLowerCase()===cols[11]?.toLowerCase());
+        const userByName = devTeam.find(u=>u.name.toLowerCase()===cols[13]?.toLowerCase());
+        return { id:`p${Date.now()}${i}`, projectId:pid, customerName:cols[1]||"", customerType:cols[2]||"Residential", customerPhone:cols[3]||"", customerEmail:cols[4]||"", customerPincode:cols[5]||"", customerCity:cols[6]||"", customerState:cols[7]||"", customerAddress:cols[8]||"", projectSize:parseFloat(cols[9])||0, projectUnit:cols[10]||"kW", laneId:laneByName?.id||lanes[0]?.id||"", enquiryType:cols[12]||"Warm", assignedUserId:userByName?.id||currentUser.id, userId:userByName?.id||currentUser.id, tags:cols[14]?cols[14].split("|").filter(Boolean):[], developerId:currentUser.developerId, createdAt:TODAY, lastActivity:TODAY, activityLog:[{action:"Imported from CSV",date:TODAY,time:new Date().toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"}),by:currentUser.name}] };
       });
+      // update developer nextNum
+      setDevelopers(ds=>ds.map(d=>d.id===developer.id?{...d,projectNextNum:nextNum}:d));
       setProjects(ps=>[...ps,...imported]);
+      toast(`Imported ${imported.length} project(s) successfully`);
+      setShowImport(false);
     };
     reader.readAsText(file);
     e.target.value="";
@@ -2063,38 +2314,101 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
 
   const addCustomCity = (city) => setDevelopers(ds=>ds.map(d=>d.id===developer?.id?{...d,customCities:[...(d.customCities||[]),city]}:d));
 
+  // All tags in this developer's projects
+  const allTags = [...new Set(myProjects.flatMap(p=>p.tags||[]))];
+
+  const laneColorBorder = (color) => { const lc=LANE_COLORS.find(c=>c.key===color); return lc?lc.border:"border-slate-400"; };
+
   const typeColors = { Residential:"bg-sky-500/20 text-sky-300 border-sky-500/30", Commercial:"bg-amber-500/20 text-amber-300 border-amber-500/30", Industrial:"bg-purple-500/20 text-purple-300 border-purple-500/30", Government:"bg-emerald-500/20 text-emerald-300 border-emerald-500/30", Other:"bg-slate-500/20 text-slate-300 border-slate-500/30" };
   const typeColorsL = { Residential:"bg-sky-100 text-sky-700", Commercial:"bg-amber-100 text-amber-700", Industrial:"bg-purple-100 text-purple-700", Government:"bg-emerald-100 text-emerald-700", Other:"bg-slate-100 text-slate-600" };
   const enquiryColors = { Hot:"bg-red-500/20 text-red-300", Warm:"bg-orange-500/20 text-orange-300", Cold:"bg-sky-500/20 text-sky-300" };
   const enquiryColorsL = { Hot:"bg-red-100 text-red-700", Warm:"bg-orange-100 text-orange-700", Cold:"bg-sky-100 text-sky-700" };
-  const laneAccents = { slate:"border-slate-500", sky:"border-sky-400", amber:"border-amber-400", orange:"border-orange-400", emerald:"border-emerald-400", red:"border-red-400", purple:"border-purple-400" };
 
   const isLocked = !currentUser?.active || (developer && (developer.paused || (developer.subscriptionEnd && new Date(developer.subscriptionEnd)<new Date())));
   if (isLocked) return <LockedPage developer={developer} reason={!currentUser?.active?"inactive":developer?.paused?"paused":"expired"}/>;
 
+  // Multi-select helpers
+  const toggleSelect = (id) => setSelectedIds(s=>{ const n=new Set(s); n.has(id)?n.delete(id):n.add(id); return n; });
+  const toggleSelectAll = (ids) => setSelectedIds(s=>ids.every(id=>s.has(id))?new Set():new Set(ids));
+
+  const MultiCheckbox = ({checked,onChange,partial})=>(
+    <button onClick={onChange} className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${checked||partial?tc(dark,"bg-amber-500 border-amber-500","bg-amber-500 border-amber-500"):tc(dark,"border-slate-600 bg-slate-700/50","border-slate-300 bg-white")}`}>
+      {checked&&<svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+      {partial&&!checked&&<svg width="8" height="2" viewBox="0 0 8 2"><rect x="0" y="0.5" width="8" height="1" fill="white" rx="0.5"/></svg>}
+    </button>
+  );
+
   const ProjectCard = ({p}) => {
-    const lane = lanes.find(l=>l.id===p.laneId);
+    const lane = allLanes.find(l=>l.id===p.laneId);
     const user = devTeam.find(u=>u.id===(p.assignedUserId||p.userId));
+    const isSelected = selectedIds.has(p.id);
     return (
-      <div className={`border rounded-xl p-3 mb-2 cursor-pointer transition-all hover:shadow-md ${tc(dark,"bg-[#0c1929] border-slate-700/50 hover:border-amber-500/30","bg-white border-slate-200 hover:border-amber-300 shadow-sm")}`}>
-        <div className="flex items-start justify-between mb-2">
-          <span className={`text-xs font-mono px-1.5 py-0.5 rounded ${tc(dark,"bg-slate-700 text-slate-400","bg-slate-100 text-slate-500")}`}>{p.projectId||"—"}</span>
+      <div draggable onDragStart={e=>e.dataTransfer.setData("projectId",p.id)}
+        className={`border rounded-xl p-3 mb-2 transition-all cursor-pointer ${isSelected?tc(dark,"border-amber-500/70 bg-amber-500/5","border-amber-400 bg-amber-50"):tc(dark,"bg-[#0c1929] border-slate-700/50 hover:border-amber-500/30","bg-white border-slate-200 hover:border-amber-300 shadow-sm hover:shadow-md")}`}>
+        <div className="flex items-start gap-2 mb-2">
+          <MultiCheckbox checked={isSelected} onChange={()=>toggleSelect(p.id)}/>
+          <span className={`text-xs font-mono px-1.5 py-0.5 rounded flex-1 ${tc(dark,"bg-slate-700 text-slate-400","bg-slate-100 text-slate-500")}`}>{p.projectId||"—"}</span>
           <span className={`text-xs px-2 py-0.5 rounded-full border ${tc(dark,enquiryColors[p.enquiryType]||"bg-slate-500/20 text-slate-300 border-slate-500/30",enquiryColorsL[p.enquiryType]||"bg-slate-100 text-slate-600")}`}>{p.enquiryType||"—"}</span>
         </div>
         <div onClick={()=>setCurrentProjectId(p.id)}>
           <h4 className={`font-bold text-sm mb-0.5 ${tc(dark,"text-white","text-slate-800")}`}>{p.customerName}</h4>
-          {p.pocName&&<p className={`text-xs mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>POC: {p.pocName}</p>}
+          {p.pocName&&<p className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>POC: {p.pocName}</p>}
           <p className={`text-xs mb-2 ${tc(dark,"text-slate-400","text-slate-500")}`}>{[p.customerCity,p.customerState].filter(Boolean).join(", ")||p.customerAddress||"—"}</p>
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className={`text-xs px-2 py-0.5 rounded-full ${tc(dark,typeColors[p.customerType]||"bg-slate-500/20 text-slate-300 border border-slate-500/30",typeColorsL[p.customerType]||"bg-slate-100 text-slate-600")}`}>{p.customerType||"—"}</span>
-            <span className={`text-xs font-medium ${tc(dark,"text-amber-400","text-amber-600")}`}>{p.projectSize} {p.projectUnit||"kW"}</span>
-            {user&&<span className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>→{user.name}</span>}
+          <div className="flex items-center gap-1.5 flex-wrap mb-2">
+            <span className={`text-xs px-2 py-0.5 rounded-full ${tc(dark,typeColors[p.customerType]||"bg-slate-500/20 text-slate-300",typeColorsL[p.customerType]||"bg-slate-100 text-slate-600")}`}>{p.customerType||"—"}</span>
+            <span className={`text-xs font-bold ${tc(dark,"text-amber-400","text-amber-600")}`}>{p.projectSize} {p.projectUnit||"kW"}</span>
           </div>
+          {p.tags?.length>0&&<div className="flex flex-wrap gap-1 mb-2">{p.tags.map(t=><span key={t} className={`text-xs px-1.5 py-0.5 rounded ${tc(dark,"bg-indigo-500/20 text-indigo-300","bg-indigo-100 text-indigo-700")}`}>#{t}</span>)}</div>}
         </div>
-        <div className="flex gap-1 mt-2">
-          <button onClick={e=>{e.stopPropagation();openEdit(p);}} className={`text-xs px-2 py-1 rounded-lg transition-colors ${tc(dark,"bg-slate-700 text-slate-300 hover:bg-slate-600","bg-slate-100 text-slate-600 hover:bg-slate-200")}`}><Icon name="edit" size={11}/></button>
-          <button onClick={e=>{e.stopPropagation();setCurrentProjectId(p.id);}} className={`text-xs px-2 py-1 rounded-lg transition-colors ${tc(dark,"bg-slate-700 text-slate-300 hover:bg-slate-600","bg-slate-100 text-slate-600 hover:bg-slate-200")}`}><Icon name="eye" size={11}/></button>
+        {/* Quick actions row */}
+        <div className="flex gap-1 mt-1" onClick={e=>e.stopPropagation()}>
+          <select value={p.laneId||""} onChange={e=>quickUpdate(p.id,{laneId:e.target.value})} className={`text-xs border rounded-lg px-1.5 py-1 flex-1 focus:outline-none ${tc(dark,"bg-slate-700 border-slate-600 text-slate-300","bg-slate-50 border-slate-200 text-slate-600")}`}>
+            {lanes.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}
+          </select>
+          <select value={p.assignedUserId||p.userId||""} onChange={e=>quickUpdate(p.id,{assignedUserId:e.target.value,userId:e.target.value})} className={`text-xs border rounded-lg px-1.5 py-1 flex-1 focus:outline-none ${tc(dark,"bg-slate-700 border-slate-600 text-slate-300","bg-slate-50 border-slate-200 text-slate-600")}`}>
+            {devTeam.map(u=><option key={u.id} value={u.id}>{u.name.split(" ")[0]}</option>)}
+          </select>
+          <button onClick={()=>openEdit(p)} className={`p-1 rounded-lg ${tc(dark,"bg-slate-700 text-slate-300 hover:bg-slate-600","bg-slate-100 text-slate-600 hover:bg-slate-200")}`}><Icon name="edit" size={11}/></button>
+          <button onClick={()=>setConfirmDelete(p)} className={`p-1 rounded-lg ${tc(dark,"bg-slate-700 text-red-400 hover:bg-red-500/20","bg-slate-100 text-red-500 hover:bg-red-50")}`}><Icon name="trash" size={11}/></button>
         </div>
+      </div>
+    );
+  };
+
+  // Date filter dropdown for filters
+  const DateFilterSelect = ({val,onChange}) => (
+    <select value={val} onChange={e=>onChange(e.target.value)} className={`border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+      <option value="all">All Time</option>
+      <option value="7d">Last 7 Days</option>
+      <option value="15d">Last 15 Days</option>
+      <option value="30d">Last 30 Days</option>
+      <option value="week">This Week</option>
+      <option value="month">This Month</option>
+      <option value="lastmonth">Last Month</option>
+      <option value="custom">Custom Range</option>
+    </select>
+  );
+
+  // Multi-select dropdown
+  const MultiSelectDropdown = ({options, selected, onToggle, placeholder}) => {
+    const [open, setOpen] = useState(false);
+    return (
+      <div className="relative">
+        <button onClick={()=>setOpen(o=>!o)} className={`border rounded-lg px-2.5 py-1.5 text-xs text-left min-w-24 flex items-center gap-1 ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+          <span className="flex-1 truncate">{selected.length?`${selected.length} selected`:placeholder}</span>
+          <span className="text-slate-400">▾</span>
+        </button>
+        {open&&(
+          <div className={`absolute z-30 top-full left-0 mt-1 min-w-40 border rounded-xl shadow-xl py-1 ${tc(dark,"bg-slate-800 border-slate-600","bg-white border-slate-200")}`}
+            onMouseLeave={()=>setOpen(false)}>
+            {options.map(o=>(
+              <label key={o.value} className={`flex items-center gap-2 px-3 py-2 text-xs cursor-pointer transition-colors ${tc(dark,"hover:bg-slate-700 text-white","hover:bg-slate-50 text-slate-800")}`}>
+                <input type="checkbox" checked={selected.includes(o.value)} onChange={()=>onToggle(o.value)} className="accent-amber-500"/>
+                {o.label}
+              </label>
+            ))}
+          </div>
+        )}
       </div>
     );
   };
@@ -2105,62 +2419,113 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className={`text-xl font-bold ${tc(dark,"text-white","text-slate-800")}`}>Projects</h1>
-          <p className={`text-sm ${tc(dark,"text-slate-400","text-slate-500")}`}>{filteredProjects.length} of {myProjects.length} projects</p>
+          <p className={`text-sm ${tc(dark,"text-slate-400","text-slate-500")}`}>{filteredProjects.length} of {myProjects.length} projects{selectedIds.size>0&&` · ${selectedIds.size} selected`}</p>
         </div>
         <div className="flex gap-2 flex-wrap items-center">
           <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>setView(v=>v==="kanban"?"list":"kanban")}><Icon name={view==="kanban"?"sort":"kanban"} size={15}/>{view==="kanban"?"List":"Kanban"}</Btn>
           <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={exportExcel}><Icon name="export" size={14}/>Export</Btn>
-          <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>fileInputRef.current?.click()}><Icon name="import" size={14}/>Import</Btn>
-          <input ref={fileInputRef} type="file" accept=".csv,.xlsx" onChange={importExcel} className="hidden"/>
+          <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>setShowImport(true)}><Icon name="import" size={14}/>Import</Btn>
+          <input ref={fileInputRef} type="file" accept=".csv" onChange={importExcel} className="hidden"/>
           <Btn onClick={()=>{setEditProject(null);setForm({...blankForm,laneId:lanes[0]?.id||""});setShowAdd(true);}}><Icon name="plus" size={15}/>New Project</Btn>
         </div>
       </div>
 
-      {/* Search + Quick Filters */}
+      {/* Search + Filter bar */}
       <div className="flex flex-wrap gap-2 mb-3">
-        <div className="flex-1 min-w-48"><SearchBar value={filters.q} onChange={v=>FF("q",v)} placeholder="Search project ID, customer, address…"/></div>
-        <button onClick={()=>setShowFilters(f=>!f)} className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm transition-colors ${showFilters?tc(dark,"bg-amber-500/20 border-amber-500/40 text-amber-300","bg-amber-50 border-amber-300 text-amber-700"):tc(dark,"border-slate-600 text-slate-400 hover:border-slate-500","border-slate-300 text-slate-500 hover:border-slate-400")}`}>
-          <Icon name="filter" size={15}/> Filters
+        <div className="flex-1 min-w-48"><SearchBar value={filters.q} onChange={v=>FF("q",v)} placeholder="Search name, ID, city, pincode, phone, email…"/></div>
+        <button onClick={()=>setShowFilters(f=>!f)} className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm transition-colors ${showFilters?tc(dark,"bg-amber-500/20 border-amber-500/40 text-amber-300","bg-amber-50 border-amber-300 text-amber-700"):tc(dark,"border-slate-600 text-slate-400 hover:border-slate-500","border-slate-300 text-slate-500")}`}>
+          <Icon name="filter" size={15}/> Filters {Object.values(filters).some(v=>Array.isArray(v)?v.length>0:(v&&v!=="all"))&&<span className="w-1.5 h-1.5 rounded-full bg-amber-400"/>}
         </button>
+        <DateFilterSelect val={filters.dateFilter} onChange={v=>FF("dateFilter",v)}/>
+        {filters.dateFilter==="custom"&&<>
+          <input type="date" value={filters.dateFrom} onChange={e=>FF("dateFrom",e.target.value)} className={`border rounded-lg px-2 py-1.5 text-xs ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}/>
+          <input type="date" value={filters.dateTo} onChange={e=>FF("dateTo",e.target.value)} className={`border rounded-lg px-2 py-1.5 text-xs ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}/>
+        </>}
       </div>
 
       {/* Advanced Filters */}
       {showFilters&&(
-        <div className={`border rounded-xl p-4 mb-4 grid grid-cols-2 lg:grid-cols-4 gap-3 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
-          <Field label="Project ID" value={filters.projectId} onChange={v=>FF("projectId",v)}/>
-          <Field label="Customer Name" value={filters.customerName} onChange={v=>FF("customerName",v)}/>
-          <Field label="Customer Phone" value={filters.customerPhone} onChange={v=>FF("customerPhone",v)}/>
-          <Field label="Customer Type" type="select" value={filters.customerType} onChange={v=>FF("customerType",v)} options={[{value:"all",label:"All Types"},...["Residential","Commercial","Industrial","Government","Other"].map(t=>({value:t,label:t}))]}/>
-          <Field label="Enquiry Type" type="select" value={filters.enquiryType} onChange={v=>FF("enquiryType",v)} options={[{value:"all",label:"All"},...["Hot","Warm","Cold"].map(t=>({value:t,label:t}))]}/>
-          <Field label="Assigned To" type="select" value={filters.assignedTo} onChange={v=>FF("assignedTo",v)} options={[{value:"all",label:"Anyone"},...devTeam.map(u=>({value:u.id,label:u.name}))]}/>
-          <Field label="Min Size" type="number" value={filters.minSize} onChange={v=>FF("minSize",v)} placeholder="0"/>
-          <Field label="Max Size" type="number" value={filters.maxSize} onChange={v=>FF("maxSize",v)} placeholder="Any"/>
-          <button onClick={()=>setFilters({q:"",projectId:"",customerName:"",customerPhone:"",customerType:"all",assignedTo:"all",minSize:"",maxSize:"",enquiryType:"all"})} className="text-xs text-amber-400 underline self-end pb-3">Clear Filters</button>
+        <div className={`border rounded-xl p-4 mb-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
+            <Field label="Project ID" value={filters.projectId} onChange={v=>FF("projectId",v)}/>
+            <Field label="Customer Name" value={filters.customerName} onChange={v=>FF("customerName",v)}/>
+            <Field label="Phone" value={filters.customerPhone} onChange={v=>FF("customerPhone",v)}/>
+            <Field label="City" value={filters.city} onChange={v=>FF("city",v)}/>
+            <Field label="Pincode" value={filters.pincode} onChange={v=>FF("pincode",v)}/>
+            <Field label="State" value={filters.state} onChange={v=>FF("state",v)}/>
+            <Field label="Min Size" type="number" value={filters.minSize} onChange={v=>FF("minSize",v)}/>
+            <Field label="Max Size" type="number" value={filters.maxSize} onChange={v=>FF("maxSize",v)}/>
+          </div>
+          <div className="flex flex-wrap gap-2 items-center">
+            <span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>Type:</span>
+            <MultiSelectDropdown placeholder="All Types" selected={filters.customerTypes} onToggle={v=>toggleArrFilter("customerTypes",v)} options={["Residential","Commercial","Industrial","Government","Other"].map(t=>({value:t,label:t}))}/>
+            <span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>Lane:</span>
+            <MultiSelectDropdown placeholder="All Lanes" selected={filters.laneIds} onToggle={v=>toggleArrFilter("laneIds",v)} options={lanes.map(l=>({value:l.id,label:l.name}))}/>
+            <span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>Enquiry:</span>
+            <MultiSelectDropdown placeholder="All" selected={filters.enquiryTypes} onToggle={v=>toggleArrFilter("enquiryTypes",v)} options={["Hot","Warm","Cold"].map(t=>({value:t,label:t}))}/>
+            <span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>Assigned:</span>
+            <MultiSelectDropdown placeholder="Anyone" selected={filters.assignedTos} onToggle={v=>toggleArrFilter("assignedTos",v)} options={devTeam.map(u=>({value:u.id,label:u.name}))}/>
+            {allTags.length>0&&<><span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>Tags:</span>
+            <MultiSelectDropdown placeholder="Any tag" selected={filters.tags} onToggle={v=>toggleArrFilter("tags",v)} options={allTags.map(t=>({value:t,label:"#"+t}))}/></>}
+            <button onClick={()=>setFilters({q:"",projectId:"",customerName:"",customerPhone:"",customerTypes:[],assignedTos:[],enquiryTypes:[],laneIds:[],minSize:"",maxSize:"",dateFilter:"all",dateFrom:"",dateTo:"",city:"",pincode:"",state:"",address:"",tags:[]})} className="text-xs text-amber-400 underline ml-2">Clear All</button>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk action bar */}
+      {selectedIds.size>0&&(
+        <div className={`border rounded-xl p-3 mb-4 flex flex-wrap items-center gap-3 ${tc(dark,"bg-amber-500/10 border-amber-500/30","bg-amber-50 border-amber-200")}`}>
+          <span className={`text-sm font-medium ${tc(dark,"text-amber-300","text-amber-700")}`}>{selectedIds.size} project(s) selected</span>
+          <select value={bulkAction} onChange={e=>setBulkAction(e.target.value)} className={`border rounded-lg px-2.5 py-1.5 text-xs ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+            <option value="">Choose action…</option>
+            <option value="move">Move to Lane</option>
+            <option value="assign">Assign To</option>
+            <option value="delete">Delete Selected</option>
+          </select>
+          {bulkAction==="move"&&<select value={bulkTarget} onChange={e=>setBulkTarget(e.target.value)} className={`border rounded-lg px-2.5 py-1.5 text-xs ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+            <option value="">Select Lane</option>
+            {lanes.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}
+          </select>}
+          {bulkAction==="assign"&&<select value={bulkTarget} onChange={e=>setBulkTarget(e.target.value)} className={`border rounded-lg px-2.5 py-1.5 text-xs ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+            <option value="">Select User</option>
+            {devTeam.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>}
+          <Btn size="sm" onClick={execBulkAction} disabled={!bulkAction||(bulkAction!=="delete"&&!bulkTarget)}>Apply</Btn>
+          <button onClick={()=>{setSelectedIds(new Set());setBulkAction("");setBulkTarget("");}} className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>Deselect All</button>
         </div>
       )}
 
       {/* KANBAN VIEW */}
       {view==="kanban"&&(
-        <div className="flex gap-4 overflow-x-auto pb-4">
+        <div className="flex gap-4 overflow-x-auto pb-4" style={{minHeight:400}}>
           {lanes.map(lane=>{
             const laneProjects = filteredProjects.filter(p=>p.laneId===lane.id);
             const totalSize = laneProjects.reduce((s,p)=>s+(parseFloat(p.projectSize)||0),0);
             const totalVal = laneProjects.reduce((s,p)=>s+Math.round((developer?.costPerKW||50000)*(parseFloat(p.projectSize)||0)),0);
+            const allInLane = filteredProjects.filter(p=>p.laneId===lane.id).map(p=>p.id);
+            const allSelected = allInLane.length>0&&allInLane.every(id=>selectedIds.has(id));
+            const someSelected = allInLane.some(id=>selectedIds.has(id));
+            const lc = LANE_COLORS.find(c=>c.key===lane.color)||LANE_COLORS[0];
             return (
-              <div key={lane.id} className={`flex-shrink-0 w-72`}>
-                <div className={`border-t-2 rounded-xl p-3 mb-3 ${laneAccents[lane.color]||"border-slate-500"} ${tc(dark,"bg-slate-800/30","bg-slate-50")}`}>
+              <div key={lane.id} className="flex-shrink-0 w-72"
+                onDragOver={e=>e.preventDefault()}
+                onDrop={e=>handleDrop(e,lane.id)}>
+                <div className={`border-t-4 rounded-xl p-3 mb-3 ${lc.border} ${tc(dark,"bg-slate-800/30","bg-slate-50")}`}>
                   <div className="flex items-center justify-between mb-1">
-                    <span className={`font-bold text-sm ${tc(dark,"text-white","text-slate-800")}`}>{lane.name}</span>
+                    <div className="flex items-center gap-2">
+                      <MultiCheckbox checked={allSelected} partial={someSelected&&!allSelected} onChange={()=>toggleSelectAll(allInLane)}/>
+                      <span className={`font-bold text-sm ${tc(dark,"text-white","text-slate-800")}`}>{lane.name}</span>
+                    </div>
                     <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${tc(dark,"bg-slate-700 text-slate-300","bg-white text-slate-600 border border-slate-200")}`}>{laneProjects.length}</span>
                   </div>
                   <div className="flex gap-3 text-xs">
-                    <span className={tc(dark,"text-slate-400","text-slate-500")}>{totalSize.toFixed(1)} kW total</span>
+                    <span className={tc(dark,"text-slate-400","text-slate-500")}>{totalSize.toFixed(1)} kW</span>
                     <span className={tc(dark,"text-amber-400","text-amber-600")}>~{fmtINR(totalVal)}</span>
                   </div>
                 </div>
-                <div>
+                <div style={{maxHeight:480,overflowY:"auto"}} className="pr-1">
                   {laneProjects.map(p=><ProjectCard key={p.id} p={p}/>)}
-                  {!laneProjects.length&&<div className={`border-2 border-dashed rounded-xl p-4 text-center text-xs ${tc(dark,"border-slate-700 text-slate-600","border-slate-200 text-slate-400")}`}>No projects</div>}
+                  {!laneProjects.length&&<div className={`border-2 border-dashed rounded-xl p-4 text-center text-xs ${tc(dark,"border-slate-700 text-slate-600","border-slate-200 text-slate-400")}`}>Drop here</div>}
                 </div>
               </div>
             );
@@ -2174,28 +2539,38 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
           <div className={`border rounded-xl overflow-hidden ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
             <table className="w-full text-sm">
               <thead><tr className={`border-b ${tc(dark,"border-slate-700 bg-slate-800/30","border-slate-200 bg-slate-50")}`}>
-                {["Project ID","Customer","Type","Size","Lane","Enquiry","Assigned","Actions"].map(h=>(
-                  <th key={h} className={`text-left px-3 py-2.5 text-xs font-medium ${tc(dark,"text-slate-400","text-slate-500")}`}>{h}</th>
+                <th className="px-3 py-2.5">
+                  <MultiCheckbox checked={filteredProjects.every(p=>selectedIds.has(p.id))&&filteredProjects.length>0}
+                    partial={filteredProjects.some(p=>selectedIds.has(p.id))&&!filteredProjects.every(p=>selectedIds.has(p.id))}
+                    onChange={()=>toggleSelectAll(filteredProjects.map(p=>p.id))}/>
+                </th>
+                {["Project ID","Customer","Type","Size","Lane","Enquiry","Assigned",""].map(h=>(
+                  <th key={h} className={`text-left px-2 py-2.5 text-xs font-medium ${tc(dark,"text-slate-400","text-slate-500")}`}>{h}</th>
                 ))}
               </tr></thead>
               <tbody>
                 {filteredProjects.map(p=>{
-                  const lane = lanes.find(l=>l.id===p.laneId);
+                  const lane = allLanes.find(l=>l.id===p.laneId);
                   const user = devTeam.find(u=>u.id===(p.assignedUserId||p.userId));
+                  const lc = lane?LANE_COLORS.find(c=>c.key===lane.color)||LANE_COLORS[0]:null;
                   return (
-                    <tr key={p.id} onClick={()=>setCurrentProjectId(p.id)} className={`border-b cursor-pointer transition-colors ${tc(dark,"border-slate-700/30 hover:bg-slate-800/20","border-slate-100 hover:bg-slate-50")}`}>
-                      <td className={`px-3 py-2.5 font-mono text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{p.projectId||"—"}</td>
-                      <td className="px-3 py-2.5">
+                    <tr key={p.id} className={`border-b transition-colors ${selectedIds.has(p.id)?tc(dark,"bg-amber-500/5","bg-amber-50"):tc(dark,"border-slate-700/30 hover:bg-slate-800/20","border-slate-100 hover:bg-slate-50")}`}>
+                      <td className="px-3 py-2.5"><MultiCheckbox checked={selectedIds.has(p.id)} onChange={()=>toggleSelect(p.id)}/></td>
+                      <td className={`px-2 py-2.5 font-mono text-xs cursor-pointer ${tc(dark,"text-slate-400","text-slate-500")}`} onClick={()=>setCurrentProjectId(p.id)}>{p.projectId||"—"}</td>
+                      <td className="px-2 py-2.5 cursor-pointer" onClick={()=>setCurrentProjectId(p.id)}>
                         <div className={`font-medium text-xs ${tc(dark,"text-white","text-slate-800")}`}>{p.customerName}</div>
                         {p.pocName&&<div className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>{p.pocName}</div>}
                       </td>
-                      <td className="px-3 py-2.5"><span className={`text-xs px-2 py-0.5 rounded-full ${tc(dark,typeColors[p.customerType]||"",typeColorsL[p.customerType]||"")}`}>{p.customerType||"—"}</span></td>
-                      <td className={`px-3 py-2.5 font-medium text-xs text-amber-400`}>{p.projectSize} {p.projectUnit||"kW"}</td>
-                      <td className={`px-3 py-2.5 text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{lane?.name||"—"}</td>
-                      <td className="px-3 py-2.5"><span className={`text-xs px-2 py-0.5 rounded-full ${tc(dark,enquiryColors[p.enquiryType]||"",enquiryColorsL[p.enquiryType]||"")}`}>{p.enquiryType||"—"}</span></td>
-                      <td className={`px-3 py-2.5 text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{user?.name||"—"}</td>
-                      <td className="px-3 py-2.5" onClick={e=>e.stopPropagation()}>
-                        <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>openEdit(p)}><Icon name="edit" size={12}/>Edit</Btn>
+                      <td className="px-2 py-2.5"><span className={`text-xs px-2 py-0.5 rounded-full ${tc(dark,typeColors[p.customerType]||"",typeColorsL[p.customerType]||"")}`}>{p.customerType||"—"}</span></td>
+                      <td className={`px-2 py-2.5 text-xs font-bold text-amber-400`}>{p.projectSize} {p.projectUnit||"kW"}</td>
+                      <td className="px-2 py-2.5"><span className={`text-xs px-2 py-0.5 rounded-full font-medium`} style={{backgroundColor:lc?`var(--${lc.key},#64748b)20`:"",color:lc?"":""}}>{lane?.name||"—"}</span></td>
+                      <td className="px-2 py-2.5"><span className={`text-xs px-2 py-0.5 rounded-full ${tc(dark,enquiryColors[p.enquiryType]||"",enquiryColorsL[p.enquiryType]||"")}`}>{p.enquiryType||"—"}</span></td>
+                      <td className={`px-2 py-2.5 text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{user?.name||"—"}</td>
+                      <td className="px-2 py-2.5" onClick={e=>e.stopPropagation()}>
+                        <div className="flex gap-1">
+                          <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>openEdit(p)}><Icon name="edit" size={12}/></Btn>
+                          <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>setConfirmDelete(p)}><Icon name="trash" size={12}/></Btn>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -2207,7 +2582,7 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
           <div className={`text-center py-20 border rounded-xl ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200")}`}>
             <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3 ${tc(dark,"bg-slate-800","bg-slate-100")}`}><Icon name="folder" size={24}/></div>
             <h3 className={`text-base font-bold mb-1 ${tc(dark,"text-white","text-slate-800")}`}>No projects found</h3>
-            <p className={`text-sm mb-4 ${tc(dark,"text-slate-400","text-slate-500")}`}>Try adjusting your filters or create a new project</p>
+            <p className={`text-sm mb-4 ${tc(dark,"text-slate-400","text-slate-500")}`}>Adjust filters or create a new project</p>
           </div>
         )
       )}
@@ -2218,52 +2593,55 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
           <div className="grid grid-cols-2 gap-3">
             <Field label="Customer Type" type="select" value={form.customerType} onChange={v=>SF("customerType",v)} options={["Residential","Commercial","Industrial","Government","Other"]} required/>
             <div>
-              <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Project ID</label>
-              <div className="flex gap-2 mb-4">
-                <input value={form.projectIdOverride||autoProjectId()} onChange={e=>SF("projectIdOverride",e.target.value)} className={`flex-1 border rounded-lg px-3 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}/>
-              </div>
+              <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Project ID <span className="text-xs text-slate-400">(auto)</span></label>
+              <div className={`border rounded-lg px-3 py-2.5 text-sm mb-4 ${tc(dark,"bg-slate-700/50 border-slate-600 text-slate-400","bg-slate-50 border-slate-200 text-slate-500")}`}>{editProject?editProject.projectId:getNextProjectId()}</div>
             </div>
             <Field label="Customer Name" value={form.customerName} onChange={v=>SF("customerName",v)} required/>
-            {["Commercial","Industrial","Government"].includes(form.customerType)&&<Field label="Point of Contact Name" value={form.pocName||""} onChange={v=>SF("pocName",v)}/>}
+            {["Commercial","Industrial","Government"].includes(form.customerType)&&<Field label="Point of Contact (POC)" value={form.pocName||""} onChange={v=>SF("pocName",v)}/>}
           </div>
 
-          {/* Phone with country code */}
+          {/* Phone */}
           <div className="mb-4">
-            <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Customer Phone <span className="text-amber-400">*</span></label>
+            <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Customer Phone</label>
             <div className="flex">
               <select value={form.countryCode} onChange={e=>SF("countryCode",e.target.value)} className={`border border-r-0 rounded-l-lg px-2 py-2.5 focus:outline-none text-xs ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
                 {COUNTRY_CODES.map(c=><option key={c.code} value={c.code}>{c.label}</option>)}
               </select>
-              <input value={form.customerPhone} onChange={e=>SF("customerPhone",e.target.value.replace(/\D/g,""))} placeholder="Phone number" className={`flex-1 border rounded-r-lg px-3 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white placeholder-slate-500","bg-white border-slate-300 text-slate-800")}`}/>
+              <input value={form.customerPhone} onChange={e=>SF("customerPhone",e.target.value.replace(/\D/g,""))} placeholder="Phone number" className={`flex-1 border rounded-r-lg px-3 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}/>
             </div>
           </div>
 
-          {/* Email with validation */}
+          {/* Email */}
           <div className="mb-4">
             <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Customer Email</label>
-            <input type="email" value={form.customerEmail} onChange={e=>SF("customerEmail",e.target.value)} placeholder="customer@email.com" className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white placeholder-slate-500 focus:border-amber-400","bg-white border-slate-300 text-slate-800 focus:border-amber-500")} ${form.customerEmail&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.customerEmail)?tc(dark,"border-red-500","border-red-400"):""}`}/>
-            {form.customerEmail&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.customerEmail)&&<p className="text-red-400 text-xs mt-1">Invalid email format</p>}
+            <input type="email" value={form.customerEmail} onChange={e=>SF("customerEmail",e.target.value)} placeholder="customer@email.com" className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white placeholder-slate-500","bg-white border-slate-300 text-slate-800")} ${form.customerEmail&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.customerEmail)?"border-red-500":""}`}/>
           </div>
 
-          {/* Pincode first → auto-fetch city/state */}
+          {/* Pincode → City/State */}
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Pincode</label>
-              <input value={form.customerPincode} onChange={e=>onPincodeChange(e.target.value)} placeholder="400001" maxLength={6} className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none mb-4 ${tc(dark,"bg-slate-800 border-slate-600 text-white placeholder-slate-500 focus:border-amber-400","bg-white border-slate-300 text-slate-800 focus:border-amber-500")}`}/>
+              <input value={form.customerPincode} onChange={e=>onPincodeChange(e.target.value)} placeholder="400001" maxLength={6} className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none mb-4 ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}/>
             </div>
             <CityField label="City" value={form.customerCity} onChange={v=>SF("customerCity",v)} customCities={customCities} onAddCity={addCustomCity}/>
-            <Field label="State" value={form.customerState||""} onChange={v=>SF("customerState",v)} placeholder="Maharashtra"/>
+            <div>
+              <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>State</label>
+              <select value={form.customerState||""} onChange={e=>SF("customerState",e.target.value)} className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none mb-4 ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+                <option value="">Select State</option>
+                {INDIA_STATES.map(s=><option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
           </div>
           <Field label="Address" type="textarea" rows={2} value={form.customerAddress} onChange={v=>SF("customerAddress",v)}/>
 
-          {/* Project size with unit */}
+          {/* Size + Unit */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Project Size <span className="text-amber-400">*</span></label>
               <div className="flex mb-4">
                 <input type="number" value={form.projectSize} onChange={e=>SF("projectSize",e.target.value)} placeholder="e.g. 10" className={`flex-1 border rounded-l-lg px-3 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}/>
                 <select value={form.projectUnit} onChange={e=>SF("projectUnit",e.target.value)} className={`border border-l-0 rounded-r-lg px-2 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
-                  {[...(developer?.customUnits||[]),...PROJECT_UNITS].filter((v,i,a)=>a.indexOf(v)===i).map(u=><option key={u} value={u}>{u}</option>)}
+                  {[...new Set([...(developer?.customUnits||[]),...PROJECT_UNITS])].map(u=><option key={u} value={u}>{u}</option>)}
                 </select>
               </div>
             </div>
@@ -2271,8 +2649,28 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Project Lane / Status" type="select" value={form.laneId} onChange={v=>SF("laneId",v)} options={lanes.map(l=>({value:l.id,label:l.name}))}/>
+            <Field label="Project Lane" type="select" value={form.laneId} onChange={v=>SF("laneId",v)} options={lanes.map(l=>({value:l.id,label:l.name}))}/>
             <Field label="Assign To" type="select" value={form.assignedUserId||currentUser.id} onChange={v=>SF("assignedUserId",v)} options={[{value:currentUser.id,label:"Myself"},...devTeam.filter(u=>u.id!==currentUser.id).map(u=>({value:u.id,label:u.name}))]}/>
+          </div>
+
+          {/* Tags */}
+          <div className="mb-4">
+            <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Tags</label>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {(form.tags||[]).map(t=><span key={t} className={`text-xs px-2 py-1 rounded-lg flex items-center gap-1 ${tc(dark,"bg-indigo-500/20 text-indigo-300","bg-indigo-100 text-indigo-700")}`}>#{t}<button onClick={()=>SF("tags",(form.tags||[]).filter(x=>x!==t))} className="text-red-400 ml-1">×</button></span>)}
+            </div>
+            {/* Default tags from settings */}
+            {(developer?.defaultTags||[]).filter(t=>!(form.tags||[]).includes(t)).length>0&&(
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {(developer?.defaultTags||[]).filter(t=>!(form.tags||[]).includes(t)).map(t=>(
+                  <button key={t} onClick={()=>SF("tags",[...(form.tags||[]),t])} className={`text-xs px-2 py-0.5 rounded-lg border border-dashed ${tc(dark,"border-indigo-500/40 text-indigo-400 hover:bg-indigo-500/10","border-indigo-300 text-indigo-600 hover:bg-indigo-50")}`}>+#{t}</button>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <input id="tagInput" placeholder="Add tag…" onKeyDown={e=>{ if(e.key==="Enter"&&e.target.value.trim()){SF("tags",[...(form.tags||[]),e.target.value.trim()]);e.target.value="";}}} className={`flex-1 border rounded-lg px-3 py-1.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white placeholder-slate-500","bg-white border-slate-300 text-slate-800")}`}/>
+              <Btn size="sm" variant="outline" onClick={()=>{const inp=document.getElementById("tagInput");if(inp?.value.trim()){SF("tags",[...(form.tags||[]),inp.value.trim()]);inp.value="";}}}>Add</Btn>
+            </div>
           </div>
 
           <div className="flex gap-3 mt-2">
@@ -2281,10 +2679,37 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
           </div>
         </Modal>
       )}
+
+      {/* Import Modal */}
+      {showImport&&(
+        <Modal title="Import Projects from CSV" onClose={()=>setShowImport(false)}>
+          <p className={`text-sm mb-4 ${tc(dark,"text-slate-400","text-slate-500")}`}>Download the template, fill it in, and upload. All dropdown fields show valid options in the header.</p>
+          <div className={`border rounded-xl p-4 mb-4 ${tc(dark,"bg-slate-800/40 border-slate-700","bg-slate-50 border-slate-200")}`}>
+            <h4 className={`font-bold text-sm mb-2 ${tc(dark,"text-white","text-slate-800")}`}>Step 1: Download Template</h4>
+            <p className={`text-xs mb-3 ${tc(dark,"text-slate-400","text-slate-500")}`}>Template includes your lanes, units, team members in dropdown headers as reference.</p>
+            <Btn onClick={downloadTemplate}><Icon name="download" size={14}/>Download Template CSV</Btn>
+          </div>
+          <div className={`border rounded-xl p-4 ${tc(dark,"bg-slate-800/40 border-slate-700","bg-slate-50 border-slate-200")}`}>
+            <h4 className={`font-bold text-sm mb-2 ${tc(dark,"text-white","text-slate-800")}`}>Step 2: Upload Filled File</h4>
+            <p className={`text-xs mb-3 ${tc(dark,"text-slate-400","text-slate-500")}`}>Project IDs will auto-increment from your current counter. Existing IDs in the file will be used if valid.</p>
+            <Btn onClick={()=>fileInputRef.current?.click()}><Icon name="import" size={14}/>Upload CSV File</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {/* Confirm Delete Modal */}
+      {confirmDelete&&(
+        <Modal title="Delete Project?" onClose={()=>setConfirmDelete(null)}>
+          <p className={`text-sm mb-4 ${tc(dark,"text-slate-300","text-slate-700")}`}>Are you sure you want to delete <strong>"{confirmDelete.customerName}"</strong>? You'll have 30 seconds to undo.</p>
+          <div className="flex gap-3">
+            <Btn onClick={()=>deleteProject(confirmDelete)} className="flex-1">Delete</Btn>
+            <Btn variant="secondary" onClick={()=>setConfirmDelete(null)}>Cancel</Btn>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };
-
 // ── PROJECT INVOICES PAGE (Dev + User) ────────────────────────
 const ProjectInvoicesPage = ({ invoices, setInvoices, projects, developer, currentUser, setDevelopers }) => {
   const { dark } = useTheme();
@@ -2532,6 +2957,10 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
   const [noteFileRef] = [useRef()];
   const [noteAttachments, setNoteAttachments] = useState([]);
   const [noteFilterUser, setNoteFilterUser] = useState("all");
+  const [noteDateFilter, setNoteDateFilter] = useState("all");
+  const [noteDateFrom, setNoteDateFrom] = useState(""); const [noteDateTo, setNoteDateTo] = useState("");
+  const [docDateFilter, setDocDateFilter] = useState("all");
+  const [docDateFrom, setDocDateFrom] = useState(""); const [docDateTo, setDocDateTo] = useState("");
   const [showGen, setShowGen] = useState(false);
   const [selectedTmpl, setSelectedTmpl] = useState("");
   const [pForm, setPForm] = useState({});
@@ -2552,12 +2981,17 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
 
   // Unique note authors
   const noteAuthors = [...new Set(projNotes.map(n=>n.userName||n.userId))];
-  const filteredNotes = projNotes.filter(n=> noteFilterUser==="all"||(n.userName||n.userId)===noteFilterUser);
+  const filteredNotes = projNotes.filter(n=>{
+    if (noteFilterUser!=="all" && (n.userName||n.userId)!==noteFilterUser) return false;
+    if (!applyDateFilter(n.createdAt, noteDateFilter, noteDateFrom, noteDateTo)) return false;
+    return true;
+  });
   const filteredDocs = projDocs.filter(d=>{
     const matchSearch = !docSearch || d.title?.toLowerCase().includes(docSearch.toLowerCase()) || d.name?.toLowerCase().includes(docSearch.toLowerCase());
     const matchType = docFilterType==="all" || d.type===docFilterType;
     const matchUser = docFilterUser==="all" || d.uploadedBy===docFilterUser;
-    return matchSearch && matchType && matchUser;
+    const matchDate = applyDateFilter(d.uploadDate, docDateFilter, docDateFrom, docDateTo);
+    return matchSearch && matchType && matchUser && matchDate;
   });
   const docAuthors = [...new Set(projDocs.map(d=>d.uploadedBy))];
 
@@ -2584,9 +3018,13 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
 
   const saveDoc = () => {
     if (!pendingDocFile) return;
-    const types={pdf:"PDF",doc:"Word",docx:"Word",xls:"Excel",xlsx:"Excel",jpg:"Image",jpeg:"Image",png:"Image",mp4:"Video",mov:"Video"};
+    const types={pdf:"PDF",doc:"Word",docx:"Word",xls:"Excel",xlsx:"Excel",jpg:"Image",jpeg:"Image",png:"Image",gif:"Image",mp4:"Video",mov:"Video"};
     const ext=pendingDocFile.name.split(".").pop().toLowerCase();
-    setDocuments(ds=>[...ds,{id:`doc${Date.now()}`,projectId:project.id,title:docTitle||pendingDocFile.name,name:pendingDocFile.name,type:types[ext]||"Other",size:`${(pendingDocFile.size/1024).toFixed(0)} KB`,uploadDate:TODAY,uploadedBy:currentUser.name,uploadedById:currentUser.id}]);
+    const reader = new FileReader();
+    reader.onload = ev => {
+      setDocuments(ds=>[...ds,{id:`doc${Date.now()}`,projectId:project.id,title:docTitle||pendingDocFile.name,name:pendingDocFile.name,type:types[ext]||"Other",size:`${(pendingDocFile.size/1024).toFixed(0)} KB`,uploadDate:TODAY,uploadedBy:currentUser.name,uploadedById:currentUser.id,data:ev.target.result}]);
+    };
+    reader.readAsDataURL(pendingDocFile);
     setShowDocUpload(false); setDocTitle(""); setPendingDocFile(null);
   };
 
@@ -2610,7 +3048,7 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
     setShowGen(false); setViewProposal(np);
   };
 
-  const tabs = ["info","notes","documents","proposal"];
+  const tabs = ["info","notes","documents","proposal","activity"];
 
   return (
     <div>
@@ -2679,17 +3117,37 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
             </div>
           </div>
           {/* Filter bar */}
-          {projNotes.length>0&&<div className="flex gap-2 mb-3">
+          {projNotes.length>0&&<div className="flex flex-wrap gap-2 mb-3">
             <select value={noteFilterUser} onChange={e=>setNoteFilterUser(e.target.value)} className={`border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
               <option value="all">All Authors</option>
               {noteAuthors.map(u=><option key={u} value={u}>{u}</option>)}
             </select>
+            <select value={noteDateFilter} onChange={e=>setNoteDateFilter(e.target.value)} className={`border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+              <option value="all">All Time</option>
+              <option value="7d">Last 7 Days</option>
+              <option value="15d">Last 15 Days</option>
+              <option value="30d">Last 30 Days</option>
+              <option value="week">This Week</option>
+              <option value="month">This Month</option>
+              <option value="lastmonth">Last Month</option>
+              <option value="custom">Custom Range</option>
+            </select>
+            {noteDateFilter==="custom"&&<>
+              <input type="date" value={noteDateFrom} onChange={e=>setNoteDateFrom(e.target.value)} className={`border rounded-lg px-2 py-1.5 text-xs ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}/>
+              <input type="date" value={noteDateTo} onChange={e=>setNoteDateTo(e.target.value)} className={`border rounded-lg px-2 py-1.5 text-xs ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}/>
+            </>}
           </div>}
           <div className="space-y-2">
             {!filteredNotes.length ? <p className={`text-sm text-center py-8 ${tc(dark,"text-slate-400","text-slate-500")}`}>No notes yet.</p> : filteredNotes.map(n=>(
               <div key={n.id} className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
                 <p className={`text-sm mb-2 ${tc(dark,"text-white","text-slate-800")}`}>{n.content}</p>
-                {n.attachments?.length>0&&<div className="flex flex-wrap gap-1.5 mb-2">{n.attachments.map((a,i)=><span key={i} className={`text-xs px-2 py-1 rounded-lg flex items-center gap-1 ${tc(dark,"bg-slate-700 text-slate-300","bg-slate-100 text-slate-600")}`}><Icon name="file" size={11}/>{a.name}</span>)}</div>}
+                {n.attachments?.length>0&&<div className="flex flex-wrap gap-1.5 mb-2">{n.attachments.map((a,i)=>(
+                  <div key={i} className={`text-xs px-2 py-1 rounded-lg flex items-center gap-1.5 ${tc(dark,"bg-slate-700 text-slate-300","bg-slate-100 text-slate-600")}`}>
+                    <Icon name="file" size={11}/>{a.name}
+                    {a.data&&<><button onClick={()=>window.open(a.data,"_blank")} className="text-sky-400 hover:text-sky-300 ml-1 text-xs">View</button>
+                    <a href={a.data} download={a.name} className="text-amber-400 hover:text-amber-300 text-xs">↓</a></>}
+                  </div>
+                ))}</div>}
                 <div className={`flex gap-3 text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>
                   <span>{n.userName||currentUser.name}</span>
                   <span>{new Date(n.createdAt).toLocaleString("en-IN")}</span>
@@ -2710,9 +3168,23 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
               {["PDF","Word","Excel","Image","Video","Other"].map(t=><option key={t} value={t}>{t}</option>)}
             </select>
             <select value={docFilterUser} onChange={e=>setDocFilterUser(e.target.value)} className={`border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
-              <option value="all">All Users</option>
+              <option value="all">All Uploaders</option>
               {docAuthors.map(u=><option key={u} value={u}>{u}</option>)}
             </select>
+            <select value={docDateFilter} onChange={e=>setDocDateFilter(e.target.value)} className={`border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+              <option value="all">All Time</option>
+              <option value="7d">Last 7 Days</option>
+              <option value="15d">Last 15 Days</option>
+              <option value="30d">Last 30 Days</option>
+              <option value="week">This Week</option>
+              <option value="month">This Month</option>
+              <option value="lastmonth">Last Month</option>
+              <option value="custom">Custom Range</option>
+            </select>
+            {docDateFilter==="custom"&&<>
+              <input type="date" value={docDateFrom} onChange={e=>setDocDateFrom(e.target.value)} className={`border rounded-lg px-2 py-1.5 text-xs ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}/>
+              <input type="date" value={docDateTo} onChange={e=>setDocDateTo(e.target.value)} className={`border rounded-lg px-2 py-1.5 text-xs ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}/>
+            </>}
             <input ref={docFileRef} type="file" onChange={handleDocFileSelect} className="hidden" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.mp4,.mov"/>
             <Btn onClick={()=>docFileRef.current?.click()}><Icon name="upload" size={15}/>Upload Doc</Btn>
           </div>
@@ -2722,16 +3194,25 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
             </div>
           ) : (
             <div className="space-y-2">
-              {filteredDocs.map(doc=>(
-                <div key={doc.id} className={`border rounded-xl p-3 flex items-center gap-3 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
-                  <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 text-xs font-bold ${doc.type==="PDF"?tc(dark,"bg-red-500/20 text-red-400","bg-red-100 text-red-600"):doc.type==="Image"?tc(dark,"bg-sky-500/20 text-sky-400","bg-sky-100 text-sky-600"):tc(dark,"bg-slate-700/50 text-slate-400","bg-slate-100 text-slate-500")}`}>{doc.type?.slice(0,3)||"DOC"}</div>
-                  <div className="flex-1 min-w-0">
-                    <div className={`text-sm font-medium truncate ${tc(dark,"text-white","text-slate-800")}`}>{doc.title||doc.name}</div>
-                    <div className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{doc.type} · {doc.size} · {fmtDate(doc.uploadDate)} · {doc.uploadedBy}</div>
+              {filteredDocs.map(doc=>{
+                const docColor = doc.type==="PDF"?tc(dark,"bg-red-500/20 text-red-400","bg-red-100 text-red-600"):doc.type==="Image"?tc(dark,"bg-sky-500/20 text-sky-400","bg-sky-100 text-sky-600"):doc.type==="Excel"?tc(dark,"bg-emerald-500/20 text-emerald-400","bg-emerald-100 text-emerald-600"):doc.type==="Word"?tc(dark,"bg-blue-500/20 text-blue-400","bg-blue-100 text-blue-600"):tc(dark,"bg-slate-700/50 text-slate-400","bg-slate-100 text-slate-500");
+                const shareMsg = `Document: ${doc.title||doc.name}\nProject: ${project.customerName} (${project.projectId})\n\nShared by ${currentUser.name} via SolarPro.`;
+                return (
+                  <div key={doc.id} className={`border rounded-xl p-3 flex items-center gap-3 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 text-xs font-bold ${docColor}`}>{doc.type?.slice(0,3)||"DOC"}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className={`text-sm font-medium truncate ${tc(dark,"text-white","text-slate-800")}`}>{doc.title||doc.name}</div>
+                      <div className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{doc.type} · {doc.size} · {fmtDate(doc.uploadDate)} · {doc.uploadedBy}</div>
+                    </div>
+                    <div className="flex gap-1.5">
+                      {doc.data&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>window.open(doc.data,"_blank")} title="View in new tab"><Icon name="eye" size={12}/>View</Btn>}
+                      {doc.data&&<a href={doc.data} download={doc.name||doc.title} className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs transition-colors ${tc(dark,"bg-slate-700/50 text-slate-300 hover:bg-slate-700","bg-slate-100 text-slate-600 hover:bg-slate-200")}`}><Icon name="download" size={12}/>Save</a>}
+                      {(project.customerPhone||project.customerEmail)&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>project.customerPhone?shareWhatsApp(project.customerPhone,shareMsg):shareMail(project.customerEmail,`Doc: ${doc.title||doc.name}`,shareMsg)} title="Share"><Icon name="share" size={12}/></Btn>}
+                      <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>setDocuments(ds=>ds.filter(d=>d.id!==doc.id))}><Icon name="trash" size={12}/></Btn>
+                    </div>
                   </div>
-                  <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>setDocuments(ds=>ds.filter(d=>d.id!==doc.id))}><Icon name="trash" size={13}/></Btn>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
           {/* Doc upload modal */}
@@ -2745,6 +3226,36 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
               </div>
             </Modal>
           )}
+        </div>
+      )}
+
+      {/* ACTIVITY LOG TAB */}
+      {tab==="activity"&&(
+        <div>
+          <div className={`border rounded-xl overflow-hidden ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+            {(project.activityLog||[]).length===0 ? (
+              <div className="text-center py-12">
+                <p className={`text-sm ${tc(dark,"text-slate-400","text-slate-500")}`}>No activity recorded yet.</p>
+              </div>
+            ) : (
+              <div>
+                {[...(project.activityLog||[])].reverse().map((entry,i)=>(
+                  <div key={i} className={`flex gap-3 items-start px-4 py-3 border-b last:border-0 ${tc(dark,"border-slate-700/30","border-slate-100")}`}>
+                    <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${tc(dark,"bg-amber-400","bg-amber-500")}`}/>
+                    <div className="flex-1">
+                      <div className={`text-sm ${tc(dark,"text-white","text-slate-800")}`}>{entry.action}</div>
+                      <div className={`text-xs flex gap-2 mt-0.5 ${tc(dark,"text-slate-400","text-slate-500")}`}>
+                        <span>{entry.by||"—"}</span>
+                        <span>·</span>
+                        <span>{fmtDate(entry.date)}</span>
+                        {entry.time&&<><span>·</span><span>{entry.time}</span></>}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -3002,6 +3513,10 @@ export default function SolarProApp() {
   const [templates,   setTemplates]   = useLS("sp_templates",   SEED_TEMPLATES);
   const [proposals,   setProposals]   = useLS("sp_proposals",   SEED_PROPOSALS);
   const [invoices,    setInvoices]    = useLS("sp_invoices",     SEED_INVOICES);
+  const [dateFormat,  setDateFormat]  = useLS("sp_dateFormat",  "DD MMM YYYY");
+
+  // Sync date format global
+  _dateFormatKey = dateFormat;
 
   // ── NAV STATE ──
   const [currentPage,      setCurrentPage]      = useState("dashboard");
@@ -3090,7 +3605,7 @@ export default function SolarProApp() {
 
       // ── DEV ADMIN: SETTINGS ──
       case "settings":
-        return developer ? <SettingsPage developer={developer} setDevelopers={setDevelopers}/> : null;
+        return developer ? <SettingsPage developer={developer} setDevelopers={setDevelopers} dateFormat={dateFormat} setDateFormat={setDateFormat} projects={projects} setProjects={setProjects}/> : null;
 
       // ── ALL USERS: MY PROFILE/SETTINGS ──
       case "my-settings":
@@ -3105,6 +3620,7 @@ export default function SolarProApp() {
 
   return (
     <ThemeCtx.Provider value={themeCtx}>
+      <ToastProvider>
       <div className={`flex h-screen overflow-hidden ${bg}`} style={{fontFamily:"'Inter','system-ui',sans-serif"}}>
         <style>{`
           @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Inter:wght@400;500;600;700;800;900&display=swap');
@@ -3112,6 +3628,8 @@ export default function SolarProApp() {
           ::-webkit-scrollbar{width:5px;height:5px}
           ::-webkit-scrollbar-track{background:${dark?"#0f172a":"#f1f5f9"}}
           ::-webkit-scrollbar-thumb{background:${dark?"#334155":"#cbd5e1"};border-radius:3px}
+          @keyframes slide-in{from{opacity:0;transform:translateX(100%)}to{opacity:1;transform:translateX(0)}}
+          .animate-slide-in{animation:slide-in 0.25s ease-out}
         `}</style>
 
         <Sidebar user={currentUser} currentPage={currentPage} setPage={setPage}
@@ -3119,7 +3637,6 @@ export default function SolarProApp() {
           developer={developer}/>
 
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Subscription warning banner */}
           {currentUser.role !== ROLES.SUPER_ADMIN && developer && (
             <SubscriptionBanner developer={developer}/>
           )}
@@ -3131,6 +3648,7 @@ export default function SolarProApp() {
           </main>
         </div>
       </div>
+      </ToastProvider>
     </ThemeCtx.Provider>
   );
 }
