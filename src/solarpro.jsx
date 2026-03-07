@@ -2083,7 +2083,7 @@ const SettingsPage = ({ developer, setDevelopers, dateFormat, setDateFormat, pro
                 <select value={newLane.color} onChange={e=>setNewLane(n=>({...n,color:e.target.value}))} className={`border rounded-lg pl-7 pr-3 py-2 text-sm ${tc(dark,"bg-slate-700 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
                   {LANE_COLORS.map(c=><option key={c.key} value={c.key}>{c.label}</option>)}
                 </select>
-                <div className={`absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full ${(LANE_COLORS.find(c=>c.key===newLane.color)||LANE_COLORS[0]).tw}`}/>
+                {(()=>{const lcc=LANE_COLORS.find(c=>c.key===newLane.color)||LANE_COLORS[0];return <div className={"absolute left-2 w-3 h-3 rounded-full "+lcc.tw} style={{top:"50%",transform:"translateY(-50%)"}}/>;})()}
               </div>
               <Btn size="sm" onClick={addLane} disabled={!newLane.name.trim()}><Icon name="plus" size={13}/>Add</Btn>
             </div>
