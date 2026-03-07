@@ -20,6 +20,51 @@ const TODAY = new Date().toISOString().split("T")[0];
 // ── INDIA CITIES (typehead) ───────────────────────────────────
 const INDIAN_CITIES = ["Agra","Ahmedabad","Ajmer","Aligarh","Amritsar","Aurangabad","Bengaluru","Bhopal","Bhubaneswar","Chandigarh","Chennai","Coimbatore","Dehradun","Delhi","Dhanbad","Faridabad","Ghaziabad","Gurgaon","Guwahati","Gwalior","Howrah","Hyderabad","Indore","Jaipur","Jalandhar","Jammu","Jodhpur","Kanpur","Kochi","Kolkata","Kota","Kozhikode","Lucknow","Ludhiana","Madurai","Mangaluru","Meerut","Mumbai","Mysuru","Nagpur","Nashik","Navi Mumbai","Noida","Patna","Pune","Raipur","Rajkot","Ranchi","Srinagar","Surat","Thiruvananthapuram","Thane","Tiruchirappalli","Vadodara","Varanasi","Vijayawada","Visakhapatnam"];
 
+// Sample pincode→{city,state} map (representative Indian pincodes)
+const PINCODE_MAP = {
+  "400001":{ city:"Mumbai",state:"Maharashtra" },"400002":{ city:"Mumbai",state:"Maharashtra" },"400003":{ city:"Mumbai",state:"Maharashtra" },
+  "411001":{ city:"Pune",state:"Maharashtra" },"411002":{ city:"Pune",state:"Maharashtra" },"411028":{ city:"Pune",state:"Maharashtra" },
+  "110001":{ city:"Delhi",state:"Delhi" },"110002":{ city:"Delhi",state:"Delhi" },"110011":{ city:"Delhi",state:"Delhi" },
+  "560001":{ city:"Bengaluru",state:"Karnataka" },"560002":{ city:"Bengaluru",state:"Karnataka" },
+  "500001":{ city:"Hyderabad",state:"Telangana" },"500002":{ city:"Hyderabad",state:"Telangana" },
+  "600001":{ city:"Chennai",state:"Tamil Nadu" },"600002":{ city:"Chennai",state:"Tamil Nadu" },
+  "700001":{ city:"Kolkata",state:"West Bengal" },"700002":{ city:"Kolkata",state:"West Bengal" },
+  "380001":{ city:"Ahmedabad",state:"Gujarat" },"380002":{ city:"Ahmedabad",state:"Gujarat" },
+  "302001":{ city:"Jaipur",state:"Rajasthan" },"302002":{ city:"Jaipur",state:"Rajasthan" },
+  "226001":{ city:"Lucknow",state:"Uttar Pradesh" },"226002":{ city:"Lucknow",state:"Uttar Pradesh" },
+  "440001":{ city:"Nagpur",state:"Maharashtra" },"422001":{ city:"Nashik",state:"Maharashtra" },
+  "452001":{ city:"Indore",state:"Madhya Pradesh" },"462001":{ city:"Bhopal",state:"Madhya Pradesh" },
+  "160001":{ city:"Chandigarh",state:"Chandigarh" },"248001":{ city:"Dehradun",state:"Uttarakhand" },
+  "682001":{ city:"Kochi",state:"Kerala" },"695001":{ city:"Thiruvananthapuram",state:"Kerala" },
+  "395001":{ city:"Surat",state:"Gujarat" },"390001":{ city:"Vadodara",state:"Gujarat" },"360001":{ city:"Rajkot",state:"Gujarat" },
+  "641001":{ city:"Coimbatore",state:"Tamil Nadu" },"620001":{ city:"Tiruchirappalli",state:"Tamil Nadu" },"625001":{ city:"Madurai",state:"Tamil Nadu" },
+  "530001":{ city:"Visakhapatnam",state:"Andhra Pradesh" },"520001":{ city:"Vijayawada",state:"Andhra Pradesh" },
+  "474001":{ city:"Gwalior",state:"Madhya Pradesh" },"342001":{ city:"Jodhpur",state:"Rajasthan" },"324001":{ city:"Kota",state:"Rajasthan" },
+  "834001":{ city:"Ranchi",state:"Jharkhand" },"826001":{ city:"Dhanbad",state:"Jharkhand" },
+  "492001":{ city:"Raipur",state:"Chhattisgarh" },"751001":{ city:"Bhubaneswar",state:"Odisha" },
+  "781001":{ city:"Guwahati",state:"Assam" },"180001":{ city:"Jammu",state:"Jammu & Kashmir" },"190001":{ city:"Srinagar",state:"Jammu & Kashmir" },
+};
+
+// ── INVOICE DOCUMENT TYPES ────────────────────────────────────
+const INV_DOC_TYPES = ["Proforma Invoice","Tax Invoice","Sales Order","Purchase Order","Delivery Challan"];
+
+// Invoice flow: ProformaInvoice → (accepted) → SalesOrder → (delivery) → DeliveryChallan → TaxInvoice
+const INV_FLOW_NEXT = { "Proforma Invoice":"Sales Order", "Sales Order":"Delivery Challan", "Delivery Challan":"Tax Invoice" };
+const INV_FLOW_LABEL = { "Proforma Invoice":"Convert to Sales Order", "Sales Order":"Create Delivery Challan", "Delivery Challan":"Convert to Tax Invoice" };
+
+// ── PROJECT UNITS ─────────────────────────────────────────────
+const PROJECT_UNITS = ["kW","kWp","MW","HP","Liter","Meter","Unit"];
+
+// ── COUNTRY CODES ─────────────────────────────────────────────
+const COUNTRY_CODES = [
+  {code:"+91",label:"🇮🇳 +91 India"},{code:"+1",label:"🇺🇸 +1 USA"},{code:"+44",label:"🇬🇧 +44 UK"},
+  {code:"+971",label:"🇦🇪 +971 UAE"},{code:"+966",label:"🇸🇦 +966 Saudi Arabia"},{code:"+65",label:"🇸🇬 +65 Singapore"},
+  {code:"+61",label:"🇦🇺 +61 Australia"},{code:"+49",label:"🇩🇪 +49 Germany"},{code:"+33",label:"🇫🇷 +33 France"},
+  {code:"+81",label:"🇯🇵 +81 Japan"},{code:"+86",label:"🇨🇳 +86 China"},{code:"+7",label:"🇷🇺 +7 Russia"},
+  {code:"+55",label:"🇧🇷 +55 Brazil"},{code:"+27",label:"🇿🇦 +27 South Africa"},{code:"+234",label:"🇳🇬 +234 Nigeria"},
+  {code:"+92",label:"🇵🇰 +92 Pakistan"},{code:"+880",label:"🇧🇩 +880 Bangladesh"},{code:"+94",label:"🇱🇰 +94 Sri Lanka"},
+];
+
 // ── SUPER ADMIN SETTINGS (stored per-session in users array) ──
 const SA_DEFAULTS = { bankDetails:"Bank: ICICI\nAccount: 111222333444\nIFSC: ICIC0001111", invoicePrefix:"SP", invoiceNextNum:1001, companyName:"SolarPro Platform", logo:null, stamp:null, signature:null };
 
@@ -28,29 +73,29 @@ const ThemeCtx = createContext({ dark: true, toggle: () => {} });
 
 // ── SEED DATA ────────────────────────────────────────────────
 const SEED_DEVELOPERS = [
-  { id:"d1", companyName:"SunPower Solutions", email:"ceo@sunpower.com", phone:"+91-98001-11111", address:"1234 Solar Ave", city:"Mumbai", pincode:"400001", website:"https://sunpower.com", seats:10, usedSeats:2, active:true, paused:false, plan:"Professional", planDuration:"Annual", subscriptionStart:"2025-01-01", subscriptionEnd:"2026-01-01", logo:null, stamp:null, signature:null, electricityPrice:8.5, solarGenerationFactor:1400, costPerKW:55000, bankDetails:"Bank: HDFC\nAccount: 1234567890\nIFSC: HDFC0001234", terms:"Payment due within 30 days.", paymentTerms:"50% advance,\n25% on equipment delivery,\n25% on completion", customerScope:"Residential and small commercial customers across Maharashtra", companyScope:"Pan-India solar installation with focus on rooftop systems", invoicePrefix:"INV", invoiceNextNum:1001, createdAt:"2024-01-15" },
-  { id:"d2", companyName:"GreenWatt Energy", email:"admin@greenwatt.com", phone:"+91-98002-22222", address:"5678 Energy Blvd", city:"Pune", pincode:"411001", website:"https://greenwatt.com", seats:5, usedSeats:1, active:true, paused:false, plan:"Starter", planDuration:"Monthly", subscriptionStart:"2025-12-01", subscriptionEnd:"2026-01-01", logo:null, stamp:null, signature:null, electricityPrice:7.8, solarGenerationFactor:1350, costPerKW:50000, bankDetails:"Bank: SBI\nAccount: 9876543210\nIFSC: SBIN0001234", terms:"Full payment before installation.", paymentTerms:"100% advance before work begins", customerScope:"Commercial and industrial clients", companyScope:"Western Maharashtra operations", invoicePrefix:"GW", invoiceNextNum:1001, createdAt:"2024-03-01" },
+  { id:"d1", companyName:"SunPower Solutions", email:"ceo@sunpower.com", phone:"+91-98001-11111", address:"1234 Solar Ave", city:"Mumbai", pincode:"400001", state:"Maharashtra", website:"https://sunpower.com", seats:10, usedSeats:2, active:true, paused:false, plan:"Professional", planDuration:"Annual", subscriptionStart:"2025-01-01", subscriptionEnd:"2026-01-01", logo:null, stamp:null, signature:null, electricityPrice:8.5, solarGenerationFactor:1400, costPerKW:55000, bankDetails:"Bank: HDFC\nAccount: 1234567890\nIFSC: HDFC0001234", terms:"Payment due within 30 days.", paymentTerms:"50% advance,\n25% on equipment delivery,\n25% on completion", customerScope:"Residential and small commercial customers across Maharashtra", companyScope:"Pan-India solar installation with focus on rooftop systems", invoicePrefix:"INV", invoiceNextNum:1001, projectPrefix:"SP", projectNextNum:1001, defaultProjectUnit:"kW", customCities:[], lanes:[{id:"l1",name:"New Enquiry",color:"slate",disabled:false,order:0},{id:"l2",name:"Site Survey",color:"sky",disabled:false,order:1},{id:"l3",name:"Proposal Sent",color:"amber",disabled:false,order:2},{id:"l4",name:"Negotiation",color:"orange",disabled:false,order:3},{id:"l5",name:"Won",color:"emerald",disabled:false,order:4},{id:"l6",name:"Lost",color:"red",disabled:false,order:5}], createdAt:"2024-01-15" },
+  { id:"d2", companyName:"GreenWatt Energy", email:"admin@greenwatt.com", phone:"+91-98002-22222", address:"5678 Energy Blvd", city:"Pune", pincode:"411001", state:"Maharashtra", website:"https://greenwatt.com", seats:5, usedSeats:1, active:true, paused:false, plan:"Starter", planDuration:"Monthly", subscriptionStart:"2025-12-01", subscriptionEnd:"2026-01-01", logo:null, stamp:null, signature:null, electricityPrice:7.8, solarGenerationFactor:1350, costPerKW:50000, bankDetails:"Bank: SBI\nAccount: 9876543210\nIFSC: SBIN0001234", terms:"Full payment before installation.", paymentTerms:"100% advance before work begins", customerScope:"Commercial and industrial clients", companyScope:"Western Maharashtra operations", invoicePrefix:"GW", invoiceNextNum:1001, projectPrefix:"GW", projectNextNum:1001, defaultProjectUnit:"kW", customCities:[], lanes:[{id:"l1",name:"New Enquiry",color:"slate",disabled:false,order:0},{id:"l2",name:"Site Survey",color:"sky",disabled:false,order:1},{id:"l3",name:"Proposal Sent",color:"amber",disabled:false,order:2},{id:"l4",name:"Won",color:"emerald",disabled:false,order:3},{id:"l5",name:"Lost",color:"red",disabled:false,order:4}], createdAt:"2024-03-01" },
 ];
 
 const SEED_USERS = [
-  { id:"u1", email:"admin@solarpro.io", password:"Admin@123", name:"Platform Admin", role:ROLES.SUPER_ADMIN, developerId:null, active:true, paused:false, permissions:[], createdAt:"2024-01-01", phone:"", companyName:"SolarPro Platform", address:"", city:"", pincode:"", logo:null, stamp:null, signature:null, bankDetails:"Bank: ICICI\nAccount: 111222333444\nIFSC: ICIC0001111", invoicePrefix:"SP", invoiceNextNum:1001 },
+  { id:"u1", email:"admin@solarpro.io", password:"Admin@123", name:"Platform Admin", role:ROLES.SUPER_ADMIN, developerId:null, active:true, paused:false, permissions:[], createdAt:"2024-01-01", phone:"", companyName:"SolarPro Platform", address:"", city:"", pincode:"", state:"", logo:null, stamp:null, signature:null, bankDetails:"Bank: ICICI\nAccount: 111222333444\nIFSC: ICIC0001111", invoicePrefix:"SP", invoiceNextNum:1001, customCities:[] },
   { id:"u2", email:"ceo@sunpower.com", password:"Sun@123", name:"James Rivera", role:ROLES.DEV_ADMIN, developerId:"d1", active:true, paused:false, permissions:[], createdAt:"2024-01-15", phone:"+91-98001-11111" },
   { id:"u3", email:"sales@sunpower.com", password:"Sales@123", name:"Mia Chen", role:ROLES.USER, developerId:"d1", active:true, paused:false, permissions:["projects","proposals","notes","documents","invoices"], createdAt:"2024-02-01", phone:"+91-98001-22222" },
   { id:"u4", email:"admin@greenwatt.com", password:"Green@123", name:"Tom Okafor", role:ROLES.DEV_ADMIN, developerId:"d2", active:true, paused:false, permissions:[], createdAt:"2024-03-01", phone:"+91-98002-22222" },
 ];
 
 const SEED_PROJECTS = [
-  { id:"p1", developerId:"d1", userId:"u3", customerName:"Robert Kim", customerPhone:"+91-98111-00001", customerEmail:"r.kim@email.com", customerAddress:"789 Oak St, Pune, MH 411001", projectSize:8.5, projectType:"Residential", status:"Active", createdAt:"2024-06-01" },
-  { id:"p2", developerId:"d1", userId:"u2", customerName:"Apex Corp", customerPhone:"+91-98111-00002", customerEmail:"facilities@apex.com", customerAddress:"100 Business Park, Mumbai, MH 400001", projectSize:45, projectType:"Commercial", status:"Proposal Sent", createdAt:"2024-05-20" },
-  { id:"p3", developerId:"d2", userId:"u4", customerName:"Warehouse Co.", customerPhone:"+91-98111-00003", customerEmail:"ops@warehouse.com", customerAddress:"200 Industrial Way, Pune, MH 411028", projectSize:120, projectType:"Industrial", status:"Active", createdAt:"2024-06-05" },
+  { id:"p1", projectId:"SP-1001", developerId:"d1", userId:"u3", customerName:"Robert Kim", customerPhone:"+91-98111-00001", customerEmail:"r.kim@email.com", customerAddress:"789 Oak St", customerCity:"Pune", customerPincode:"411001", customerState:"Maharashtra", customerType:"Residential", pocName:"", projectSize:8.5, projectUnit:"kW", laneId:"l2", enquiryType:"Warm", status:"Active", assignedUserId:"u3", createdAt:"2024-06-01", lastActivity:"2024-06-10" },
+  { id:"p2", projectId:"SP-1002", developerId:"d1", userId:"u2", customerName:"Apex Corp", customerPhone:"+91-98111-00002", customerEmail:"facilities@apex.com", customerAddress:"100 Business Park", customerCity:"Mumbai", customerPincode:"400001", customerState:"Maharashtra", customerType:"Commercial", pocName:"Rajesh Kumar", projectSize:45, projectUnit:"kW", laneId:"l3", enquiryType:"Hot", status:"Proposal Sent", assignedUserId:"u2", createdAt:"2024-05-20", lastActivity:"2024-06-05" },
+  { id:"p3", projectId:"GW-1001", developerId:"d2", userId:"u4", customerName:"Warehouse Co.", customerPhone:"+91-98111-00003", customerEmail:"ops@warehouse.com", customerAddress:"200 Industrial Way", customerCity:"Pune", customerPincode:"411028", customerState:"Maharashtra", customerType:"Industrial", pocName:"Sunita Sharma", projectSize:120, projectUnit:"kW", laneId:"l1", enquiryType:"Cold", status:"Active", assignedUserId:"u4", createdAt:"2024-06-05", lastActivity:"2024-06-05" },
 ];
 
 const SEED_NOTES = [
-  { id:"n1", projectId:"p1", userId:"u3", content:"Customer interested in battery backup.", createdAt:"2024-06-02T14:30:00Z" },
+  { id:"n1", projectId:"p1", userId:"u3", userName:"Mia Chen", content:"Customer interested in battery backup.", attachments:[], createdAt:"2024-06-02T14:30:00Z" },
 ];
 
 const SEED_DOCUMENTS = [
-  { id:"doc1", projectId:"p1", name:"Site Survey Photos.pdf", type:"PDF", size:"2.3 MB", uploadDate:"2024-06-05", uploadedBy:"Mia Chen" },
+  { id:"doc1", projectId:"p1", title:"Site Survey Photos", name:"Site Survey Photos.pdf", type:"PDF", size:"2.3 MB", uploadDate:"2024-06-05", uploadedBy:"Mia Chen", uploadedById:"u3" },
 ];
 
 const SEED_TEMPLATES = [
@@ -158,6 +203,15 @@ const Icon = ({ name, size=18 }) => {
     image:    <svg {...p}><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>,
     key:      <svg {...p}><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>,
     leaf:     <svg {...p}><path d="M17 8C8 10 5.9 16.17 3.82 19.34l1.43.86C6.5 18 9 15 12 14c0 0-2 3-2 6h2s1-4 5-7c0 0-3 1-5 4 0 0 3-1 5-5 0 0-1 4 1 6 0 0 3-5 3-10 0-5-4-7-4-7z"/></svg>,
+    mail:     <svg {...p}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>,
+    share:    <svg {...p}><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>,
+    export:   <svg {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
+    import:   <svg {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>,
+    filter:   <svg {...p}><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>,
+    sort:     <svg {...p}><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>,
+    kanban:   <svg {...p}><rect x="3" y="3" width="5" height="18" rx="1"/><rect x="10" y="3" width="5" height="12" rx="1"/><rect x="17" y="3" width="5" height="15" rx="1"/></svg>,
+    up:       <svg {...p}><polyline points="18 15 12 9 6 15"/></svg>,
+    down:     <svg {...p}><polyline points="6 9 12 15 18 9"/></svg>,
     alert:    <svg {...p}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>,
     print:    <svg {...p}><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>,
     back:     <svg {...p}><polyline points="15 18 9 12 15 6"/></svg>,
@@ -225,30 +279,89 @@ const Btn = ({ children, onClick, variant="primary", size="md", disabled, classN
   return <button type={type} onClick={onClick} disabled={disabled} className={`inline-flex items-center gap-1.5 rounded-lg transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed ${variants[variant]||variants.primary} ${sizes[size]} ${className}`}>{children}</button>;
 };
 
-// ── CITY FIELD (typeahead) ────────────────────────────────────
-const CityField = ({ value, onChange, label="City", required }) => {
+// ── CITY FIELD (typeahead with custom cities) ─────────────────
+const CityField = ({ value, onChange, label="City", required, customCities=[], onAddCity }) => {
   const { dark } = useTheme();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState(value||"");
-  const filtered = q.length>0 ? INDIAN_CITIES.filter(c=>c.toLowerCase().startsWith(q.toLowerCase())).slice(0,8) : [];
+  const allCities = [...new Set([...INDIAN_CITIES, ...(customCities||[])])].sort();
+  const filtered = q.length>0 ? allCities.filter(c=>c.toLowerCase().startsWith(q.toLowerCase())).slice(0,8) : [];
+  const exactMatch = allCities.some(c=>c.toLowerCase()===q.toLowerCase());
   const pick = (c) => { setQ(c); onChange(c); setOpen(false); };
+  const addCustom = () => {
+    if (q.trim() && !exactMatch) {
+      if (onAddCity) onAddCity(q.trim());
+      pick(q.trim());
+    }
+  };
   return (
     <div className="mb-4 relative">
       {label&&<label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>{label}{required&&<span className="text-amber-400 ml-1">*</span>}</label>}
       <input value={q} onChange={e=>{setQ(e.target.value);onChange(e.target.value);setOpen(true);}} onFocus={()=>setOpen(true)} onBlur={()=>setTimeout(()=>setOpen(false),200)} placeholder="Type city name…"
         className={`w-full border rounded-lg px-3 py-2.5 focus:outline-none text-sm transition-colors ${tc(dark,"bg-slate-800 border-slate-600 text-white placeholder-slate-500 focus:border-amber-400","bg-white border-slate-300 text-slate-800 placeholder-slate-400 focus:border-amber-500")}`}/>
-      {open&&filtered.length>0&&(
+      {open&&(filtered.length>0||(!exactMatch&&q.length>1))&&(
         <div className={`absolute z-30 w-full mt-1 border rounded-xl shadow-xl overflow-hidden ${tc(dark,"bg-slate-800 border-slate-600","bg-white border-slate-200")}`}>
           {filtered.map(c=>(
             <button key={c} type="button" onMouseDown={()=>pick(c)} className={`w-full text-left px-4 py-2 text-sm transition-colors ${tc(dark,"text-white hover:bg-slate-700","text-slate-800 hover:bg-slate-50")}`}>{c}</button>
           ))}
+          {!exactMatch&&q.length>1&&(
+            <button type="button" onMouseDown={addCustom} className={`w-full text-left px-4 py-2 text-sm font-medium border-t ${tc(dark,"text-amber-400 hover:bg-slate-700 border-slate-700","text-amber-600 hover:bg-amber-50 border-slate-200")}`}>
+              + Add "{q}" as custom city
+            </button>
+          )}
         </div>
       )}
     </div>
   );
 };
 
-// ── SEARCH BAR ────────────────────────────────────────────────
+// ── PHONE FIELD (country code + number) ──────────────────────
+const PhoneField = ({ value, onChange, label="Phone", required }) => {
+  const { dark } = useTheme();
+  const [cc, setCC] = useState("+91");
+  const [num, setNum] = useState("");
+  // parse existing value on mount
+  useEffect(() => {
+    if (value) {
+      const m = value.match(/^(\+\d{1,4})\s*(.*)$/);
+      if (m) { setCC(m[1]); setNum(m[2]); } else setNum(value);
+    }
+  }, []);
+  const update = (newCC, newNum) => { setCC(newCC); setNum(newNum); onChange(`${newCC} ${newNum}`); };
+  const inpCls = `border rounded-r-lg px-3 py-2.5 focus:outline-none text-sm flex-1 min-w-0 transition-colors ${tc(dark,"bg-slate-800 border-slate-600 text-white placeholder-slate-500 focus:border-amber-400","bg-white border-slate-300 text-slate-800 placeholder-slate-400 focus:border-amber-500")}`;
+  const selCls = `border border-r-0 rounded-l-lg px-2 py-2.5 focus:outline-none text-xs transition-colors ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`;
+  return (
+    <div className="mb-4">
+      {label&&<label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>{label}{required&&<span className="text-amber-400 ml-1">*</span>}</label>}
+      <div className="flex">
+        <select value={cc} onChange={e=>update(e.target.value,num)} className={selCls}>
+          {COUNTRY_CODES.map(c=><option key={c.code} value={c.code}>{c.label}</option>)}
+        </select>
+        <input value={num} onChange={e=>{const v=e.target.value.replace(/\D/g,"");setNum(v);onChange(`${cc} ${v}`);}} placeholder="Phone number" className={inpCls}/>
+      </div>
+    </div>
+  );
+};
+
+// ── DOWNLOAD PDF HELPER ───────────────────────────────────────
+const downloadHTML = (html, filename) => {
+  // Use print with auto-save workaround — opens in a new window with onload=print
+  const blob = new Blob([html], {type:"text/html"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+};
+
+// ── SHARE HELPERS (WhatsApp + Email) ─────────────────────────
+const shareWhatsApp = (phone, message) => {
+  const cleaned = phone?.replace(/\D/g,"") || "";
+  const url = `https://wa.me/${cleaned}?text=${encodeURIComponent(message)}`;
+  window.open(url, "_blank");
+};
+const shareMail = (email, subject, body) => {
+  window.open(`mailto:${email||""}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, "_blank");
+};
 const SearchBar = ({ value, onChange, placeholder="Search..." }) => {
   const { dark } = useTheme();
   return (
@@ -428,7 +541,8 @@ const LockedPage = ({ developer, reason }) => {
 
 // ── INVOICE HTML RENDERER (matches the provided Templid style) ──
 const buildInvoiceHTML = ({ inv, developer, customer }) => {
-  const { net, gst, total } = calcInvoiceTotal(inv.items);
+  const { net, gst, total } = calcInvoiceTotal(inv.items||[]);
+  const docType = inv.docType || "Tax Invoice";
   const rows = (inv.items||[]).map((item,i) => {
     const sub = item.price * item.qty;
     const vatAmt = sub * (item.gst||0) / 100;
@@ -455,6 +569,8 @@ const buildInvoiceHTML = ({ inv, developer, customer }) => {
           <div style="font-size:14px;font-weight:700;color:#5c6ac4">${inv.date}</div>
           <div style="font-size:13px;color:#94a3b8;margin-top:8px">Invoice #</div>
           <div style="font-size:14px;font-weight:700;color:#5c6ac4">${inv.id.toUpperCase()}</div>
+          <div style="font-size:13px;color:#94a3b8;margin-top:8px">Document Type</div>
+          <div style="font-size:13px;font-weight:700;color:#d97706">${docType}</div>
         </td>
       </tr>
     </table>
@@ -512,7 +628,15 @@ const printInvoice = (inv, developer, customer) => {
   const html = buildInvoiceHTML({ inv, developer, customer });
   const w = window.open("","_blank");
   w.document.write(html); w.document.close(); w.focus();
-  setTimeout(()=>{w.print();w.close();},700);
+  setTimeout(()=>{ w.print(); },700);
+};
+
+const downloadInvoice = (inv, developer, customer) => {
+  const html = buildInvoiceHTML({ inv, developer, customer });
+  const cxName = (inv.customerName||"Customer").replace(/\s+/g,"_");
+  const {total}=calcInvoiceTotal(inv.items||[]);
+  const filename = `Invoice_${cxName}_${inv.id}.html`;
+  downloadHTML(html, filename);
 };
 
 // ── INVOICE ITEM EDITOR ───────────────────────────────────────
@@ -552,15 +676,15 @@ const InvoiceItemEditor = ({ items, setItems }) => {
 };
 
 // ── INVOICE LIST VIEW (shared) ────────────────────────────────
-const InvoiceListView = ({ invoices, developers, projects, users, onView, onPrint, onMarkPaid, currentUser }) => {
+const InvoiceListView = ({ invoices, developers, projects, users, onView, onPrint, onDownload, onMarkPaid, onConvert, currentUser, developer }) => {
   const { dark } = useTheme();
   const [dateFilter, setDateFilter] = useState("all");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [docTypeFilter, setDocTypeFilter] = useState("all");
 
   const now = new Date();
-  const startOfDay = (d) => { const x=new Date(d); x.setHours(0,0,0,0); return x; };
   const startOfMonth = (d) => new Date(d.getFullYear(), d.getMonth(), 1);
   const startOfWeek  = (d) => { const x=new Date(d); x.setDate(d.getDate()-d.getDay()); x.setHours(0,0,0,0); return x; };
   const startOfLastMonth = (d) => new Date(d.getFullYear(), d.getMonth()-1, 1);
@@ -575,12 +699,27 @@ const InvoiceListView = ({ invoices, developers, projects, users, onView, onPrin
     else if (dateFilter==="week") pass = invDate >= startOfWeek(now);
     else if (dateFilter==="month")pass = invDate >= startOfMonth(now);
     else if (dateFilter==="lastmonth") pass = invDate >= startOfLastMonth(now) && invDate <= endOfLastMonth(now);
-    else if (dateFilter==="custom") pass = (!fromDate||invDate>=startOfDay(fromDate)) && (!toDate||invDate<=new Date(toDate+" 23:59:59"));
+    else if (dateFilter==="custom") pass = (!fromDate||invDate>=new Date(fromDate)) && (!toDate||invDate<=new Date(toDate+" 23:59:59"));
     if (statusFilter!=="all") pass = pass && inv.status===statusFilter;
+    if (docTypeFilter!=="all") pass = pass && (inv.docType||"Tax Invoice")===docTypeFilter;
     return pass;
   });
 
   const selCls = `border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none transition-colors ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`;
+
+  const getShareData = inv => {
+    const dev = developers?.find(d=>d.id===inv.developerId) || developer;
+    const proj = projects?.find(p=>p.id===inv.projectId);
+    const {total}=calcInvoiceTotal(inv.items||[]);
+    const phone = inv.customerPhone || proj?.customerPhone || "";
+    const email = inv.customerEmail || proj?.customerEmail || "";
+    const cxName = inv.customerName || proj?.customerName || "Customer";
+    const size = proj ? `${proj.projectSize} ${proj.projectUnit||"kW"}` : "";
+    const type = proj?.customerType || proj?.projectType || "";
+    const invoiceMsg = `Hi ${cxName},\n\nHere is your ${inv.docType||"Tax Invoice"} (${inv.id.toUpperCase()}) for your ${size} ${type} solar project worth ${fmtINR(total)}.\n\nPlease review and let us know if you have any questions.\n\nRegards,\n${dev?.companyName||""}`;
+    const invSubject = `${inv.docType||"Invoice"} - ${inv.id.toUpperCase()} | ${dev?.companyName||""}`;
+    return {phone, email, msg:invoiceMsg, subject:invSubject};
+  };
 
   return (
     <div>
@@ -601,26 +740,31 @@ const InvoiceListView = ({ invoices, developers, projects, users, onView, onPrin
           <span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>to</span>
           <input type="date" value={toDate} onChange={e=>setToDate(e.target.value)} className={selCls}/>
         </>}
+        <select value={docTypeFilter} onChange={e=>setDocTypeFilter(e.target.value)} className={selCls}>
+          <option value="all">All Doc Types</option>
+          {INV_DOC_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+        </select>
         <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} className={selCls}>
           <option value="all">All Status</option>
-          <option value="Pending">Pending</option>
-          <option value="Paid">Paid</option>
-          <option value="Sent">Sent</option>
           <option value="Draft">Draft</option>
+          <option value="Pending">Pending</option>
+          <option value="Sent">Sent</option>
+          <option value="Accepted">Accepted</option>
+          <option value="Paid">Paid</option>
         </select>
-        <span className={`text-xs ml-auto ${tc(dark,"text-slate-400","text-slate-500")}`}>{filtered.length} invoice{filtered.length!==1?"s":""}</span>
+        <span className={`text-xs ml-auto ${tc(dark,"text-slate-400","text-slate-500")}`}>{filtered.length} record{filtered.length!==1?"s":""}</span>
       </div>
 
       {!filtered.length ? (
         <div className={`text-center py-16 border rounded-xl ${tc(dark,"bg-[#0c1929] border-slate-700","bg-white border-slate-200")}`}>
-          <Icon name="invoice" size={28}/><p className={`mt-2 ${tc(dark,"text-slate-400","text-slate-500")}`}>No invoices match filters.</p>
+          <Icon name="invoice" size={28}/><p className={`mt-2 ${tc(dark,"text-slate-400","text-slate-500")}`}>No records match filters.</p>
         </div>
       ) : (
         <div className={`border rounded-xl overflow-hidden ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
           <table className="w-full text-sm">
             <thead><tr className={`border-b ${tc(dark,"border-slate-700 bg-slate-800/30","border-slate-200 bg-slate-50")}`}>
-              {["Invoice #","Customer / Developer","Amount","Date","Status","Actions"].map(h=>(
-                <th key={h} className={`text-left px-4 py-3 font-medium text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{h}</th>
+              {["Doc #","Type","Customer","Amount","Date","Status","Actions"].map(h=>(
+                <th key={h} className={`text-left px-3 py-3 font-medium text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{h}</th>
               ))}
             </tr></thead>
             <tbody>
@@ -629,21 +773,32 @@ const InvoiceListView = ({ invoices, developers, projects, users, onView, onPrin
                 const proj= projects?.find(p=>p.id===inv.projectId);
                 const { total } = calcInvoiceTotal(inv.items||[]);
                 const displayAmt = total || inv.amount || 0;
+                const share = getShareData(inv);
+                const nextFlow = INV_FLOW_NEXT[inv.docType];
                 return (
                   <tr key={inv.id} className={`border-b transition-colors ${tc(dark,"border-slate-700/30 hover:bg-slate-800/20","border-slate-100 hover:bg-slate-50")}`}>
-                    <td className={`px-4 py-3 font-mono text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{inv.id.toUpperCase()}</td>
-                    <td className="px-4 py-3">
-                      <div className={`font-medium ${tc(dark,"text-white","text-slate-800")}`}>{inv.customerName || dev?.companyName || "—"}</div>
+                    <td className={`px-3 py-3 font-mono text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{inv.id.toUpperCase()}</td>
+                    <td className="px-3 py-3">
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${tc(dark,"bg-amber-500/20 text-amber-300","bg-amber-100 text-amber-700")}`}>{inv.docType||"Tax Invoice"}</span>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className={`font-medium text-xs ${tc(dark,"text-white","text-slate-800")}`}>{inv.customerName || dev?.companyName || "—"}</div>
                       {proj && <div className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{proj.customerName}</div>}
                     </td>
-                    <td className={`px-4 py-3 font-bold ${tc(dark,"text-white","text-slate-800")}`}>{fmtINR(displayAmt)}</td>
-                    <td className={`px-4 py-3 ${tc(dark,"text-slate-400","text-slate-500")}`}>{fmtDate(inv.date)}</td>
-                    <td className="px-4 py-3"><span className={`text-xs px-2 py-0.5 rounded-full ${statusColor(inv.status,dark)}`}>{inv.status}</span></td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-1.5">
-                        <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>onView(inv)}><Icon name="eye" size={13}/>View</Btn>
-                        <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>onPrint(inv)}><Icon name="print" size={13}/>PDF</Btn>
-                        {inv.status==="Pending"&&onMarkPaid&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>onMarkPaid(inv.id)}><Icon name="check" size={13}/>Paid</Btn>}
+                    <td className={`px-3 py-3 font-bold text-xs ${tc(dark,"text-white","text-slate-800")}`}>{fmtINR(displayAmt)}</td>
+                    <td className={`px-3 py-3 text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{fmtDate(inv.date)}</td>
+                    <td className="px-3 py-3"><span className={`text-xs px-2 py-0.5 rounded-full ${statusColor(inv.status,dark)}`}>{inv.status}</span></td>
+                    <td className="px-3 py-3">
+                      <div className="flex gap-1 flex-wrap">
+                        <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>onView(inv)}><Icon name="eye" size={12}/></Btn>
+                        <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>onPrint(inv)}><Icon name="print" size={12}/>Print</Btn>
+                        <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>onDownload&&onDownload(inv)}><Icon name="download" size={12}/>PDF</Btn>
+                        {share.phone&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>shareWhatsApp(share.phone, share.msg)} title="WhatsApp"><span className="text-emerald-400 font-bold text-xs">WA</span></Btn>}
+                        {share.email&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>shareMail(share.email, share.subject, share.msg)} title="Email"><Icon name="mail" size={12}/></Btn>}
+                        {inv.status==="Pending"&&onMarkPaid&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>onMarkPaid(inv.id)}><Icon name="check" size={12}/>Paid</Btn>}
+                        {nextFlow&&onConvert&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>onConvert(inv,nextFlow)} title={INV_FLOW_LABEL[inv.docType]}>
+                          <span className="text-sky-400 text-xs">→{nextFlow.split(" ").pop()}</span>
+                        </Btn>}
                       </div>
                     </td>
                   </tr>
@@ -1286,13 +1441,18 @@ const SuperAdminInvoicesPage = ({ invoices, setInvoices, developers, projects, u
       <InvoiceListView invoices={platformInvoices} developers={developers} projects={projects} users={users}
         onView={inv=>setViewInv(inv)}
         onPrint={inv=>printInvoice(inv, getSender(inv), getCustomer(inv))}
+        onDownload={inv=>downloadInvoice(inv, getSender(inv), getCustomer(inv))}
         onMarkPaid={id=>setInvoices(is=>is.map(i=>i.id===id?{...i,status:"Paid"}:i))}
+        onConvert={(inv,newType)=>setInvoices(is=>is.map(i=>i.id===inv.id?{...i,docType:newType,id:`${inv.id}-${newType.split(" ")[0].toLowerCase()}`}:i))}
         currentUser={null}/>
       {viewInv&&(
-        <Modal title={`Invoice — ${viewInv.id.toUpperCase()}`} onClose={()=>setViewInv(null)} wide>
+        <Modal title={`${viewInv.docType||"Invoice"} — ${viewInv.id.toUpperCase()}`} onClose={()=>setViewInv(null)} wide>
           <InvoicePreviewContent inv={viewInv} developer={getSender(viewInv)} customer={getCustomer(viewInv)}/>
-          <div className="flex gap-3 mt-4 pt-4 border-t border-slate-700">
-            <Btn className="flex-1" onClick={()=>printInvoice(viewInv,getSender(viewInv),getCustomer(viewInv))}><Icon name="print" size={15}/>Download / Print PDF</Btn>
+          <div className="flex gap-2 flex-wrap mt-4 pt-4 border-t border-slate-700">
+            <Btn onClick={()=>printInvoice(viewInv,getSender(viewInv),getCustomer(viewInv))}><Icon name="print" size={15}/>Print</Btn>
+            <Btn variant="outline" onClick={()=>downloadInvoice(viewInv,getSender(viewInv),getCustomer(viewInv))}><Icon name="download" size={15}/>Download PDF</Btn>
+            {viewInv.customerPhone&&<Btn variant="outline" onClick={()=>shareWhatsApp(viewInv.customerPhone,`Hi ${viewInv.customerName}, here is your ${viewInv.docType||"Invoice"} ${viewInv.id}. Regards, ${getSender(viewInv)?.companyName||""}`)}>WA WhatsApp</Btn>}
+            {viewInv.customerEmail&&<Btn variant="outline" onClick={()=>shareMail(viewInv.customerEmail,`${viewInv.docType||"Invoice"} - ${viewInv.id}`,`Hi ${viewInv.customerName},\n\nPlease find attached your ${viewInv.docType||"Invoice"} (${viewInv.id}).\n\nRegards,\n${getSender(viewInv)?.companyName||""}`)}><Icon name="mail" size={15}/>Email</Btn>}
             <Btn variant="secondary" onClick={()=>setViewInv(null)}>Close</Btn>
           </div>
         </Modal>
@@ -1309,6 +1469,7 @@ const CreateInvoicePage = ({ developers, setDevelopers, users, setUsers, project
   const [items, setItems] = useState([{name:"",qty:1,price:0,gst:18}]);
   const [notes, setNotes] = useState("");
   const [status, setStatus] = useState("Pending");
+  const [docType, setDocType] = useState("Proforma Invoice");
   const [preview, setPreview] = useState(null);
 
   const devUsers = users.filter(u=>u.developerId===selectedDev && u.role!==ROLES.SUPER_ADMIN);
@@ -1317,16 +1478,14 @@ const CreateInvoicePage = ({ developers, setDevelopers, users, setUsers, project
 
   const generate = () => {
     const {total}=calcInvoiceTotal(items);
-    // SA uses their own prefix; else use dev prefix
     const saUser = users.find(u=>u.id===currentUser?.id);
     const prefix = dev?.invoicePrefix || saUser?.invoicePrefix || "SP";
     const num    = dev?.invoiceNextNum || saUser?.invoiceNextNum || 1001;
     const invId  = `${prefix}-${num}`;
-    // Increment the number
     if (dev) setDevelopers(ds=>ds.map(d=>d.id===dev.id?{...d,invoiceNextNum:(d.invoiceNextNum||1001)+1}:d));
     else setUsers(us=>us.map(u=>u.id===currentUser?.id?{...u,invoiceNextNum:(u.invoiceNextNum||1001)+1}:u));
     const inv = {
-      id:invId,
+      id:invId, docType,
       type:"platform", developerId:selectedDev, userId:selectedUser,
       amount:total, status, date:TODAY,
       customerName: targetUser?.name || dev?.companyName || "",
@@ -1344,6 +1503,20 @@ const CreateInvoicePage = ({ developers, setDevelopers, users, setUsers, project
       <h1 className={`text-xl font-bold mb-1 ${tc(dark,"text-white","text-slate-800")}`}>Create Invoice</h1>
       <p className={`text-sm mb-5 ${tc(dark,"text-slate-400","text-slate-500")}`}>Generate a new invoice for a developer or user</p>
       <div className={`border rounded-xl p-5 mb-5 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+        {/* Document Type selector with flow info */}
+        <div className="mb-4">
+          <label className={`block text-sm font-medium mb-2 ${tc(dark,"text-slate-300","text-slate-700")}`}>Document Type</label>
+          <div className="flex gap-2 flex-wrap mb-2">
+            {INV_DOC_TYPES.map(t=>(
+              <button key={t} onClick={()=>setDocType(t)} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${docType===t?"bg-amber-500 text-slate-900 border-amber-400":tc(dark,"border-slate-600 text-slate-400 hover:border-amber-400 hover:text-white","border-slate-300 text-slate-500 hover:border-amber-400 hover:text-slate-800")}`}>{t}</button>
+            ))}
+          </div>
+          {docType==="Proforma Invoice"&&<p className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>📋 Preliminary estimate. Can be converted → Sales Order → Delivery Challan → Tax Invoice</p>}
+          {docType==="Tax Invoice"&&<p className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>🧾 Official tax invoice with GST. Final billing document sent for payment.</p>}
+          {docType==="Sales Order"&&<p className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>📦 Confirmed order after buyer accepts proforma. Next: Delivery Challan.</p>}
+          {docType==="Purchase Order"&&<p className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>🛒 Buyer-issued order document for procurement.</p>}
+          {docType==="Delivery Challan"&&<p className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>🚚 Accompanies goods during delivery. Next: Convert to Tax Invoice.</p>}
+        </div>
         <div className="grid grid-cols-2 gap-4 mb-4">
           <Field label="Select Developer" type="select" value={selectedDev} onChange={v=>{setSelectedDev(v);setSelectedUser("");}}
             options={[{value:"",label:"— Select Developer —"},...developers.map(d=>({value:d.id,label:d.companyName}))]}/>
@@ -1351,18 +1524,21 @@ const CreateInvoicePage = ({ developers, setDevelopers, users, setUsers, project
             <Field label="Select User (optional)" type="select" value={selectedUser} onChange={setSelectedUser}
               options={[{value:"",label:"— Developer Account —"},...devUsers.map(u=>({value:u.id,label:u.name}))]}/>
           )}
-          <Field label="Status" type="select" value={status} onChange={setStatus} options={["Pending","Paid","Sent","Draft"]}/>
+          <Field label="Status" type="select" value={status} onChange={setStatus} options={["Draft","Pending","Sent","Accepted","Paid"]}/>
         </div>
         <InvoiceItemEditor items={items} setItems={setItems}/>
         <Field label="Notes" type="textarea" rows={2} value={notes} onChange={setNotes} placeholder="Additional notes for this invoice…"/>
-        <Btn onClick={generate} disabled={!selectedDev||!items.length||!items[0].name}><Icon name="zap" size={15}/>Generate Invoice</Btn>
+        <Btn onClick={generate} disabled={!selectedDev||!items.length||!items[0].name}><Icon name="zap" size={15}/>Generate {docType}</Btn>
       </div>
 
       {preview&&(
-        <Modal title="Invoice Generated" onClose={()=>setPreview(null)} wide>
+        <Modal title={`${preview.docType} Generated`} onClose={()=>setPreview(null)} wide>
           <InvoicePreviewContent inv={preview} developer={dev} customer={{name:preview.customerName,address:preview.customerAddress,phone:preview.customerPhone,email:preview.customerEmail}}/>
-          <div className="flex gap-3 mt-4 pt-4 border-t border-slate-700">
-            <Btn className="flex-1" onClick={()=>printInvoice(preview,dev,{name:preview.customerName})}><Icon name="print" size={15}/>Download / Print PDF</Btn>
+          <div className="flex gap-2 flex-wrap mt-4 pt-4 border-t border-slate-700">
+            <Btn onClick={()=>printInvoice(preview,dev,{})}><Icon name="print" size={15}/>Print</Btn>
+            <Btn variant="outline" onClick={()=>downloadInvoice(preview,dev,{})}><Icon name="download" size={15}/>Download PDF</Btn>
+            {preview.customerPhone&&<Btn variant="outline" onClick={()=>shareWhatsApp(preview.customerPhone,`Hi ${preview.customerName}, here is your ${preview.docType} (${preview.id}) for ${fmtINR(calcInvoiceTotal(preview.items||[]).total)}. Regards, ${dev?.companyName||""}`)}><span className="text-emerald-400 font-bold text-sm">WA</span> WhatsApp</Btn>}
+            {preview.customerEmail&&<Btn variant="outline" onClick={()=>shareMail(preview.customerEmail,`${preview.docType} - ${preview.id}`,`Hi ${preview.customerName},\n\nPlease find your ${preview.docType} (${preview.id}) for ${fmtINR(calcInvoiceTotal(preview.items||[]).total)}.\n\nRegards,\n${dev?.companyName||""}`)}><Icon name="mail" size={15}/>Email</Btn>}
             <Btn variant="secondary" onClick={()=>setPreview(null)}>Close</Btn>
           </div>
         </Modal>
@@ -1629,17 +1805,45 @@ const TemplatesPage = ({ templates, setTemplates, developers, currentUser }) => 
 const SettingsPage = ({ developer, setDevelopers }) => {
   const { dark } = useTheme();
   const [form, setForm] = useState({...developer});
+  const [settingsTab, setSettingsTab] = useState("company");
+  const [newLane, setNewLane] = useState({name:"",color:"slate"});
+  const [newUnit, setNewUnit] = useState("");
   const F = (k,v) => setForm(f=>({...f,[k]:v}));
   const save = () => { setDevelopers(ds=>ds.map(d=>d.id===developer.id?{...d,...form}:d)); alert("Settings saved!"); };
+
+  const addLane = () => {
+    if (!newLane.name.trim()) return;
+    const lane = {id:`l${Date.now()}`,name:newLane.name,color:newLane.color,disabled:false,order:(form.lanes||[]).length};
+    F("lanes",[...(form.lanes||[]),lane]);
+    setNewLane({name:"",color:"slate"});
+  };
+  const updateLane = (id,changes) => F("lanes",(form.lanes||[]).map(l=>l.id===id?{...l,...changes}:l));
+  const removeLane = (id) => F("lanes",(form.lanes||[]).filter(l=>l.id!==id));
+  const moveLane = (id,dir) => {
+    const lanes=[...(form.lanes||[])].sort((a,b)=>a.order-b.order);
+    const idx=lanes.findIndex(l=>l.id===id);
+    if (dir===-1&&idx===0||dir===1&&idx===lanes.length-1) return;
+    [lanes[idx].order,lanes[idx+dir].order]=[lanes[idx+dir].order,lanes[idx].order];
+    F("lanes",lanes);
+  };
+  const addCustomUnit = () => { if(newUnit.trim()) { F("customUnits",[...(form.customUnits||[]),newUnit.trim()]); setNewUnit(""); }};
+  const laneColors = ["slate","sky","amber","orange","emerald","red","purple","pink"];
 
   return (
     <div>
       <h1 className={`text-xl font-bold mb-1 ${tc(dark,"text-white","text-slate-800")}`}>Account Settings</h1>
-      <p className={`text-sm mb-5 ${tc(dark,"text-slate-400","text-slate-500")}`}>Manage your company profile and solar variables</p>
-      <LogoUploader value={form.logo} onChange={v=>F("logo",v)}/>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <p className={`text-sm mb-4 ${tc(dark,"text-slate-400","text-slate-500")}`}>Manage your company profile and solar variables</p>
+
+      {/* Settings sub-tabs */}
+      <div className={`flex gap-1 rounded-xl p-1 mb-5 w-fit border ${tc(dark,"bg-[#070e1c] border-slate-800","bg-slate-100 border-slate-200")}`}>
+        {["company","solar","finance","invoices","projects","lanes"].map(t=>(
+          <button key={t} onClick={()=>setSettingsTab(t)} className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-all ${settingsTab===t?"bg-amber-500 text-slate-900":tc(dark,"text-slate-400 hover:text-white","text-slate-500 hover:text-slate-700")}`}>{t}</button>
+        ))}
+      </div>
+
+      {settingsTab==="company"&&(
         <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
-          <h3 className={`font-bold mb-3 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Company Profile</h3>
+          <LogoUploader value={form.logo} onChange={v=>F("logo",v)}/>
           <Field label="Company Name" value={form.companyName} onChange={v=>F("companyName",v)}/>
           <Field label="Email" type="email" value={form.email} onChange={v=>F("email",v)}/>
           <Field label="Phone" value={form.phone} onChange={v=>F("phone",v)}/>
@@ -1647,128 +1851,433 @@ const SettingsPage = ({ developer, setDevelopers }) => {
           <Field label="GSTIN" value={form.gstIn||""} onChange={v=>F("gstIn",v)}/>
           <Field label="Street Address" type="textarea" rows={2} value={form.address||""} onChange={v=>F("address",v)}/>
           <div className="grid grid-cols-2 gap-3">
-            <CityField label="City" value={form.city||""} onChange={v=>F("city",v)}/>
+            <CityField label="City" value={form.city||""} onChange={v=>F("city",v)} customCities={form.customCities||[]} onAddCity={c=>F("customCities",[...(form.customCities||[]),c])}/>
             <Field label="Pincode" value={form.pincode||""} onChange={v=>F("pincode",v)} placeholder="400001"/>
           </div>
         </div>
+      )}
+
+      {settingsTab==="solar"&&(
         <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
-          <h3 className={`font-bold mb-3 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Solar Variables</h3>
           <Field label="Electricity Price (₹/kWh)" type="number" value={form.electricityPrice} onChange={v=>F("electricityPrice",parseFloat(v)||0)}/>
           <Field label="Solar Gen Factor (kWh/kWp/yr)" type="number" value={form.solarGenerationFactor} onChange={v=>F("solarGenerationFactor",parseInt(v)||0)}/>
           <Field label="Cost per kW (₹)" type="number" value={form.costPerKW} onChange={v=>F("costPerKW",parseInt(v)||0)}/>
-        </div>
-        <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
-          <h3 className={`font-bold mb-3 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Business Details</h3>
-          <Field label="Payment Terms" type="textarea" rows={4} value={form.paymentTerms||""} onChange={v=>F("paymentTerms",v)} placeholder={"50% advance\n25% on delivery\n25% on completion"}/>
           <Field label="Customer Scope" type="textarea" rows={2} value={form.customerScope||""} onChange={v=>F("customerScope",v)}/>
           <Field label="Company Scope" type="textarea" rows={2} value={form.companyScope||""} onChange={v=>F("companyScope",v)}/>
         </div>
+      )}
+
+      {settingsTab==="finance"&&(
         <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
-          <h3 className={`font-bold mb-3 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Finance & Legal</h3>
+          <Field label="Payment Terms" type="textarea" rows={4} value={form.paymentTerms||""} onChange={v=>F("paymentTerms",v)} placeholder={"50% advance\n25% on delivery\n25% on completion"}/>
           <Field label="Bank Details" type="textarea" rows={4} value={form.bankDetails||""} onChange={v=>F("bankDetails",v)}/>
           <Field label="Terms & Conditions" type="textarea" rows={3} value={form.terms||""} onChange={v=>F("terms",v)}/>
         </div>
-      </div>
+      )}
+
+      {settingsTab==="invoices"&&(
+        <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Invoice Prefix" value={form.invoicePrefix||"INV"} onChange={v=>F("invoicePrefix",v)} hint="e.g. INV, SP, GW"/>
+            <Field label="Invoice Start Number" type="number" value={form.invoiceNextNum||1001} onChange={v=>F("invoiceNextNum",parseInt(v)||1001)} hint="Next invoice number"/>
+          </div>
+        </div>
+      )}
+
+      {settingsTab==="projects"&&(
+        <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Project ID Prefix" value={form.projectPrefix||"PRJ"} onChange={v=>F("projectPrefix",v)} hint="e.g. SP, PRJ, GW"/>
+            <Field label="Project Start Number" type="number" value={form.projectNextNum||1001} onChange={v=>F("projectNextNum",parseInt(v)||1001)} hint="Next project number"/>
+          </div>
+          <div className="mb-4">
+            <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Default Project Unit</label>
+            <select value={form.defaultProjectUnit||"kW"} onChange={e=>F("defaultProjectUnit",e.target.value)} className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none mb-2 ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+              {[...(form.customUnits||[]),...PROJECT_UNITS].filter((v,i,a)=>a.indexOf(v)===i).map(u=><option key={u} value={u}>{u}</option>)}
+            </select>
+          </div>
+          <div className="mb-4">
+            <label className={`block text-sm font-medium mb-2 ${tc(dark,"text-slate-300","text-slate-700")}`}>Custom Project Units</label>
+            <div className="flex gap-2 mb-2">
+              <input value={newUnit} onChange={e=>setNewUnit(e.target.value)} placeholder="Add unit (e.g. kVA, TR)" className={`flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white placeholder-slate-500","bg-white border-slate-300 text-slate-800")}`}/>
+              <Btn size="sm" onClick={addCustomUnit}><Icon name="plus" size={13}/>Add</Btn>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {(form.customUnits||[]).map(u=><span key={u} className={`text-xs px-2 py-1 rounded-lg flex items-center gap-1 ${tc(dark,"bg-slate-700 text-slate-300","bg-slate-100 text-slate-600")}`}>{u}<button onClick={()=>F("customUnits",(form.customUnits||[]).filter(x=>x!==u))} className="text-red-400 ml-1">×</button></span>)}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {settingsTab==="lanes"&&(
+        <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+          <h3 className={`font-bold mb-3 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Project Lanes / Status</h3>
+          <div className="space-y-2 mb-4">
+            {[...(form.lanes||[])].sort((a,b)=>a.order-b.order).map((lane,i,arr)=>(
+              <div key={lane.id} className={`flex items-center gap-2 border rounded-xl p-3 ${tc(dark,"bg-slate-800/40 border-slate-700","bg-slate-50 border-slate-200")}`}>
+                <div className={`w-3 h-3 rounded-full bg-${lane.color}-400 flex-shrink-0`}/>
+                <span className={`flex-1 text-sm font-medium ${lane.disabled?tc(dark,"text-slate-500 line-through","text-slate-400 line-through"):tc(dark,"text-white","text-slate-800")}`}>{lane.name}</span>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${lane.disabled?tc(dark,"bg-red-500/20 text-red-400","bg-red-100 text-red-600"):tc(dark,"bg-emerald-500/20 text-emerald-400","bg-emerald-100 text-emerald-700")}`}>{lane.disabled?"Disabled":"Active"}</span>
+                <div className="flex gap-1">
+                  {i>0&&<button onClick={()=>moveLane(lane.id,-1)} className={`p-1 rounded ${tc(dark,"hover:bg-slate-700 text-slate-400","hover:bg-slate-200 text-slate-500")}`}><Icon name="up" size={12}/></button>}
+                  {i<arr.length-1&&<button onClick={()=>moveLane(lane.id,1)} className={`p-1 rounded ${tc(dark,"hover:bg-slate-700 text-slate-400","hover:bg-slate-200 text-slate-500")}`}><Icon name="down" size={12}/></button>}
+                  <button onClick={()=>updateLane(lane.id,{disabled:!lane.disabled})} className={`p-1 rounded text-xs ${tc(dark,"hover:bg-slate-700 text-amber-400","hover:bg-amber-50 text-amber-600")}`}>{lane.disabled?"Enable":"Disable"}</button>
+                  <button onClick={()=>removeLane(lane.id)} className={`p-1 rounded ${tc(dark,"hover:bg-slate-700 text-red-400","hover:bg-red-50 text-red-500")}`}><Icon name="trash" size={12}/></button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className={`border rounded-xl p-3 ${tc(dark,"bg-slate-800/30 border-slate-700","bg-slate-50 border-slate-200")}`}>
+            <h4 className={`text-xs font-bold mb-2 ${tc(dark,"text-slate-400","text-slate-500")}`}>Add New Lane</h4>
+            <div className="flex gap-2">
+              <input value={newLane.name} onChange={e=>setNewLane(n=>({...n,name:e.target.value}))} placeholder="Lane name" className={`flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none ${tc(dark,"bg-slate-700 border-slate-600 text-white placeholder-slate-500","bg-white border-slate-300 text-slate-800")}`}/>
+              <select value={newLane.color} onChange={e=>setNewLane(n=>({...n,color:e.target.value}))} className={`border rounded-lg px-2 py-2 text-sm ${tc(dark,"bg-slate-700 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+                {laneColors.map(c=><option key={c} value={c}>{c}</option>)}
+              </select>
+              <Btn size="sm" onClick={addLane} disabled={!newLane.name.trim()}><Icon name="plus" size={13}/>Add</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="mt-4"><Btn onClick={save} size="lg"><Icon name="check" size={16}/>Save All Settings</Btn></div>
     </div>
   );
 };
 
-// ── PROJECTS PAGE ─────────────────────────────────────────────
-const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId, developer, users }) => {
+// ── PROJECTS PAGE — Kanban + Advanced Filters + Bulk Upload ──
+const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId, developer, users, setDevelopers }) => {
   const { dark } = useTheme();
-  const [search, setSearch]   = useState("");
-  const [filterType, setFilterType] = useState("All");
+  const [view, setView] = useState("kanban"); // kanban | list
   const [showAdd, setShowAdd] = useState(false);
-  const blank = { customerName:"",customerPhone:"",customerEmail:"",customerAddress:"",customerCity:"",customerPincode:"",projectSize:"",projectType:"Residential",status:"Active",assignedUserId:"" };
-  const [form, setForm] = useState(blank);
+  const [editProject, setEditProject] = useState(null);
+  const [showFilters, setShowFilters] = useState(false);
+  const fileInputRef = useRef();
 
-  const isLocked = !currentUser?.active || (developer && (developer.paused || (developer.subscriptionEnd && new Date(developer.subscriptionEnd)<new Date())));
+  const lanes = developer?.lanes?.filter(l=>!l.disabled).sort((a,b)=>a.order-b.order) || [{id:"default",name:"All Projects",color:"slate"}];
+  const devTeam = users ? users.filter(u=>u.developerId===currentUser.developerId && u.role!==ROLES.SUPER_ADMIN && u.active) : [];
+  const customCities = developer?.customCities||[];
 
-  const myProjects = projects.filter(p=>{
-    const mine = currentUser.role===ROLES.DEV_ADMIN ? p.developerId===currentUser.developerId : p.userId===currentUser.id || p.developerId===currentUser.developerId;
-    const matchS = p.customerName.toLowerCase().includes(search.toLowerCase()) || (p.customerAddress||"").toLowerCase().includes(search.toLowerCase());
-    const matchT = filterType==="All" || p.projectType===filterType;
-    return mine && matchS && matchT;
+  // Filter state
+  const [filters, setFilters] = useState({ q:"", projectId:"", customerName:"", customerPhone:"", customerType:"all", assignedTo:"all", minSize:"", maxSize:"", enquiryType:"all" });
+  const FF = (k,v) => setFilters(f=>({...f,[k]:v}));
+
+  const myProjects = projects.filter(p => {
+    if (currentUser.role===ROLES.USER) return p.assignedUserId===currentUser.id || p.userId===currentUser.id;
+    return p.developerId===currentUser.developerId;
   });
 
-  const devTeam = users ? users.filter(u=>u.developerId===currentUser.developerId && u.role!==ROLES.SUPER_ADMIN && u.active && !u.paused) : [];
+  const applyFilters = (list) => list.filter(p => {
+    const qs = filters.q.toLowerCase();
+    if (qs && !p.customerName?.toLowerCase().includes(qs) && !p.projectId?.toLowerCase().includes(qs) && !(p.customerAddress||"").toLowerCase().includes(qs)) return false;
+    if (filters.projectId && !p.projectId?.toLowerCase().includes(filters.projectId.toLowerCase())) return false;
+    if (filters.customerName && !p.customerName?.toLowerCase().includes(filters.customerName.toLowerCase())) return false;
+    if (filters.customerPhone && !(p.customerPhone||"").includes(filters.customerPhone)) return false;
+    if (filters.customerType!=="all" && p.customerType!==filters.customerType) return false;
+    if (filters.assignedTo!=="all" && p.assignedUserId!==filters.assignedTo && p.userId!==filters.assignedTo) return false;
+    if (filters.minSize && parseFloat(p.projectSize)<parseFloat(filters.minSize)) return false;
+    if (filters.maxSize && parseFloat(p.projectSize)>parseFloat(filters.maxSize)) return false;
+    if (filters.enquiryType!=="all" && p.enquiryType!==filters.enquiryType) return false;
+    return true;
+  });
 
-  const save = () => {
-    const assignedTo = form.assignedUserId || currentUser.id;
-    const fullAddress = [form.customerAddress, form.customerCity, form.customerPincode].filter(Boolean).join(", ");
-    setProjects(ps=>[...ps,{...form,customerAddress:fullAddress,id:`p${Date.now()}`,developerId:currentUser.developerId,userId:assignedTo,createdAt:TODAY}]);
-    setShowAdd(false); setForm(blank);
+  const filteredProjects = applyFilters(myProjects);
+
+  const blankForm = { customerName:"", customerType:"Residential", pocName:"", countryCode:"+91", customerPhone:"", customerEmail:"", customerPincode:"", customerCity:"", customerState:"", customerAddress:"", projectSize:"", projectUnit:developer?.defaultProjectUnit||"kW", enquiryType:"Warm", laneId:lanes[0]?.id||"", assignedUserId:currentUser.id, projectIdOverride:"" };
+  const [form, setForm] = useState(blankForm);
+  const SF = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  const autoProjectId = () => {
+    const prefix = developer?.projectPrefix || "PRJ";
+    const num = developer?.projectNextNum || 1001;
+    return `${prefix}-${num}`;
   };
 
-  const typeColor = {Residential:"bg-sky-500/20 text-sky-300",Commercial:"bg-amber-500/20 text-amber-300",Industrial:"bg-purple-500/20 text-purple-300"};
-  const typeColorL = {Residential:"bg-sky-100 text-sky-700",Commercial:"bg-amber-100 text-amber-700",Industrial:"bg-purple-100 text-purple-700"};
+  // Pincode lookup
+  const onPincodeChange = (pin) => {
+    SF("customerPincode", pin);
+    if (pin.length===6 && PINCODE_MAP[pin]) {
+      SF("customerCity", PINCODE_MAP[pin].city);
+      SF("customerState", PINCODE_MAP[pin].state);
+    }
+  };
 
-  if (isLocked) return <LockedPage developer={developer}/>;
+  const saveProject = (isEdit) => {
+    const phone = `${form.countryCode} ${form.customerPhone}`.trim();
+    const pid = isEdit ? editProject.projectId : (form.projectIdOverride || autoProjectId());
+    if (!isEdit) setDevelopers(ds=>ds.map(d=>d.id===developer.id?{...d,projectNextNum:(d.projectNextNum||1001)+1}:d));
+    const proj = {
+      ...form,
+      customerPhone: phone,
+      projectId: pid,
+      id: isEdit ? editProject.id : `p${Date.now()}`,
+      developerId: currentUser.developerId,
+      userId: form.assignedUserId||currentUser.id,
+      assignedUserId: form.assignedUserId||currentUser.id,
+      createdAt: isEdit ? editProject.createdAt : TODAY,
+      lastActivity: TODAY,
+    };
+    if (isEdit) setProjects(ps=>ps.map(p=>p.id===editProject.id?proj:p));
+    else setProjects(ps=>[...ps,proj]);
+    setShowAdd(false); setEditProject(null); setForm(blankForm);
+  };
+
+  const openEdit = (p) => {
+    const [cc, ...numParts] = (p.customerPhone||"").split(" ");
+    setForm({...blankForm, ...p, countryCode:COUNTRY_CODES.find(c=>c.code===cc)?cc:"+91", customerPhone:numParts.join(" ")||p.customerPhone, projectIdOverride:p.projectId});
+    setEditProject(p);
+    setShowAdd(true);
+  };
+
+  // Excel export
+  const exportExcel = () => {
+    const rows = [["Project ID","Customer","Type","Phone","Email","Pincode","City","State","Address","Size","Unit","Lane","Enquiry","Assigned To","Created At"]];
+    filteredProjects.forEach(p=>{
+      const user = devTeam.find(u=>u.id===(p.assignedUserId||p.userId));
+      const lane = lanes.find(l=>l.id===p.laneId);
+      rows.push([p.projectId||"",p.customerName||"",p.customerType||"",p.customerPhone||"",p.customerEmail||"",p.customerPincode||"",p.customerCity||"",p.customerState||"",p.customerAddress||"",p.projectSize||"",p.projectUnit||"kW",lane?.name||"",p.enquiryType||"",user?.name||"",p.createdAt||""]);
+    });
+    const csv = rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], {type:"text/csv"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href=url; a.download="projects.csv"; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Excel import
+  const importExcel = (e) => {
+    const file = e.target.files[0]; if(!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target.result;
+      const lines = text.split("\n").slice(1); // skip header
+      const imported = lines.filter(l=>l.trim()).map((line,i)=>{
+        const cols = line.split(",").map(c=>c.replace(/^"|"$/g,"").trim());
+        return { id:`p${Date.now()}${i}`, projectId:cols[0]||autoProjectId(), customerName:cols[1]||"", customerType:cols[2]||"Residential", customerPhone:cols[3]||"", customerEmail:cols[4]||"", customerPincode:cols[5]||"", customerCity:cols[6]||"", customerState:cols[7]||"", customerAddress:cols[8]||"", projectSize:parseFloat(cols[9])||0, projectUnit:cols[10]||"kW", enquiryType:cols[12]||"Warm", laneId:lanes[0]?.id||"", developerId:currentUser.developerId, userId:currentUser.id, assignedUserId:currentUser.id, createdAt:TODAY, lastActivity:TODAY };
+      });
+      setProjects(ps=>[...ps,...imported]);
+    };
+    reader.readAsText(file);
+    e.target.value="";
+  };
+
+  const addCustomCity = (city) => setDevelopers(ds=>ds.map(d=>d.id===developer?.id?{...d,customCities:[...(d.customCities||[]),city]}:d));
+
+  const typeColors = { Residential:"bg-sky-500/20 text-sky-300 border-sky-500/30", Commercial:"bg-amber-500/20 text-amber-300 border-amber-500/30", Industrial:"bg-purple-500/20 text-purple-300 border-purple-500/30", Government:"bg-emerald-500/20 text-emerald-300 border-emerald-500/30", Other:"bg-slate-500/20 text-slate-300 border-slate-500/30" };
+  const typeColorsL = { Residential:"bg-sky-100 text-sky-700", Commercial:"bg-amber-100 text-amber-700", Industrial:"bg-purple-100 text-purple-700", Government:"bg-emerald-100 text-emerald-700", Other:"bg-slate-100 text-slate-600" };
+  const enquiryColors = { Hot:"bg-red-500/20 text-red-300", Warm:"bg-orange-500/20 text-orange-300", Cold:"bg-sky-500/20 text-sky-300" };
+  const enquiryColorsL = { Hot:"bg-red-100 text-red-700", Warm:"bg-orange-100 text-orange-700", Cold:"bg-sky-100 text-sky-700" };
+  const laneAccents = { slate:"border-slate-500", sky:"border-sky-400", amber:"border-amber-400", orange:"border-orange-400", emerald:"border-emerald-400", red:"border-red-400", purple:"border-purple-400" };
+
+  const isLocked = !currentUser?.active || (developer && (developer.paused || (developer.subscriptionEnd && new Date(developer.subscriptionEnd)<new Date())));
+  if (isLocked) return <LockedPage developer={developer} reason={!currentUser?.active?"inactive":developer?.paused?"paused":"expired"}/>;
+
+  const ProjectCard = ({p}) => {
+    const lane = lanes.find(l=>l.id===p.laneId);
+    const user = devTeam.find(u=>u.id===(p.assignedUserId||p.userId));
+    return (
+      <div className={`border rounded-xl p-3 mb-2 cursor-pointer transition-all hover:shadow-md ${tc(dark,"bg-[#0c1929] border-slate-700/50 hover:border-amber-500/30","bg-white border-slate-200 hover:border-amber-300 shadow-sm")}`}>
+        <div className="flex items-start justify-between mb-2">
+          <span className={`text-xs font-mono px-1.5 py-0.5 rounded ${tc(dark,"bg-slate-700 text-slate-400","bg-slate-100 text-slate-500")}`}>{p.projectId||"—"}</span>
+          <span className={`text-xs px-2 py-0.5 rounded-full border ${tc(dark,enquiryColors[p.enquiryType]||"bg-slate-500/20 text-slate-300 border-slate-500/30",enquiryColorsL[p.enquiryType]||"bg-slate-100 text-slate-600")}`}>{p.enquiryType||"—"}</span>
+        </div>
+        <div onClick={()=>setCurrentProjectId(p.id)}>
+          <h4 className={`font-bold text-sm mb-0.5 ${tc(dark,"text-white","text-slate-800")}`}>{p.customerName}</h4>
+          {p.pocName&&<p className={`text-xs mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>POC: {p.pocName}</p>}
+          <p className={`text-xs mb-2 ${tc(dark,"text-slate-400","text-slate-500")}`}>{[p.customerCity,p.customerState].filter(Boolean).join(", ")||p.customerAddress||"—"}</p>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className={`text-xs px-2 py-0.5 rounded-full ${tc(dark,typeColors[p.customerType]||"bg-slate-500/20 text-slate-300 border border-slate-500/30",typeColorsL[p.customerType]||"bg-slate-100 text-slate-600")}`}>{p.customerType||"—"}</span>
+            <span className={`text-xs font-medium ${tc(dark,"text-amber-400","text-amber-600")}`}>{p.projectSize} {p.projectUnit||"kW"}</span>
+            {user&&<span className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>→{user.name}</span>}
+          </div>
+        </div>
+        <div className="flex gap-1 mt-2">
+          <button onClick={e=>{e.stopPropagation();openEdit(p);}} className={`text-xs px-2 py-1 rounded-lg transition-colors ${tc(dark,"bg-slate-700 text-slate-300 hover:bg-slate-600","bg-slate-100 text-slate-600 hover:bg-slate-200")}`}><Icon name="edit" size={11}/></button>
+          <button onClick={e=>{e.stopPropagation();setCurrentProjectId(p.id);}} className={`text-xs px-2 py-1 rounded-lg transition-colors ${tc(dark,"bg-slate-700 text-slate-300 hover:bg-slate-600","bg-slate-100 text-slate-600 hover:bg-slate-200")}`}><Icon name="eye" size={11}/></button>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div>
+      {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className={`text-xl font-bold ${tc(dark,"text-white","text-slate-800")}`}>Projects</h1>
-          <p className={`text-sm ${tc(dark,"text-slate-400","text-slate-500")}`}>{myProjects.length} projects</p>
+          <p className={`text-sm ${tc(dark,"text-slate-400","text-slate-500")}`}>{filteredProjects.length} of {myProjects.length} projects</p>
         </div>
-        <Btn onClick={()=>setShowAdd(true)}><Icon name="plus" size={15}/>New Project</Btn>
-      </div>
-      <div className="flex gap-3 mb-5">
-        <div className="flex-1"><SearchBar value={search} onChange={setSearch} placeholder="Search customer or address…"/></div>
-        <select value={filterType} onChange={e=>setFilterType(e.target.value)} className={`border rounded-lg px-3 py-2 focus:outline-none text-sm ${tc(dark,"bg-[#0c1929] border-slate-700 text-white","bg-white border-slate-300 text-slate-800")}`}>
-          {["All","Residential","Commercial","Industrial"].map(t=><option key={t}>{t}</option>)}
-        </select>
-      </div>
-      {!myProjects.length ? (
-        <div className={`text-center py-20 border rounded-xl ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200")}`}>
-          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3 ${tc(dark,"bg-slate-800","bg-slate-100")}`}><Icon name="folder" size={24}/></div>
-          <h3 className={`text-base font-bold mb-1 ${tc(dark,"text-white","text-slate-800")}`}>No projects yet</h3>
-          <p className={`text-sm mb-4 ${tc(dark,"text-slate-400","text-slate-500")}`}>Create your first solar project</p>
-          <Btn onClick={()=>setShowAdd(true)}><Icon name="plus" size={15}/>Create Project</Btn>
+        <div className="flex gap-2 flex-wrap items-center">
+          <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>setView(v=>v==="kanban"?"list":"kanban")}><Icon name={view==="kanban"?"sort":"kanban"} size={15}/>{view==="kanban"?"List":"Kanban"}</Btn>
+          <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={exportExcel}><Icon name="export" size={14}/>Export</Btn>
+          <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>fileInputRef.current?.click()}><Icon name="import" size={14}/>Import</Btn>
+          <input ref={fileInputRef} type="file" accept=".csv,.xlsx" onChange={importExcel} className="hidden"/>
+          <Btn onClick={()=>{setEditProject(null);setForm({...blankForm,laneId:lanes[0]?.id||""});setShowAdd(true);}}><Icon name="plus" size={15}/>New Project</Btn>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-          {myProjects.map(p=>(
-            <button key={p.id} onClick={()=>setCurrentProjectId(p.id)} className={`border rounded-xl p-4 text-left transition-all group ${tc(dark,"bg-[#0c1929] border-slate-700/50 hover:border-amber-500/40 hover:bg-[#0f1f38]","bg-white border-slate-200 hover:border-amber-300 hover:shadow-md shadow-sm")}`}>
-              <div className="flex items-start justify-between mb-3">
-                <div className="w-9 h-9 rounded-xl bg-amber-500/15 flex items-center justify-center text-amber-400"><Icon name="zap" size={18}/></div>
-                <span className={`text-xs px-2 py-0.5 rounded-full ${statusColor(p.status,dark)}`}>{p.status}</span>
-              </div>
-              <h3 className={`font-bold mb-0.5 ${tc(dark,"text-white","text-slate-800")}`}>{p.customerName}</h3>
-              <p className={`text-xs mb-2 truncate ${tc(dark,"text-slate-400","text-slate-500")}`}>{p.customerAddress}</p>
-              <div className="flex items-center gap-2">
-                <span className={`text-xs px-2 py-0.5 rounded-full ${tc(dark,typeColor[p.projectType]||"bg-slate-700 text-slate-300",typeColorL[p.projectType]||"bg-slate-100 text-slate-600")}`}>{p.projectType}</span>
-                <span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{p.projectSize} kW</span>
-              </div>
-              <div className={`mt-2 pt-2 border-t text-xs ${tc(dark,"border-slate-700/30 text-slate-500","border-slate-100 text-slate-400")}`}>{fmtDate(p.createdAt)}</div>
-            </button>
-          ))}
+      </div>
+
+      {/* Search + Quick Filters */}
+      <div className="flex flex-wrap gap-2 mb-3">
+        <div className="flex-1 min-w-48"><SearchBar value={filters.q} onChange={v=>FF("q",v)} placeholder="Search project ID, customer, address…"/></div>
+        <button onClick={()=>setShowFilters(f=>!f)} className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm transition-colors ${showFilters?tc(dark,"bg-amber-500/20 border-amber-500/40 text-amber-300","bg-amber-50 border-amber-300 text-amber-700"):tc(dark,"border-slate-600 text-slate-400 hover:border-slate-500","border-slate-300 text-slate-500 hover:border-slate-400")}`}>
+          <Icon name="filter" size={15}/> Filters
+        </button>
+      </div>
+
+      {/* Advanced Filters */}
+      {showFilters&&(
+        <div className={`border rounded-xl p-4 mb-4 grid grid-cols-2 lg:grid-cols-4 gap-3 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+          <Field label="Project ID" value={filters.projectId} onChange={v=>FF("projectId",v)}/>
+          <Field label="Customer Name" value={filters.customerName} onChange={v=>FF("customerName",v)}/>
+          <Field label="Customer Phone" value={filters.customerPhone} onChange={v=>FF("customerPhone",v)}/>
+          <Field label="Customer Type" type="select" value={filters.customerType} onChange={v=>FF("customerType",v)} options={[{value:"all",label:"All Types"},...["Residential","Commercial","Industrial","Government","Other"].map(t=>({value:t,label:t}))]}/>
+          <Field label="Enquiry Type" type="select" value={filters.enquiryType} onChange={v=>FF("enquiryType",v)} options={[{value:"all",label:"All"},...["Hot","Warm","Cold"].map(t=>({value:t,label:t}))]}/>
+          <Field label="Assigned To" type="select" value={filters.assignedTo} onChange={v=>FF("assignedTo",v)} options={[{value:"all",label:"Anyone"},...devTeam.map(u=>({value:u.id,label:u.name}))]}/>
+          <Field label="Min Size" type="number" value={filters.minSize} onChange={v=>FF("minSize",v)} placeholder="0"/>
+          <Field label="Max Size" type="number" value={filters.maxSize} onChange={v=>FF("maxSize",v)} placeholder="Any"/>
+          <button onClick={()=>setFilters({q:"",projectId:"",customerName:"",customerPhone:"",customerType:"all",assignedTo:"all",minSize:"",maxSize:"",enquiryType:"all"})} className="text-xs text-amber-400 underline self-end pb-3">Clear Filters</button>
         </div>
       )}
+
+      {/* KANBAN VIEW */}
+      {view==="kanban"&&(
+        <div className="flex gap-4 overflow-x-auto pb-4">
+          {lanes.map(lane=>{
+            const laneProjects = filteredProjects.filter(p=>p.laneId===lane.id);
+            const totalSize = laneProjects.reduce((s,p)=>s+(parseFloat(p.projectSize)||0),0);
+            const totalVal = laneProjects.reduce((s,p)=>s+Math.round((developer?.costPerKW||50000)*(parseFloat(p.projectSize)||0)),0);
+            return (
+              <div key={lane.id} className={`flex-shrink-0 w-72`}>
+                <div className={`border-t-2 rounded-xl p-3 mb-3 ${laneAccents[lane.color]||"border-slate-500"} ${tc(dark,"bg-slate-800/30","bg-slate-50")}`}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={`font-bold text-sm ${tc(dark,"text-white","text-slate-800")}`}>{lane.name}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${tc(dark,"bg-slate-700 text-slate-300","bg-white text-slate-600 border border-slate-200")}`}>{laneProjects.length}</span>
+                  </div>
+                  <div className="flex gap-3 text-xs">
+                    <span className={tc(dark,"text-slate-400","text-slate-500")}>{totalSize.toFixed(1)} kW total</span>
+                    <span className={tc(dark,"text-amber-400","text-amber-600")}>~{fmtINR(totalVal)}</span>
+                  </div>
+                </div>
+                <div>
+                  {laneProjects.map(p=><ProjectCard key={p.id} p={p}/>)}
+                  {!laneProjects.length&&<div className={`border-2 border-dashed rounded-xl p-4 text-center text-xs ${tc(dark,"border-slate-700 text-slate-600","border-slate-200 text-slate-400")}`}>No projects</div>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* LIST VIEW */}
+      {view==="list"&&(
+        filteredProjects.length ? (
+          <div className={`border rounded-xl overflow-hidden ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+            <table className="w-full text-sm">
+              <thead><tr className={`border-b ${tc(dark,"border-slate-700 bg-slate-800/30","border-slate-200 bg-slate-50")}`}>
+                {["Project ID","Customer","Type","Size","Lane","Enquiry","Assigned","Actions"].map(h=>(
+                  <th key={h} className={`text-left px-3 py-2.5 text-xs font-medium ${tc(dark,"text-slate-400","text-slate-500")}`}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {filteredProjects.map(p=>{
+                  const lane = lanes.find(l=>l.id===p.laneId);
+                  const user = devTeam.find(u=>u.id===(p.assignedUserId||p.userId));
+                  return (
+                    <tr key={p.id} onClick={()=>setCurrentProjectId(p.id)} className={`border-b cursor-pointer transition-colors ${tc(dark,"border-slate-700/30 hover:bg-slate-800/20","border-slate-100 hover:bg-slate-50")}`}>
+                      <td className={`px-3 py-2.5 font-mono text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{p.projectId||"—"}</td>
+                      <td className="px-3 py-2.5">
+                        <div className={`font-medium text-xs ${tc(dark,"text-white","text-slate-800")}`}>{p.customerName}</div>
+                        {p.pocName&&<div className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>{p.pocName}</div>}
+                      </td>
+                      <td className="px-3 py-2.5"><span className={`text-xs px-2 py-0.5 rounded-full ${tc(dark,typeColors[p.customerType]||"",typeColorsL[p.customerType]||"")}`}>{p.customerType||"—"}</span></td>
+                      <td className={`px-3 py-2.5 font-medium text-xs text-amber-400`}>{p.projectSize} {p.projectUnit||"kW"}</td>
+                      <td className={`px-3 py-2.5 text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{lane?.name||"—"}</td>
+                      <td className="px-3 py-2.5"><span className={`text-xs px-2 py-0.5 rounded-full ${tc(dark,enquiryColors[p.enquiryType]||"",enquiryColorsL[p.enquiryType]||"")}`}>{p.enquiryType||"—"}</span></td>
+                      <td className={`px-3 py-2.5 text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{user?.name||"—"}</td>
+                      <td className="px-3 py-2.5" onClick={e=>e.stopPropagation()}>
+                        <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>openEdit(p)}><Icon name="edit" size={12}/>Edit</Btn>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className={`text-center py-20 border rounded-xl ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200")}`}>
+            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3 ${tc(dark,"bg-slate-800","bg-slate-100")}`}><Icon name="folder" size={24}/></div>
+            <h3 className={`text-base font-bold mb-1 ${tc(dark,"text-white","text-slate-800")}`}>No projects found</h3>
+            <p className={`text-sm mb-4 ${tc(dark,"text-slate-400","text-slate-500")}`}>Try adjusting your filters or create a new project</p>
+          </div>
+        )
+      )}
+
+      {/* ADD / EDIT Modal */}
       {showAdd&&(
-        <Modal title="New Project" onClose={()=>setShowAdd(false)} wide>
+        <Modal title={editProject?"Edit Project":"Add New Project"} onClose={()=>{setShowAdd(false);setEditProject(null);setForm(blankForm);}} wide>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Customer Name" value={form.customerName} onChange={v=>setForm(f=>({...f,customerName:v}))} required/>
-            <Field label="Phone" value={form.customerPhone} onChange={v=>setForm(f=>({...f,customerPhone:v}))}/>
-            <Field label="Email" type="email" value={form.customerEmail} onChange={v=>setForm(f=>({...f,customerEmail:v}))}/>
-            <Field label="Project Size (kW)" type="number" value={form.projectSize} onChange={v=>setForm(f=>({...f,projectSize:parseFloat(v)||0}))} required/>
-            <Field label="Type" type="select" value={form.projectType} onChange={v=>setForm(f=>({...f,projectType:v}))} options={["Residential","Commercial","Industrial"]}/>
-            <Field label="Status" type="select" value={form.status} onChange={v=>setForm(f=>({...f,status:v}))} options={["Active","Proposal Sent","Completed","Cancelled"]}/>
+            <Field label="Customer Type" type="select" value={form.customerType} onChange={v=>SF("customerType",v)} options={["Residential","Commercial","Industrial","Government","Other"]} required/>
+            <div>
+              <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Project ID</label>
+              <div className="flex gap-2 mb-4">
+                <input value={form.projectIdOverride||autoProjectId()} onChange={e=>SF("projectIdOverride",e.target.value)} className={`flex-1 border rounded-lg px-3 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}/>
+              </div>
+            </div>
+            <Field label="Customer Name" value={form.customerName} onChange={v=>SF("customerName",v)} required/>
+            {["Commercial","Industrial","Government"].includes(form.customerType)&&<Field label="Point of Contact Name" value={form.pocName||""} onChange={v=>SF("pocName",v)}/>}
           </div>
-          <Field label="Street Address" type="textarea" rows={2} value={form.customerAddress} onChange={v=>setForm(f=>({...f,customerAddress:v}))}/>
+
+          {/* Phone with country code */}
+          <div className="mb-4">
+            <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Customer Phone <span className="text-amber-400">*</span></label>
+            <div className="flex">
+              <select value={form.countryCode} onChange={e=>SF("countryCode",e.target.value)} className={`border border-r-0 rounded-l-lg px-2 py-2.5 focus:outline-none text-xs ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+                {COUNTRY_CODES.map(c=><option key={c.code} value={c.code}>{c.label}</option>)}
+              </select>
+              <input value={form.customerPhone} onChange={e=>SF("customerPhone",e.target.value.replace(/\D/g,""))} placeholder="Phone number" className={`flex-1 border rounded-r-lg px-3 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white placeholder-slate-500","bg-white border-slate-300 text-slate-800")}`}/>
+            </div>
+          </div>
+
+          {/* Email with validation */}
+          <div className="mb-4">
+            <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Customer Email</label>
+            <input type="email" value={form.customerEmail} onChange={e=>SF("customerEmail",e.target.value)} placeholder="customer@email.com" className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white placeholder-slate-500 focus:border-amber-400","bg-white border-slate-300 text-slate-800 focus:border-amber-500")} ${form.customerEmail&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.customerEmail)?tc(dark,"border-red-500","border-red-400"):""}`}/>
+            {form.customerEmail&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.customerEmail)&&<p className="text-red-400 text-xs mt-1">Invalid email format</p>}
+          </div>
+
+          {/* Pincode first → auto-fetch city/state */}
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Pincode</label>
+              <input value={form.customerPincode} onChange={e=>onPincodeChange(e.target.value)} placeholder="400001" maxLength={6} className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none mb-4 ${tc(dark,"bg-slate-800 border-slate-600 text-white placeholder-slate-500 focus:border-amber-400","bg-white border-slate-300 text-slate-800 focus:border-amber-500")}`}/>
+            </div>
+            <CityField label="City" value={form.customerCity} onChange={v=>SF("customerCity",v)} customCities={customCities} onAddCity={addCustomCity}/>
+            <Field label="State" value={form.customerState||""} onChange={v=>SF("customerState",v)} placeholder="Maharashtra"/>
+          </div>
+          <Field label="Address" type="textarea" rows={2} value={form.customerAddress} onChange={v=>SF("customerAddress",v)}/>
+
+          {/* Project size with unit */}
           <div className="grid grid-cols-2 gap-3">
-            <CityField label="City" value={form.customerCity||""} onChange={v=>setForm(f=>({...f,customerCity:v}))}/>
-            <Field label="Pincode" value={form.customerPincode||""} onChange={v=>setForm(f=>({...f,customerPincode:v}))} placeholder="400001"/>
+            <div>
+              <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Project Size <span className="text-amber-400">*</span></label>
+              <div className="flex mb-4">
+                <input type="number" value={form.projectSize} onChange={e=>SF("projectSize",e.target.value)} placeholder="e.g. 10" className={`flex-1 border rounded-l-lg px-3 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}/>
+                <select value={form.projectUnit} onChange={e=>SF("projectUnit",e.target.value)} className={`border border-l-0 rounded-r-lg px-2 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+                  {[...(developer?.customUnits||[]),...PROJECT_UNITS].filter((v,i,a)=>a.indexOf(v)===i).map(u=><option key={u} value={u}>{u}</option>)}
+                </select>
+              </div>
+            </div>
+            <Field label="Enquiry Type" type="select" value={form.enquiryType} onChange={v=>SF("enquiryType",v)} options={["Hot","Warm","Cold"]}/>
           </div>
-          {currentUser.role===ROLES.DEV_ADMIN&&devTeam.length>0&&(
-            <Field label="Assign To Team Member" type="select" value={form.assignedUserId||""} onChange={v=>setForm(f=>({...f,assignedUserId:v}))}
-              options={[{value:"",label:"— Assign to myself —"},...devTeam.map(u=>({value:u.id,label:u.name}))]}/>
-          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Project Lane / Status" type="select" value={form.laneId} onChange={v=>SF("laneId",v)} options={lanes.map(l=>({value:l.id,label:l.name}))}/>
+            <Field label="Assign To" type="select" value={form.assignedUserId||currentUser.id} onChange={v=>SF("assignedUserId",v)} options={[{value:currentUser.id,label:"Myself"},...devTeam.filter(u=>u.id!==currentUser.id).map(u=>({value:u.id,label:u.name}))]}/>
+          </div>
+
           <div className="flex gap-3 mt-2">
-            <Btn onClick={save} className="flex-1" disabled={!form.customerName||!form.projectSize}>Create Project</Btn>
-            <Btn variant="secondary" onClick={()=>setShowAdd(false)}>Cancel</Btn>
+            <Btn onClick={()=>saveProject(!!editProject)} className="flex-1" disabled={!form.customerName||!form.projectSize}>{editProject?"Update Project":"Add Project"}</Btn>
+            <Btn variant="secondary" onClick={()=>{setShowAdd(false);setEditProject(null);setForm(blankForm);}}>Cancel</Btn>
           </div>
         </Modal>
       )}
@@ -1785,6 +2294,7 @@ const ProjectInvoicesPage = ({ invoices, setInvoices, projects, developer, curre
   const [items, setItems] = useState([{name:"",qty:1,price:0,gst:12}]);
   const [notes, setNotes] = useState("");
   const [status, setStatus] = useState("Pending");
+  const [docType, setDocType] = useState("Proforma Invoice");
 
   const myProjects = projects.filter(p =>
     currentUser.role===ROLES.DEV_ADMIN ? p.developerId===currentUser.developerId : p.userId===currentUser.id
@@ -1799,13 +2309,12 @@ const ProjectInvoicesPage = ({ invoices, setInvoices, projects, developer, curre
 
   const selProject = myProjects.find(p=>p.id===selectedProject);
 
-  // Auto-fill items from project when selected
   const onSelectProject = (pid) => {
     setSelectedProject(pid);
     const p = myProjects.find(x=>x.id===pid);
     if (p && developer) {
       const vars = calcSolar(p.projectSize, developer);
-      setItems([{name:`${p.projectSize} kW ${p.projectType} Solar System`,qty:1,price:Math.round(vars.totalCost),gst:12}]);
+      setItems([{name:`${p.projectSize} ${p.projectUnit||"kW"} ${p.customerType||"Residential"} Solar System`,qty:1,price:Math.round(vars.totalCost),gst:12}]);
     }
   };
 
@@ -1818,12 +2327,12 @@ const ProjectInvoicesPage = ({ invoices, setInvoices, projects, developer, curre
     const invId  = `${prefix}-${num}`;
     setDevelopers(ds=>ds.map(d=>d.id===developer.id?{...d,invoiceNextNum:(d.invoiceNextNum||1001)+1}:d));
     const inv = {
-      id:invId,
+      id:invId, docType,
       type:"project", developerId:developer.id,
       projectId:selectedProject, userId:currentUser.id,
       amount:total, status, date:TODAY,
       customerName:p?.customerName||"",
-      customerAddress:p?.customerAddress||"",
+      customerAddress:[p?.customerAddress,p?.customerCity,p?.customerPincode].filter(Boolean).join(", "),
       customerPhone:p?.customerPhone||"",
       customerEmail:p?.customerEmail||"",
       items:[...items], notes,
@@ -1840,31 +2349,42 @@ const ProjectInvoicesPage = ({ invoices, setInvoices, projects, developer, curre
     <div>
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h1 className={`text-xl font-bold ${tc(dark,"text-white","text-slate-800")}`}>Invoices</h1>
-          <p className={`text-sm ${tc(dark,"text-slate-400","text-slate-500")}`}>{myInvoices.length} invoice{myInvoices.length!==1?"s":""}</p>
+          <h1 className={`text-xl font-bold ${tc(dark,"text-white","text-slate-800")}`}>Invoices & Documents</h1>
+          <p className={`text-sm ${tc(dark,"text-slate-400","text-slate-500")}`}>{myInvoices.length} record{myInvoices.length!==1?"s":""}</p>
         </div>
-        <Btn onClick={()=>setShowCreate(true)}><Icon name="plus" size={15}/>Create Invoice</Btn>
+        <Btn onClick={()=>setShowCreate(true)}><Icon name="plus" size={15}/>Create Document</Btn>
       </div>
 
       <InvoiceListView
         invoices={myInvoices}
         developers={[developer]}
         projects={myProjects}
+        developer={developer}
         onView={inv=>setViewInv(inv)}
         onPrint={inv=>printInvoiceTemplid(inv,developer)}
+        onDownload={inv=>{const cxName=(inv.customerName||"Customer").replace(/\s+/g,"_");downloadHTML(buildInvoiceHTML({inv,developer,customer:{}}),`Invoice_${cxName}_${inv.id}.html`);}}
         onMarkPaid={id=>setInvoices(is=>is.map(i=>i.id===id?{...i,status:"Paid"}:i))}
+        onConvert={(inv,newType)=>setInvoices(is=>is.map(i=>i.id===inv.id?{...i,docType:newType}:i))}
         currentUser={currentUser}
       />
 
       {/* Create Modal */}
       {showCreate&&(
-        <Modal title="Create Invoice" onClose={()=>setShowCreate(false)} wide>
+        <Modal title="Create Document" onClose={()=>setShowCreate(false)} wide>
+          <div className="mb-4">
+            <label className={`block text-sm font-medium mb-2 ${tc(dark,"text-slate-300","text-slate-700")}`}>Document Type</label>
+            <div className="flex gap-2 flex-wrap">
+              {INV_DOC_TYPES.map(t=>(
+                <button key={t} onClick={()=>setDocType(t)} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${docType===t?"bg-amber-500 text-slate-900 border-amber-400":tc(dark,"border-slate-600 text-slate-400 hover:border-amber-400","border-slate-300 text-slate-500 hover:border-amber-400")}`}>{t}</button>
+              ))}
+            </div>
+          </div>
           <Field label="Select Project" type="select" value={selectedProject} onChange={onSelectProject}
-            options={[{value:"",label:"— Select Project —"},...myProjects.map(p=>({value:p.id,label:`${p.customerName} — ${p.projectSize}kW`}))]}/>
+            options={[{value:"",label:"— Select Project —"},...myProjects.map(p=>({value:p.id,label:`${p.customerName} — ${p.projectSize}${p.projectUnit||"kW"}`}))]}/>
           {selProject&&(
             <div className={`rounded-xl p-3 mb-4 text-xs ${tc(dark,"bg-slate-800/40","bg-slate-50")}`}>
               <div className="grid grid-cols-2 gap-1">
-                {[["Customer",selProject.customerName],["Address",selProject.customerAddress],["Phone",selProject.customerPhone],["Email",selProject.customerEmail],["Size",`${selProject.projectSize} kW`],["Type",selProject.projectType]].map(([k,v])=>(
+                {[["Customer",selProject.customerName],["Type",selProject.customerType||selProject.projectType],["Phone",selProject.customerPhone],["Email",selProject.customerEmail],["Size",`${selProject.projectSize} ${selProject.projectUnit||"kW"}`],["Lane",selProject.laneId]].map(([k,v])=>(
                   <div key={k}><span className={tc(dark,"text-slate-400","text-slate-500")}>{k}: </span><span className={`font-medium ${tc(dark,"text-white","text-slate-700")}`}>{v||"—"}</span></div>
                 ))}
               </div>
@@ -1872,9 +2392,9 @@ const ProjectInvoicesPage = ({ invoices, setInvoices, projects, developer, curre
           )}
           <InvoiceItemEditor items={items} setItems={setItems}/>
           <Field label="Notes" type="textarea" rows={2} value={notes} onChange={setNotes} placeholder="Additional notes…"/>
-          <Field label="Status" type="select" value={status} onChange={setStatus} options={["Pending","Sent","Paid","Draft"]}/>
+          <Field label="Status" type="select" value={status} onChange={setStatus} options={["Draft","Pending","Sent","Accepted","Paid"]}/>
           <div className="flex gap-3 mt-2">
-            <Btn onClick={generate} className="flex-1" disabled={!selectedProject||!items.length||!items[0].name}><Icon name="zap" size={15}/>Generate Invoice</Btn>
+            <Btn onClick={generate} className="flex-1" disabled={!selectedProject||!items.length||!items[0].name}><Icon name="zap" size={15}/>Generate {docType}</Btn>
             <Btn variant="secondary" onClick={()=>setShowCreate(false)}>Cancel</Btn>
           </div>
         </Modal>
@@ -1882,10 +2402,13 @@ const ProjectInvoicesPage = ({ invoices, setInvoices, projects, developer, curre
 
       {/* Preview Modal */}
       {viewInv&&(
-        <Modal title={`Invoice — ${viewInv.id.toUpperCase()}`} onClose={()=>setViewInv(null)} wide>
+        <Modal title={`${viewInv.docType||"Invoice"} — ${viewInv.id.toUpperCase()}`} onClose={()=>setViewInv(null)} wide>
           <InvoicePreviewContent inv={viewInv} developer={developer} customer={{name:viewInv.customerName,address:viewInv.customerAddress,phone:viewInv.customerPhone,email:viewInv.customerEmail}}/>
-          <div className="flex gap-3 mt-4 pt-4 border-t border-slate-700">
-            <Btn className="flex-1" onClick={()=>printInvoiceTemplid(viewInv,developer)}><Icon name="print" size={15}/>Download / Print PDF</Btn>
+          <div className="flex gap-2 flex-wrap mt-4 pt-4 border-t border-slate-700">
+            <Btn onClick={()=>printInvoiceTemplid(viewInv,developer)}><Icon name="print" size={15}/>Print</Btn>
+            <Btn variant="outline" onClick={()=>{const cxName=(viewInv.customerName||"Customer").replace(/\s+/g,"_");downloadHTML(buildInvoiceHTML({inv:viewInv,developer,customer:{}}),`Invoice_${cxName}_${viewInv.id}.html`);}}><Icon name="download" size={15}/>Download PDF</Btn>
+            {viewInv.customerPhone&&<Btn variant="outline" onClick={()=>{const p=myProjects.find(x=>x.id===viewInv.projectId);const msg=`Hi ${viewInv.customerName},\n\nHere is your ${viewInv.docType||"Invoice"} (${viewInv.id}) for your ${p?.projectSize||""}${p?.projectUnit||"kW"} ${p?.customerType||""} solar project worth ${fmtINR(calcInvoiceTotal(viewInv.items||[]).total)}.\n\nRegards,\n${developer?.companyName||""}`;shareWhatsApp(viewInv.customerPhone,msg);}}>WA WhatsApp</Btn>}
+            {viewInv.customerEmail&&<Btn variant="outline" onClick={()=>{const p=myProjects.find(x=>x.id===viewInv.projectId);const body=`Hi ${viewInv.customerName},\n\nHere is your ${viewInv.docType||"Invoice"} (${viewInv.id}) for your solar project worth ${fmtINR(calcInvoiceTotal(viewInv.items||[]).total)}.\n\nRegards,\n${developer?.companyName||""}`;shareMail(viewInv.customerEmail,`${viewInv.docType||"Invoice"} - ${viewInv.id}`,body);}}><Icon name="mail" size={15}/>Email</Btn>}
             <Btn variant="secondary" onClick={()=>setViewInv(null)}>Close</Btn>
           </div>
         </Modal>
@@ -2006,28 +2529,65 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
   const { dark } = useTheme();
   const [tab, setTab] = useState("info");
   const [newNote, setNewNote] = useState("");
+  const [noteFileRef] = [useRef()];
+  const [noteAttachments, setNoteAttachments] = useState([]);
+  const [noteFilterUser, setNoteFilterUser] = useState("all");
   const [showGen, setShowGen] = useState(false);
   const [selectedTmpl, setSelectedTmpl] = useState("");
   const [pForm, setPForm] = useState({});
   const [viewProposal, setViewProposal] = useState(null);
-  const fileRef = useRef();
+  const [showDocUpload, setShowDocUpload] = useState(false);
+  const [docTitle, setDocTitle] = useState("");
+  const [docFileRef] = [useRef()];
+  const [pendingDocFile, setPendingDocFile] = useState(null);
+  const [docSearch, setDocSearch] = useState("");
+  const [docFilterType, setDocFilterType] = useState("all");
+  const [docFilterUser, setDocFilterUser] = useState("all");
+  const [editingProject, setEditingProject] = useState(false);
 
   const projNotes     = notes.filter(n=>n.projectId===project.id);
   const projDocs      = documents.filter(d=>d.projectId===project.id);
   const projProposals = proposals.filter(p=>p.projectId===project.id);
   const avlTemplates  = templates.filter(t=>t.assignedTo.includes(project.developerId));
 
+  // Unique note authors
+  const noteAuthors = [...new Set(projNotes.map(n=>n.userName||n.userId))];
+  const filteredNotes = projNotes.filter(n=> noteFilterUser==="all"||(n.userName||n.userId)===noteFilterUser);
+  const filteredDocs = projDocs.filter(d=>{
+    const matchSearch = !docSearch || d.title?.toLowerCase().includes(docSearch.toLowerCase()) || d.name?.toLowerCase().includes(docSearch.toLowerCase());
+    const matchType = docFilterType==="all" || d.type===docFilterType;
+    const matchUser = docFilterUser==="all" || d.uploadedBy===docFilterUser;
+    return matchSearch && matchType && matchUser;
+  });
+  const docAuthors = [...new Set(projDocs.map(d=>d.uploadedBy))];
+
   const addNote = () => {
-    if (!newNote.trim()) return;
-    setNotes(ns=>[...ns,{id:`n${Date.now()}`,projectId:project.id,userId:currentUser.id,content:newNote,createdAt:new Date().toISOString()}]);
-    setNewNote("");
+    if (!newNote.trim() && !noteAttachments.length) return;
+    setNotes(ns=>[...ns,{id:`n${Date.now()}`,projectId:project.id,userId:currentUser.id,userName:currentUser.name,content:newNote,attachments:[...noteAttachments],createdAt:new Date().toISOString()}]);
+    setNewNote(""); setNoteAttachments([]);
   };
 
-  const handleUpload = (e) => {
+  const handleNoteFile = (e) => {
     const file = e.target.files[0]; if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => setNoteAttachments(a=>[...a,{name:file.name,data:ev.target.result,type:file.type}]);
+    reader.readAsDataURL(file);
+    e.target.value="";
+  };
+
+  const handleDocFileSelect = (e) => {
+    const file = e.target.files[0]; if(!file) return;
+    setPendingDocFile(file);
+    setDocTitle(file.name.replace(/\.[^.]+$/,""));
+    setShowDocUpload(true);
+  };
+
+  const saveDoc = () => {
+    if (!pendingDocFile) return;
     const types={pdf:"PDF",doc:"Word",docx:"Word",xls:"Excel",xlsx:"Excel",jpg:"Image",jpeg:"Image",png:"Image",mp4:"Video",mov:"Video"};
-    const ext=file.name.split(".").pop().toLowerCase();
-    setDocuments(ds=>[...ds,{id:`doc${Date.now()}`,projectId:project.id,name:file.name,type:types[ext]||"File",size:`${(file.size/1024).toFixed(0)} KB`,uploadDate:TODAY,uploadedBy:currentUser.name}]);
+    const ext=pendingDocFile.name.split(".").pop().toLowerCase();
+    setDocuments(ds=>[...ds,{id:`doc${Date.now()}`,projectId:project.id,title:docTitle||pendingDocFile.name,name:pendingDocFile.name,type:types[ext]||"Other",size:`${(pendingDocFile.size/1024).toFixed(0)} KB`,uploadDate:TODAY,uploadedBy:currentUser.name,uploadedById:currentUser.id}]);
+    setShowDocUpload(false); setDocTitle(""); setPendingDocFile(null);
   };
 
   const vars = calcSolar(project.projectSize, developer);
@@ -2035,14 +2595,15 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
   const generateProposal = () => {
     const tmpl = templates.find(t=>t.id===selectedTmpl); if(!tmpl) return;
     const v = calcSolar(project.projectSize, developer, pForm);
+    const fullAddress = [project.customerAddress,project.customerCity,project.customerState].filter(Boolean).join(", ");
     const data = {
       ...pForm, ...v,
-      company_name:developer.companyName, company_address:developer.address,
+      company_name:developer.companyName, company_address:[developer.address,developer.city,developer.pincode].filter(Boolean).join(", "),
       company_phone:developer.phone, company_email:developer.email,
       company_website:developer.website, payment_terms:developer.paymentTerms,
-      customer_name:project.customerName, customer_address:project.customerAddress,
+      customer_name:project.customerName, customer_address:fullAddress,
       customer_phone:project.customerPhone, customer_email:project.customerEmail,
-      project_size:project.projectSize, project_type:project.projectType,
+      project_size:project.projectSize, project_type:project.customerType||project.projectType,
     };
     const np={id:`pr${Date.now()}`,projectId:project.id,templateId:selectedTmpl,status:"Generated",createdAt:TODAY,data};
     setProposals(ps=>[...ps,np]);
@@ -2058,15 +2619,15 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
         <button onClick={onBack} className={`p-1.5 rounded-lg transition-colors ${tc(dark,"text-slate-400 hover:text-white hover:bg-slate-700","text-slate-400 hover:text-slate-600 hover:bg-slate-100")}`}><Icon name="back" size={18}/></button>
         <div className="flex-1">
           <h1 className={`text-xl font-bold ${tc(dark,"text-white","text-slate-800")}`}>{project.customerName}</h1>
-          <p className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{project.customerAddress}</p>
+          <p className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{project.projectId} · {[project.customerCity,project.customerState].filter(Boolean).join(", ")||project.customerAddress}</p>
         </div>
-        <span className={`text-xs px-2 py-1 rounded-full ${statusColor(project.status,dark)}`}>{project.status}</span>
-        <span className={`text-xs px-2 py-1 rounded-full ${tc(dark,"bg-slate-700 text-slate-300","bg-slate-100 text-slate-600")}`}>{project.projectType}</span>
+        <span className={`text-xs px-2 py-1 rounded-full ${statusColor(project.laneId?"Active":"Active",dark)}`}>{project.enquiryType||"—"}</span>
+        <span className={`text-xs px-2 py-1 rounded-full ${tc(dark,"bg-slate-700 text-slate-300","bg-slate-100 text-slate-600")}`}>{project.customerType||project.projectType||"—"}</span>
       </div>
 
       {/* Quick stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-        {[["System Size",`${project.projectSize} kW`],["Total Cost",fmtINR(vars.totalCost)],["Annual Savings",fmtINR(vars.annualSavings)],["Payback",`${vars.paybackPeriod} yrs`]].map(([l,v])=>(
+        {[["System Size",`${project.projectSize} ${project.projectUnit||"kW"}`],["Total Cost",fmtINR(vars.totalCost)],["Annual Savings",fmtINR(vars.annualSavings)],["Payback",`${vars.paybackPeriod} yrs`]].map(([l,v])=>(
           <div key={l} className={`border rounded-xl p-3 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
             <div className={`text-xs mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>{l}</div>
             <div className={`font-bold ${tc(dark,"text-white","text-slate-800")}`}>{v}</div>
@@ -2086,9 +2647,9 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
             <h3 className={`font-bold mb-3 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Customer Details</h3>
-            {[["Name",project.customerName],["Email",project.customerEmail],["Phone",project.customerPhone],["Address",project.customerAddress]].map(([k,v])=>(
+            {[["Name",project.customerName],["POC",project.pocName],["Email",project.customerEmail],["Phone",project.customerPhone],["Type",project.customerType||project.projectType],["Enquiry",project.enquiryType],["Pincode",project.customerPincode],["City",project.customerCity],["State",project.customerState],["Address",project.customerAddress]].filter(([,v])=>v).map(([k,v])=>(
               <div key={k} className={`flex gap-3 text-sm py-1.5 border-b last:border-0 ${tc(dark,"border-slate-700/20","border-slate-100")}`}>
-                <span className={`w-16 flex-shrink-0 ${tc(dark,"text-slate-400","text-slate-500")}`}>{k}</span>
+                <span className={`w-20 flex-shrink-0 ${tc(dark,"text-slate-400","text-slate-500")}`}>{k}</span>
                 <span className={tc(dark,"text-white","text-slate-800")}>{v||"—"}</span>
               </div>
             ))}
@@ -2110,13 +2671,29 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
         <div>
           <div className={`border rounded-xl p-4 mb-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
             <textarea value={newNote} onChange={e=>setNewNote(e.target.value)} placeholder="Add a note…" rows={3} className={`w-full border rounded-lg px-3 py-2.5 focus:outline-none resize-none text-sm mb-3 ${tc(dark,"bg-slate-800/50 border-slate-600 text-white placeholder-slate-500 focus:border-amber-400","bg-slate-50 border-slate-300 text-slate-800 placeholder-slate-400 focus:border-amber-500")}`}/>
-            <Btn onClick={addNote} disabled={!newNote.trim()}><Icon name="plus" size={15}/>Add Note</Btn>
+            {noteAttachments.length>0&&<div className="flex flex-wrap gap-2 mb-3">{noteAttachments.map((a,i)=><span key={i} className={`text-xs px-2 py-1 rounded-lg flex items-center gap-1.5 ${tc(dark,"bg-slate-700 text-slate-300","bg-slate-100 text-slate-600")}`}><Icon name="file" size={12}/>{a.name}<button onClick={()=>setNoteAttachments(x=>x.filter((_,j)=>j!==i))} className="text-red-400">×</button></span>)}</div>}
+            <div className="flex gap-2">
+              <Btn onClick={addNote} disabled={!newNote.trim()&&!noteAttachments.length}><Icon name="plus" size={15}/>Add Note</Btn>
+              <input ref={noteFileRef} type="file" onChange={handleNoteFile} className="hidden" accept="image/*,.pdf,.doc,.docx"/>
+              <Btn variant="outline" onClick={()=>noteFileRef.current?.click()}><Icon name="upload" size={14}/>Attach</Btn>
+            </div>
           </div>
+          {/* Filter bar */}
+          {projNotes.length>0&&<div className="flex gap-2 mb-3">
+            <select value={noteFilterUser} onChange={e=>setNoteFilterUser(e.target.value)} className={`border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+              <option value="all">All Authors</option>
+              {noteAuthors.map(u=><option key={u} value={u}>{u}</option>)}
+            </select>
+          </div>}
           <div className="space-y-2">
-            {!projNotes.length ? <p className={`text-sm text-center py-8 ${tc(dark,"text-slate-400","text-slate-500")}`}>No notes yet.</p> : projNotes.map(n=>(
+            {!filteredNotes.length ? <p className={`text-sm text-center py-8 ${tc(dark,"text-slate-400","text-slate-500")}`}>No notes yet.</p> : filteredNotes.map(n=>(
               <div key={n.id} className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
                 <p className={`text-sm mb-2 ${tc(dark,"text-white","text-slate-800")}`}>{n.content}</p>
-                <p className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>{new Date(n.createdAt).toLocaleString("en-IN")}</p>
+                {n.attachments?.length>0&&<div className="flex flex-wrap gap-1.5 mb-2">{n.attachments.map((a,i)=><span key={i} className={`text-xs px-2 py-1 rounded-lg flex items-center gap-1 ${tc(dark,"bg-slate-700 text-slate-300","bg-slate-100 text-slate-600")}`}><Icon name="file" size={11}/>{a.name}</span>)}</div>}
+                <div className={`flex gap-3 text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>
+                  <span>{n.userName||currentUser.name}</span>
+                  <span>{new Date(n.createdAt).toLocaleString("en-IN")}</span>
+                </div>
               </div>
             ))}
           </div>
@@ -2126,27 +2703,47 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
       {/* DOCUMENTS TAB */}
       {tab==="documents"&&(
         <div>
-          <div className="mb-4">
-            <input ref={fileRef} type="file" onChange={handleUpload} className="hidden" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.mp4,.mov"/>
-            <Btn onClick={()=>fileRef.current?.click()}><Icon name="upload" size={15}/>Upload Document</Btn>
+          <div className="flex flex-wrap gap-2 mb-4">
+            <div className="flex-1 min-w-40"><SearchBar value={docSearch} onChange={setDocSearch} placeholder="Search documents…"/></div>
+            <select value={docFilterType} onChange={e=>setDocFilterType(e.target.value)} className={`border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+              <option value="all">All Types</option>
+              {["PDF","Word","Excel","Image","Video","Other"].map(t=><option key={t} value={t}>{t}</option>)}
+            </select>
+            <select value={docFilterUser} onChange={e=>setDocFilterUser(e.target.value)} className={`border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+              <option value="all">All Users</option>
+              {docAuthors.map(u=><option key={u} value={u}>{u}</option>)}
+            </select>
+            <input ref={docFileRef} type="file" onChange={handleDocFileSelect} className="hidden" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.mp4,.mov"/>
+            <Btn onClick={()=>docFileRef.current?.click()}><Icon name="upload" size={15}/>Upload Doc</Btn>
           </div>
-          {!projDocs.length ? (
+          {!filteredDocs.length ? (
             <div className={`text-center py-14 border-2 border-dashed rounded-xl ${tc(dark,"border-slate-700","border-slate-200")}`}>
               <Icon name="upload" size={28}/><p className={`mt-2 text-sm ${tc(dark,"text-slate-400","text-slate-500")}`}>No documents yet</p>
             </div>
           ) : (
             <div className="space-y-2">
-              {projDocs.map(doc=>(
+              {filteredDocs.map(doc=>(
                 <div key={doc.id} className={`border rounded-xl p-3 flex items-center gap-3 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
-                  <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${tc(dark,"bg-slate-700/50 text-slate-400","bg-slate-100 text-slate-500")}`}><Icon name="file" size={18}/></div>
+                  <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 text-xs font-bold ${doc.type==="PDF"?tc(dark,"bg-red-500/20 text-red-400","bg-red-100 text-red-600"):doc.type==="Image"?tc(dark,"bg-sky-500/20 text-sky-400","bg-sky-100 text-sky-600"):tc(dark,"bg-slate-700/50 text-slate-400","bg-slate-100 text-slate-500")}`}>{doc.type?.slice(0,3)||"DOC"}</div>
                   <div className="flex-1 min-w-0">
-                    <div className={`text-sm font-medium truncate ${tc(dark,"text-white","text-slate-800")}`}>{doc.name}</div>
-                    <div className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{doc.type} · {doc.size} · {fmtDate(doc.uploadDate)}</div>
+                    <div className={`text-sm font-medium truncate ${tc(dark,"text-white","text-slate-800")}`}>{doc.title||doc.name}</div>
+                    <div className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{doc.type} · {doc.size} · {fmtDate(doc.uploadDate)} · {doc.uploadedBy}</div>
                   </div>
                   <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>setDocuments(ds=>ds.filter(d=>d.id!==doc.id))}><Icon name="trash" size={13}/></Btn>
                 </div>
               ))}
             </div>
+          )}
+          {/* Doc upload modal */}
+          {showDocUpload&&(
+            <Modal title="Upload Document" onClose={()=>{setShowDocUpload(false);setPendingDocFile(null);}}>
+              <p className={`text-sm mb-4 ${tc(dark,"text-slate-400","text-slate-500")}`}>File: {pendingDocFile?.name}</p>
+              <Field label="Document Title" value={docTitle} onChange={setDocTitle} required/>
+              <div className="flex gap-3 mt-2">
+                <Btn onClick={saveDoc} disabled={!docTitle.trim()}>Upload Document</Btn>
+                <Btn variant="secondary" onClick={()=>{setShowDocUpload(false);setPendingDocFile(null);}}>Cancel</Btn>
+              </div>
+            </Modal>
           )}
         </div>
       )}
@@ -2165,6 +2762,7 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
             </div>
           ) : projProposals.map(pr=>{
             const tmpl=templates.find(t=>t.id===pr.templateId);
+            const propoMsg = `Hi ${project.customerName},\n\nHere is your Solar Proposal for your ${project.projectSize} ${project.projectUnit||"kW"} ${project.customerType||""} solar project.\n\nTotal System Cost: ${fmtINR(pr.data?.totalCost||0)}\nAnnual Savings: ${fmtINR(pr.data?.annualSavings||0)}\nPayback Period: ${pr.data?.paybackPeriod||"—"} years\n\nRegards,\n${developer?.companyName||""}`;
             return (
               <div key={pr.id} className={`border rounded-xl p-4 flex items-center gap-3 mb-2 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
                 <div className="w-9 h-9 rounded-lg bg-amber-500/15 flex items-center justify-center text-amber-400 flex-shrink-0"><Icon name="file" size={18}/></div>
@@ -2173,8 +2771,13 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
                   <div className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{fmtDate(pr.createdAt)}</div>
                 </div>
                 <span className={`text-xs px-2 py-0.5 rounded-full ${statusColor(pr.status,dark)}`}>{pr.status}</span>
-                <Btn size="sm" variant="outline" onClick={()=>setViewProposal(pr)}><Icon name="eye" size={13}/>View</Btn>
-                <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>printProposal(pr,project,developer)}><Icon name="print" size={13}/>PDF</Btn>
+                <div className="flex gap-1.5 flex-wrap">
+                  <Btn size="sm" variant="outline" onClick={()=>setViewProposal(pr)}><Icon name="eye" size={13}/>View</Btn>
+                  <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>printProposal(pr,project,developer)}><Icon name="print" size={13}/>Print</Btn>
+                  <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>{const cxName=project.customerName.replace(/\s+/g,"_");downloadHTML(buildProposalHTML(pr,project,developer),`Proposal_${cxName}_${project.projectSize}${project.projectUnit||"kW"}.html`);}}><Icon name="download" size={13}/>PDF</Btn>
+                  {project.customerPhone&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>shareWhatsApp(project.customerPhone,propoMsg)}><span className="text-emerald-400 font-bold text-xs">WA</span></Btn>}
+                  {project.customerEmail&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>shareMail(project.customerEmail,"Solar Proposal | "+developer?.companyName,propoMsg)}><Icon name="mail" size={13}/></Btn>}
+                </div>
               </div>
             );
           })}
@@ -2224,11 +2827,63 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
   );
 };
 
+// ── PROPOSAL HTML BUILDER (shared for print + download) ──────
+const buildProposalHTML = (proposal, project, developer) => {
+  const d = proposal.data;
+  const rows10 = Array.from({length:10},(_,i)=>{
+    const yr=i+1;
+    const before=(d.annualBillBefore||d.annualSavings*1.3)*Math.pow(1.03,yr);
+    const savings=(d.annualSavings||0)*Math.pow(1.01,yr);
+    const after=Math.max(0,before-savings);
+    const cum=Array.from({length:yr},(_,j)=>(d.annualSavings||0)*Math.pow(1.01,j+1)).reduce((s,x)=>s+x,0);
+    return `<tr style="border-bottom:1px solid #e2e8f0"><td>${yr}</td><td style="color:#dc2626">₹${Math.round(before).toLocaleString("en-IN")}</td><td style="color:#059669">₹${Math.round(after).toLocaleString("en-IN")}</td><td style="color:#d97706">₹${Math.round(savings).toLocaleString("en-IN")}</td><td style="color:#0284c7">₹${Math.round(cum).toLocaleString("en-IN")}</td></tr>`;
+  }).join("");
+  return `<!DOCTYPE html><html><head><title>Solar Proposal — ${d.customer_name}</title>
+  <style>body{font-family:Arial,sans-serif;color:#111;background:#fff;padding:32px;max-width:900px;margin:0 auto}h1,h2,h3{margin:0 0 8px}table{width:100%;border-collapse:collapse}th,td{padding:8px;text-align:left;font-size:13px}th{background:#fef3c7;font-weight:700}tr:hover{background:#fafafa}img{max-height:60px;display:block;margin-bottom:8px}pre{white-space:pre-wrap;font-family:inherit;font-size:12px}.amber{color:#d97706}.section{margin-bottom:24px;padding:16px;border:1px solid #e2e8f0;border-radius:12px}@media print{body{padding:0}@page{margin:1cm}}</style>
+  </head><body>
+  <div class="section" style="background:#fffbeb;border-color:#fde68a">
+    ${developer?.logo?`<img src="${developer.logo}" alt="logo"/>`:""}
+    <h1 style="font-size:20px">${d.company_name}</h1>
+    <p style="font-size:12px;color:#666">${d.company_address||""}<br/>${d.company_phone||""} | ${d.company_email||""}</p>
+    <h2 style="text-align:right;font-size:18px;color:#d97706;margin-top:-40px">SOLAR PROPOSAL</h2>
+    <p style="text-align:right;font-size:12px;color:#888">${fmtDate(proposal.createdAt)}</p>
+  </div>
+  <div class="section"><h3>Customer Details</h3>
+    <table><tr><th>Name</th><th>Email</th><th>Phone</th><th>Size</th><th>Type</th></tr>
+    <tr><td>${d.customer_name}</td><td>${d.customer_email||"—"}</td><td>${d.customer_phone||"—"}</td><td>${d.project_size} ${project?.projectUnit||"kW"}</td><td>${d.project_type}</td></tr></table>
+  </div>
+  <div class="section"><h3>Financial Summary</h3>
+    <table><tr><td><strong>Total System Cost</strong></td><td class="amber">${fmtINR(d.totalCost)}</td><td><strong>Annual Generation</strong></td><td class="amber">${(d.annualGeneration||0).toLocaleString()} kWh</td></tr>
+    <tr><td><strong>Annual Savings</strong></td><td class="amber">${fmtINR(d.annualSavings)}</td><td><strong>Payback Period</strong></td><td class="amber">${d.paybackPeriod} years</td></tr>
+    <tr><td><strong>25-Year ROI</strong></td><td class="amber">${d.roi25}%</td><td></td><td></td></tr></table>
+  </div>
+  <div class="section"><h3>10-Year Savings Projection</h3>
+    <table><thead><tr style="background:#fef3c7"><th>Year</th><th>Bill Before Solar</th><th>Bill After Solar</th><th>Annual Savings</th><th>Cumulative Savings</th></tr></thead><tbody>${rows10}</tbody></table>
+  </div>
+  ${developer?.paymentTerms?`<div class="section"><h3>Payment Terms</h3><pre>${developer.paymentTerms}</pre></div>`:""}
+  ${developer?.bankDetails?`<div class="section"><h3>Bank Details</h3><pre>${developer.bankDetails}</pre></div>`:""}
+  ${developer?.stamp?`<div class="section"><h3>Authorized Signatory</h3><img src="${developer.stamp}" style="max-height:80px"/></div>`:""}
+  ${developer?.signature?`<div class="section"><img src="${developer.signature}" style="max-height:60px"/></div>`:""}
+  ${developer?.terms?`<div class="section"><h3>Terms & Conditions</h3><p style="font-size:12px">${developer.terms}</p></div>`:""}
+  </body></html>`;
+};
+
+// Proposal print
+const printProposal = (proposal, project, developer) => {
+  const html = buildProposalHTML(proposal, project, developer);
+  const w=window.open("","_blank");
+  w.document.write(html); w.document.close(); w.focus();
+  setTimeout(()=>{ w.print(); },600);
+};
+
 // ── PROPOSAL PREVIEW COMPONENT ────────────────────────────────
 const ProposalPreview = ({ proposal, project, developer, templates }) => {
   const { dark } = useTheme();
   const d = proposal.data;
   const tmpl = templates.find(t=>t.id===proposal.templateId);
+  const cxName = (project?.customerName||d?.customer_name||"Customer").replace(/\s+/g,"_");
+  const projSize = `${project?.projectSize||d?.project_size||""}${project?.projectUnit||"kW"}`;
+  const propoMsg = `Hi ${project?.customerName||d?.customer_name},\n\nHere is your Solar Proposal for your ${project?.projectSize} ${project?.projectUnit||"kW"} ${project?.customerType||""} solar project.\n\nTotal Cost: ${fmtINR(d?.totalCost||0)}\nAnnual Savings: ${fmtINR(d?.annualSavings||0)}\nPayback: ${d?.paybackPeriod||"—"} years\n\nRegards,\n${developer?.companyName||""}`;
 
   return (
     <div>
@@ -2249,21 +2904,19 @@ const ProposalPreview = ({ proposal, project, developer, templates }) => {
         </div>
       </div>
 
-      {/* Customer info */}
       <div className={`border rounded-xl p-4 mb-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200")}`}>
         <h4 className={`font-bold mb-3 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Prepared For</h4>
         <div className="grid grid-cols-2 gap-2 text-sm">
-          {[["Name",d.customer_name],["Email",d.customer_email],["Phone",d.customer_phone],["Address",d.customer_address],["Project Size",`${d.project_size} kW`],["Type",d.project_type]].map(([k,v])=>(
+          {[["Name",d.customer_name],["Email",d.customer_email],["Phone",d.customer_phone],["Address",d.customer_address],["Project Size",`${d.project_size} ${project?.projectUnit||"kW"}`],["Type",d.project_type]].map(([k,v])=>(
             <div key={k}><span className={`${tc(dark,"text-slate-400","text-slate-500")} `}>{k}: </span><span className={`font-medium ${tc(dark,"text-white","text-slate-800")}`}>{v||"—"}</span></div>
           ))}
         </div>
       </div>
 
-      {/* Financial summary */}
       <div className={`border rounded-xl p-4 mb-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200")}`}>
         <h4 className={`font-bold mb-3 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Financial Summary</h4>
         <div className="grid grid-cols-2 gap-2">
-          {[["System Size",`${d.project_size} kW`],["Total Cost",fmtINR(d.totalCost)],["Annual Generation",`${(d.annualGeneration||0).toLocaleString()} kWh`],["Annual Savings",fmtINR(d.annualSavings)],["Payback Period",`${d.paybackPeriod} years`],["25-Year ROI",`${d.roi25}%`]].map(([k,v])=>(
+          {[["System Size",`${d.project_size} ${project?.projectUnit||"kW"}`],["Total Cost",fmtINR(d.totalCost)],["Annual Generation",`${(d.annualGeneration||0).toLocaleString()} kWh`],["Annual Savings",fmtINR(d.annualSavings)],["Payback Period",`${d.paybackPeriod} years`],["25-Year ROI",`${d.roi25}%`]].map(([k,v])=>(
             <div key={k} className={`rounded-lg p-3 flex justify-between items-center ${tc(dark,"bg-slate-800/40","bg-slate-50")}`}>
               <span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{k}</span>
               <span className="text-amber-400 font-bold text-sm">{v}</span>
@@ -2272,7 +2925,6 @@ const ProposalPreview = ({ proposal, project, developer, templates }) => {
         </div>
       </div>
 
-      {/* 10 Year Table */}
       <div className={`border rounded-xl p-4 mb-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200")}`}>
         <h4 className={`font-bold mb-3 text-sm ${tc(dark,"text-white","text-slate-800")}`}>10-Year Savings Projection</h4>
         <div className="overflow-x-auto">
@@ -2300,7 +2952,6 @@ const ProposalPreview = ({ proposal, project, developer, templates }) => {
         </div>
       </div>
 
-      {/* Chart */}
       <div className={`border rounded-xl p-4 mb-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200")}`}>
         <h4 className={`font-bold mb-3 text-sm ${tc(dark,"text-white","text-slate-800")}`}>ROI Payback Chart</h4>
         <PaybackChart totalCost={d.totalCost} annualSavings={d.annualSavings}/>
@@ -2311,59 +2962,19 @@ const ProposalPreview = ({ proposal, project, developer, templates }) => {
       {developer?.bankDetails&&<div className={`border rounded-xl p-4 mb-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200")}`}><h4 className={`font-bold mb-2 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Bank Details</h4><pre className={`text-xs whitespace-pre-wrap ${tc(dark,"text-slate-400","text-slate-600")}`}>{developer.bankDetails}</pre></div>}
       {developer?.terms&&<div className={`border rounded-xl p-4 mb-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200")}`}><h4 className={`font-bold mb-2 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Terms & Conditions</h4><p className={`text-xs ${tc(dark,"text-slate-400","text-slate-600")}`}>{developer.terms}</p></div>}
 
-      <div className="flex gap-3 mt-4 pt-4 border-t border-slate-700">
-        <Btn className="flex-1" onClick={()=>printProposal(proposal,project,developer)}><Icon name="print" size={15}/>Download / Print PDF</Btn>
+      <div className="flex gap-2 flex-wrap mt-4 pt-4 border-t border-slate-700">
+        <Btn onClick={()=>printProposal(proposal,project,developer)}><Icon name="print" size={15}/>Print</Btn>
+        <Btn variant="outline" onClick={()=>downloadHTML(buildProposalHTML(proposal,project,developer),`Proposal_${cxName}_${projSize}.html`)}><Icon name="download" size={15}/>Download PDF</Btn>
+        {d.customer_phone&&<Btn variant="outline" onClick={()=>shareWhatsApp(d.customer_phone,propoMsg)}><span className="text-emerald-400 font-bold">WA</span> WhatsApp</Btn>}
+        {d.customer_email&&<Btn variant="outline" onClick={()=>shareMail(d.customer_email,`Solar Proposal | ${developer?.companyName||""}`,propoMsg)}><Icon name="mail" size={15}/>Email</Btn>}
       </div>
     </div>
   );
 };
 
-// Proposal PDF print
-const printProposal = (proposal, project, developer) => {
-  const d = proposal.data;
-  const rows10 = Array.from({length:10},(_,i)=>{
-    const yr=i+1;
-    const before=(d.annualBillBefore||d.annualSavings*1.3)*Math.pow(1.03,yr);
-    const savings=(d.annualSavings||0)*Math.pow(1.01,yr);
-    const after=Math.max(0,before-savings);
-    const cum=Array.from({length:yr},(_,j)=>(d.annualSavings||0)*Math.pow(1.01,j+1)).reduce((s,x)=>s+x,0);
-    return `<tr style="border-bottom:1px solid #e2e8f0"><td>${yr}</td><td style="color:#dc2626">₹${Math.round(before).toLocaleString("en-IN")}</td><td style="color:#059669">₹${Math.round(after).toLocaleString("en-IN")}</td><td style="color:#d97706">₹${Math.round(savings).toLocaleString("en-IN")}</td><td style="color:#0284c7">₹${Math.round(cum).toLocaleString("en-IN")}</td></tr>`;
-  }).join("");
-  const html = `<!DOCTYPE html><html><head><title>Solar Proposal — ${d.customer_name}</title>
-  <style>body{font-family:Arial,sans-serif;color:#111;background:#fff;padding:32px;max-width:900px;margin:0 auto}h1,h2,h3{margin:0 0 8px}table{width:100%;border-collapse:collapse}th,td{padding:8px;text-align:left;font-size:13px}th{background:#fef3c7;font-weight:700}tr:hover{background:#fafafa}img{max-height:60px;display:block;margin-bottom:8px}pre{white-space:pre-wrap;font-family:inherit;font-size:12px}.amber{color:#d97706}.section{margin-bottom:24px;padding:16px;border:1px solid #e2e8f0;border-radius:12px}@media print{body{padding:0}@page{margin:1cm}}</style>
-  </head><body>
-  <div class="section" style="background:#fffbeb;border-color:#fde68a">
-    ${developer?.logo?`<img src="${developer.logo}" alt="logo"/>`:""}
-    <h1 style="font-size:20px">${d.company_name}</h1>
-    <p style="font-size:12px;color:#666">${d.company_address||""}<br/>${d.company_phone||""} | ${d.company_email||""}</p>
-    <h2 style="text-align:right;font-size:18px;color:#d97706;margin-top:-40px">SOLAR PROPOSAL</h2>
-    <p style="text-align:right;font-size:12px;color:#888">${fmtDate(proposal.createdAt)}</p>
-  </div>
-  <div class="section">
-    <h3>Customer Details</h3>
-    <table><tr><th>Name</th><th>Email</th><th>Phone</th><th>Address</th><th>Size</th><th>Type</th></tr>
-    <tr><td>${d.customer_name}</td><td>${d.customer_email||"—"}</td><td>${d.customer_phone||"—"}</td><td>${d.customer_address||"—"}</td><td>${d.project_size} kW</td><td>${d.project_type}</td></tr></table>
-  </div>
-  <div class="section">
-    <h3>Financial Summary</h3>
-    <table><tr><td><strong>Total System Cost</strong></td><td class="amber">${fmtINR(d.totalCost)}</td><td><strong>Annual Generation</strong></td><td class="amber">${(d.annualGeneration||0).toLocaleString()} kWh</td></tr>
-    <tr><td><strong>Annual Savings</strong></td><td class="amber">${fmtINR(d.annualSavings)}</td><td><strong>Payback Period</strong></td><td class="amber">${d.paybackPeriod} years</td></tr>
-    <tr><td><strong>25-Year ROI</strong></td><td class="amber">${d.roi25}%</td><td></td><td></td></tr></table>
-  </div>
-  <div class="section">
-    <h3>10-Year Savings Projection</h3>
-    <table><thead><tr style="background:#fef3c7"><th>Year</th><th>Bill Before Solar</th><th>Bill After Solar</th><th>Annual Savings</th><th>Cumulative Savings</th></tr></thead><tbody>${rows10}</tbody></table>
-  </div>
-  ${developer?.paymentTerms?`<div class="section"><h3>Payment Terms</h3><pre>${developer.paymentTerms}</pre></div>`:""}
-  ${developer?.bankDetails?`<div class="section"><h3>Bank Details</h3><pre>${developer.bankDetails}</pre></div>`:""}
-  ${developer?.terms?`<div class="section"><h3>Terms & Conditions</h3><p style="font-size:12px">${developer.terms}</p></div>`:""}
-  </body></html>`;
-  const w=window.open("","_blank");
-  w.document.write(html); w.document.close(); w.focus();
-  setTimeout(()=>{w.print();w.close();},600);
-};
+
 // ============================================================
-// SOLARPRO v3 - MAIN APP ENTRY (assembles all parts)
+// SOLARPRO v5 - MAIN APP ENTRY (assembles all parts)
 // ============================================================
 
 // ─── IMPORTS FROM PARTS ──────────────────────────────────────
@@ -2475,7 +3086,7 @@ export default function SolarProApp() {
 
       // ── DEV + USER: PROJECTS ──
       case "projects":
-        return <ProjectsPage projects={projects} setProjects={setProjects} currentUser={currentUser} setCurrentProjectId={setCurrentProjectId} developer={developer} users={users}/>;
+        return <ProjectsPage projects={projects} setProjects={setProjects} currentUser={currentUser} setCurrentProjectId={setCurrentProjectId} developer={developer} users={users} setDevelopers={setDevelopers}/>;
 
       // ── DEV ADMIN: SETTINGS ──
       case "settings":
