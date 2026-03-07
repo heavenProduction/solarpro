@@ -2090,7 +2090,6 @@ const SettingsPage = ({ developer, setDevelopers, dateFormat, setDateFormat, pro
           </div>
         </div>
       </div>
-      </div>
       )}
 
       <div className="mt-4"><Btn onClick={save} size="lg"><Icon name="check" size={16}/>Save All Settings</Btn></div>
