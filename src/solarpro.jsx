@@ -2066,7 +2066,6 @@ const SettingsPage = ({ developer, setDevelopers, dateFormat, setDateFormat, pro
                 <div className="flex gap-3">
                   <Btn onClick={()=>{
                     if (!laneTransferTarget) return alert("Please select a target lane");
-                    // move projects
                     setProjects && setProjects(ps=>ps.map(p=>p.laneId===confirmDeleteLane.id?{...p,laneId:laneTransferTarget}:p));
                     F("lanes",(form.lanes||[]).filter(l=>l.id!==confirmDeleteLane.id));
                     setConfirmDeleteLane(null); setLaneTransferTarget("");
@@ -2090,6 +2089,7 @@ const SettingsPage = ({ developer, setDevelopers, dateFormat, setDateFormat, pro
             </div>
           </div>
         </div>
+      </div>
       </div>
       )}
 
@@ -2263,7 +2263,8 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
       const lane = lanes.find(l=>l.id===p.laneId);
       rows.push([p.projectId||"",p.customerName||"",p.customerType||"",p.customerPhone||"",p.customerEmail||"",p.customerPincode||"",p.customerCity||"",p.customerState||"",p.customerAddress||"",p.projectSize||"",p.projectUnit||"kW",lane?.name||"",p.enquiryType||"",user?.name||"",(p.tags||[]).join("|"),p.createdAt||""]);
     });
-    const csv = rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
+    const escCsv=v=>'"'+String(v).split('"').join('""')+'"';
+    const csv = rows.map(r=>r.map(escCsv).join(",")).join("\n");
     const blob = new Blob([csv], {type:"text/csv"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href=url; a.download="projects_export.csv"; a.click();
@@ -2279,7 +2280,8 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
     const assignedOpts = devTeam.map(u=>u.name).join("|");
     const header = ["Project ID (auto)","Customer Name*","Customer Type ("+typeOpts+")","Phone","Email","Pincode","City","State","Address","Project Size*","Unit ("+unitNames+")","Lane ("+laneNames+")","Enquiry ("+enquiryOpts+")","Assigned To ("+assignedOpts+")","Tags (pipe separated)"];
     const example = [getNextProjectId(),"John Doe","Residential","+91 9800000000","john@email.com","400001","Mumbai","Maharashtra","123 Street",10,"kW",lanes[0]?.name||"New Enquiry","Warm",devTeam[0]?.name||"","solar|residential"];
-    const csv = [header,example].map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
+    const escCsv2=v=>'"'+String(v).split('"').join('""')+'"';
+    const csv = [header,example].map(r=>r.map(escCsv2).join(",")).join("\n");
     const blob = new Blob([csv], {type:"text/csv"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href=url; a.download="projects_import_template.csv"; a.click();
@@ -2295,7 +2297,7 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
       const lines = text.split("\n").slice(1).filter(l=>l.trim());
       let nextNum = developer?.projectNextNum || 1001;
       const imported = lines.map((line,i)=>{
-        const cols = line.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(c=>c.replace(/^"|"$/g,"").trim());
+        const cols = line.split(",").map(c=>c.replace(/^"|"$/g,"").trim());
         const prefix = developer?.projectPrefix || "PRJ";
         // Use existing project ID from col[0] if it looks valid, else auto-generate
         const rawId = cols[0]?.trim();
