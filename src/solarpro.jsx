@@ -664,20 +664,19 @@ const buildInvoiceHTML = ({ inv, developer, customer }) => {
     </tr>`;
   }).join("");
   const logoTag = developer?.logo ? `<img src="${developer.logo}" style="height:48px;margin-bottom:8px;display:block"/>` : `<div style="font-size:20px;font-weight:900;color:#5c6ac4;margin-bottom:8px">${developer?.companyName||"Company"}</div>`;
-  return `<!DOCTYPE html><html><head><title>Invoice ${inv.id}</title>
-  <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;color:#404040;background:#fff}@page{margin:0}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style>
+  return `<!DOCTYPE html><html><head><title>${docType} — ${inv.id.toUpperCase()}</title>
+  <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;color:#404040;background:#fff}@page{size:A4 portrait;margin:15mm}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;width:210mm}}</style>
   </head><body>
   <div style="padding:40px 56px">
+    <div style="text-align:center;margin-bottom:20px;font-size:22px;font-weight:900;letter-spacing:2px;text-transform:uppercase;color:#1e293b;border-bottom:3px solid #f59e0b;padding-bottom:12px">${docType}</div>
     <table style="width:100%;border-collapse:collapse;margin-bottom:24px">
       <tr>
         <td style="vertical-align:top;width:100%">${logoTag}<div style="font-size:13px;color:#525252">${developer?.address||""}<br/>${developer?.phone||""} | ${developer?.email||""}</div></td>
         <td style="vertical-align:top;white-space:nowrap;text-align:right">
           <div style="font-size:13px;color:#94a3b8">Date</div>
-          <div style="font-size:14px;font-weight:700;color:#5c6ac4">${inv.date}</div>
-          <div style="font-size:13px;color:#94a3b8;margin-top:8px">Invoice #</div>
+          <div style="font-size:14px;font-weight:700;color:#5c6ac4">${fmtDate(inv.date)}</div>
+          <div style="font-size:13px;color:#94a3b8;margin-top:8px">Document #</div>
           <div style="font-size:14px;font-weight:700;color:#5c6ac4">${inv.id.toUpperCase()}</div>
-          <div style="font-size:13px;color:#94a3b8;margin-top:8px">Document Type</div>
-          <div style="font-size:13px;font-weight:700;color:#d97706">${docType}</div>
         </td>
       </tr>
     </table>
@@ -738,12 +737,28 @@ const printInvoice = (inv, developer, customer) => {
   setTimeout(()=>{ w.print(); },700);
 };
 
+// Opens a print-to-PDF window (proper A4 PDF via browser print dialog)
 const downloadInvoice = (inv, developer, customer) => {
-  const html = buildInvoiceHTML({ inv, developer, customer });
+  const docType = inv.docType || "Invoice";
   const cxName = (inv.customerName||"Customer").replace(/\s+/g,"_");
-  const {total}=calcInvoiceTotal(inv.items||[]);
-  const filename = `Invoice_${cxName}_${inv.id}.html`;
-  downloadHTML(html, filename);
+  const baseHTML = buildInvoiceHTML({ inv, developer, customer });
+  // Inject A4 print CSS so Save as PDF gives a proper A4 page
+  const a4CSS = `<style>@page{size:A4 portrait;margin:15mm}body{margin:0}@media print{html,body{width:210mm}}</style>`;
+  const html = baseHTML.replace("</head>", a4CSS + "</head>");
+  const w = window.open("","_blank");
+  if (!w) return;
+  w.document.write(html);
+  w.document.close();
+  w.document.title = `${docType}_${cxName}_${inv.id}`;
+  w.focus();
+  setTimeout(()=>{ w.print(); }, 700);
+};
+
+// Generate a shareable preview URL (data URI blob URL for this session)
+const getInvoicePreviewUrl = (inv, developer, customer) => {
+  const html = buildInvoiceHTML({ inv, developer, customer });
+  const blob = new Blob([html], {type:"text/html"});
+  return URL.createObjectURL(blob);
 };
 
 // ── INVOICE ITEM EDITOR ───────────────────────────────────────
@@ -826,9 +841,11 @@ const InvoiceListView = ({ invoices, developers, projects, users, onView, onPrin
     const cxName = inv.customerName || proj?.customerName || "Customer";
     const size = proj ? `${proj.projectSize} ${proj.projectUnit||"kW"}` : "";
     const type = proj?.customerType || proj?.projectType || "";
-    const invoiceMsg = `Hi ${cxName},\n\nHere is your ${inv.docType||"Tax Invoice"} (${inv.id.toUpperCase()}) for your ${size} ${type} solar project worth ${fmtINR(total)}.\n\nPlease review and let us know if you have any questions.\n\nRegards,\n${dev?.companyName||""}`;
+    // Generate a session preview URL for sharing
+    const previewUrl = getInvoicePreviewUrl(inv, dev, proj||{});
+    const invoiceMsg = `Hi ${cxName},\n\nHere is your ${inv.docType||"Tax Invoice"} (${inv.id.toUpperCase()}) for your ${size} ${type} solar project worth ${fmtINR(total)}.\n\nView your invoice here: ${previewUrl}\n\nPlease review and let us know if you have any questions.\n\nRegards,\n${dev?.companyName||""}`;
     const invSubject = `${inv.docType||"Invoice"} - ${inv.id.toUpperCase()} | ${dev?.companyName||""}`;
-    return {phone, email, msg:invoiceMsg, subject:invSubject};
+    return {phone, email, msg:invoiceMsg, subject:invSubject, previewUrl};
   };
 
   return (
@@ -914,16 +931,28 @@ const InvoiceListView = ({ invoices, developers, projects, users, onView, onPrin
                     <td className={`px-3 py-3 text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{fmtDate(inv.date)}</td>
                     <td className="px-3 py-3"><span className={`text-xs px-2 py-0.5 rounded-full ${statusColor(inv.status,dark)}`}>{inv.status}</span></td>
                     <td className="px-3 py-3">
-                      <div className="flex gap-1 flex-wrap">
+                      <div className="flex gap-1 flex-wrap items-center">
                         <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>onView(inv)}><Icon name="eye" size={12}/></Btn>
                         <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>onPrint(inv)}><Icon name="print" size={12}/>Print</Btn>
                         <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>onDownload&&onDownload(inv)}><Icon name="download" size={12}/>PDF</Btn>
                         {share.phone&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>shareWhatsApp(share.phone, share.msg)} title="WhatsApp"><span className="text-emerald-400 font-bold text-xs">WA</span></Btn>}
                         {share.email&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>shareMail(share.email, share.subject, share.msg)} title="Email"><Icon name="mail" size={12}/></Btn>}
                         {inv.status==="Pending"&&onMarkPaid&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>onMarkPaid(inv.id)}><Icon name="check" size={12}/>Paid</Btn>}
-                        {nextFlow&&onConvert&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>onConvert(inv,nextFlow)} title={INV_FLOW_LABEL[inv.docType]}>
-                          <span className="text-sky-400 text-xs">→{nextFlow.split(" ").pop()}</span>
-                        </Btn>}
+                        {onConvert&&(
+                          <div style={{position:"relative",display:"inline-block"}} className="convert-drop-wrap">
+                            <select
+                              value=""
+                              onChange={e=>{ if(e.target.value) onConvert(inv, e.target.value); }}
+                              className={`border rounded-lg px-2 py-1 text-xs cursor-pointer focus:outline-none ${tc(dark,"bg-slate-700 border-slate-600 text-sky-400","bg-sky-50 border-sky-200 text-sky-700")}`}
+                              title="Convert to…"
+                            >
+                              <option value="">Convert to…</option>
+                              {INV_CONVERT_TARGETS.filter(t=>t!==(inv.docType||"Tax Invoice")).map(t=>(
+                                <option key={t} value={t}>{t}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -1574,10 +1603,16 @@ const SuperAdminInvoicesPage = ({ invoices, setInvoices, developers, projects, u
         <Modal title={`${viewInv.docType||"Invoice"} — ${viewInv.id.toUpperCase()}`} onClose={()=>setViewInv(null)} wide>
           <InvoicePreviewContent inv={viewInv} developer={getSender(viewInv)} customer={getCustomer(viewInv)}/>
           <div className="flex gap-2 flex-wrap mt-4 pt-4 border-t border-slate-700">
-            <Btn onClick={()=>printInvoice(viewInv,getSender(viewInv),getCustomer(viewInv))}><Icon name="print" size={15}/>Print</Btn>
+            <Btn onClick={()=>printInvoice(viewInv,getSender(viewInv),getCustomer(viewInv))}><Icon name="print" size={15}/>Print / Save PDF</Btn>
             <Btn variant="outline" onClick={()=>downloadInvoice(viewInv,getSender(viewInv),getCustomer(viewInv))}><Icon name="download" size={15}/>Download PDF</Btn>
-            {viewInv.customerPhone&&<Btn variant="outline" onClick={()=>shareWhatsApp(viewInv.customerPhone,`Hi ${viewInv.customerName}, here is your ${viewInv.docType||"Invoice"} ${viewInv.id}. Regards, ${getSender(viewInv)?.companyName||""}`)}>WA WhatsApp</Btn>}
-            {viewInv.customerEmail&&<Btn variant="outline" onClick={()=>shareMail(viewInv.customerEmail,`${viewInv.docType||"Invoice"} - ${viewInv.id}`,`Hi ${viewInv.customerName},\n\nPlease find attached your ${viewInv.docType||"Invoice"} (${viewInv.id}).\n\nRegards,\n${getSender(viewInv)?.companyName||""}`)}><Icon name="mail" size={15}/>Email</Btn>}
+            {viewInv.customerPhone&&<Btn variant="outline" onClick={()=>{
+              const previewUrl=getInvoicePreviewUrl(viewInv,getSender(viewInv),getCustomer(viewInv));
+              shareWhatsApp(viewInv.customerPhone,`Hi ${viewInv.customerName}, here is your ${viewInv.docType||"Invoice"} ${viewInv.id}.\n\nView: ${previewUrl}\n\nRegards, ${getSender(viewInv)?.companyName||""}`);
+            }}>WA WhatsApp</Btn>}
+            {viewInv.customerEmail&&<Btn variant="outline" onClick={()=>{
+              const previewUrl=getInvoicePreviewUrl(viewInv,getSender(viewInv),getCustomer(viewInv));
+              shareMail(viewInv.customerEmail,`${viewInv.docType||"Invoice"} - ${viewInv.id}`,`Hi ${viewInv.customerName},\n\nPlease find your ${viewInv.docType||"Invoice"} (${viewInv.id}) at the link below.\n\nView: ${previewUrl}\n\nRegards,\n${getSender(viewInv)?.companyName||""}`);
+            }}><Icon name="mail" size={15}/>Email</Btn>}
             <Btn variant="secondary" onClick={()=>setViewInv(null)}>Close</Btn>
           </div>
         </Modal>
@@ -2137,7 +2172,8 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
   const [selected, setSelected] = useState(new Set());
   const [bulkModal, setBulkModal] = useState(null); // "delete" | "lane" | "assign"
   const [bulkTarget, setBulkTarget] = useState("");
-  const fileInputRef = useRef();
+  const [showImportModal, setShowImportModal] = useState(false);
+  const importFileRef = useRef();
   const toast = useToast();
 
   const lanes = developer?.lanes?.filter(l=>!l.disabled).sort((a,b)=>a.order-b.order) || [{id:"default",name:"All Projects",color:"slate"}];
@@ -2242,10 +2278,38 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
       const text = ev.target.result;
       const lines = text.split("\n").slice(1); // skip header
       const imported = lines.filter(l=>l.trim()).map((line,i)=>{
-        const cols = line.split(",").map(c=>c.replace(/^"|"$/g,"").trim());
-        return { id:`p${Date.now()}${i}`, projectId:cols[0]||autoProjectId(), customerName:cols[1]||"", customerType:cols[2]||"Residential", customerPhone:cols[3]||"", customerEmail:cols[4]||"", customerPincode:cols[5]||"", customerCity:cols[6]||"", customerState:cols[7]||"", customerAddress:cols[8]||"", projectSize:parseFloat(cols[9])||0, projectUnit:cols[10]||"kW", enquiryType:cols[12]||"Warm", laneId:lanes[0]?.id||"", developerId:currentUser.developerId, userId:currentUser.id, assignedUserId:currentUser.id, createdAt:TODAY, lastActivity:TODAY };
+        const cols = line.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(c=>c.replace(/^"|"$/g,"").replace(/""/g,'"').trim());
+        // Resolve lane name to id
+        const laneByName = lanes.find(l=>l.name.toLowerCase()===(cols[13]||"").toLowerCase());
+        // Resolve user name to id
+        const userByName = devTeam.find(u=>u.name.toLowerCase()===(cols[15]||"").toLowerCase());
+        return {
+          id:`p${Date.now()}${i}`,
+          projectId: cols[0]||autoProjectId(),
+          customerName: cols[1]||"",
+          customerType: cols[2]||"Residential",
+          pocName: cols[3]||"",
+          customerEmail: cols[4]||"",
+          customerPhone: cols[5]||"",
+          customerPincode: cols[7]||"",
+          customerCity: cols[8]||"",
+          customerState: cols[9]||"",
+          customerAddress: cols[10]||"",
+          projectSize: parseFloat(cols[11])||0,
+          projectUnit: cols[12]||"kW",
+          laneId: laneByName?.id || lanes[0]?.id||"",
+          enquiryType: cols[14]||"Warm",
+          assignedUserId: userByName?.id || currentUser.id,
+          tags: (cols[16]||"").split(",").map(t=>t.trim()).filter(Boolean),
+          developerId: currentUser.developerId,
+          userId: userByName?.id || currentUser.id,
+          createdAt: TODAY,
+          lastActivity: TODAY,
+          activityLog: [{id:`act${Date.now()}`,type:"created",message:"Imported from CSV",by:currentUser.name,at:new Date().toISOString()}],
+        };
       });
       setProjects(ps=>[...ps,...imported]);
+      toast.show({message:`Imported ${imported.length} project(s).`});
     };
     reader.readAsText(file);
     e.target.value="";
@@ -2253,7 +2317,20 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
 
   const addCustomCity = (city) => setDevelopers(ds=>ds.map(d=>d.id===developer?.id?{...d,customCities:[...(d.customCities||[]),city]}:d));
 
-  const toggleSelect = (id) => setSelected(s=>{ const n=new Set(s); n.has(id)?n.delete(id):n.add(id); return n; });
+  const [dragId, setDragId] = useState(null);
+  const [dragOverLane, setDragOverLane] = useState(null);
+
+  const onDragStart = (e, projectId) => { setDragId(projectId); e.dataTransfer.effectAllowed="move"; };
+  const onDragEnd = () => { setDragId(null); setDragOverLane(null); };
+  const onLaneDragOver = (e, laneId) => { e.preventDefault(); e.dataTransfer.dropEffect="move"; setDragOverLane(laneId); };
+  const onLaneDrop = (e, laneId) => {
+    e.preventDefault();
+    if (dragId) {
+      setProjects(ps=>ps.map(p=>p.id===dragId?{...p,laneId}:p));
+      toast.show({message:"Project moved to new lane."});
+    }
+    setDragId(null); setDragOverLane(null);
+  };
   const selectAll = () => setSelected(new Set(filteredProjects.map(p=>p.id)));
   const clearSelect = () => setSelected(new Set());
 
@@ -2289,8 +2366,13 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
   const ProjectCard = ({p}) => {
     const lane = lanes.find(l=>l.id===p.laneId);
     const user = devTeam.find(u=>u.id===(p.assignedUserId||p.userId));
+    const isDragging = dragId===p.id;
     return (
-      <div className={`border rounded-xl p-3 mb-2 cursor-pointer transition-all hover:shadow-md ${tc(dark,"bg-[#0c1929] border-slate-700/50 hover:border-amber-500/30","bg-white border-slate-200 hover:border-amber-300 shadow-sm")}`}>
+      <div
+        draggable
+        onDragStart={e=>onDragStart(e,p.id)}
+        onDragEnd={onDragEnd}
+        className={`border rounded-xl p-3 mb-2 cursor-grab active:cursor-grabbing transition-all hover:shadow-md ${isDragging?"opacity-40":""} ${tc(dark,"bg-[#0c1929] border-slate-700/50 hover:border-amber-500/30","bg-white border-slate-200 hover:border-amber-300 shadow-sm")}`}>
         <div className="flex items-start justify-between mb-2">
           <span className={`text-xs font-mono px-1.5 py-0.5 rounded ${tc(dark,"bg-slate-700 text-slate-400","bg-slate-100 text-slate-500")}`}>{p.projectId||"—"}</span>
           <span className={`text-xs px-2 py-0.5 rounded-full border ${tc(dark,enquiryColors[p.enquiryType]||"bg-slate-500/20 text-slate-300 border-slate-500/30",enquiryColorsL[p.enquiryType]||"bg-slate-100 text-slate-600")}`}>{p.enquiryType||"—"}</span>
@@ -2315,7 +2397,39 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
 
   return (
     <div>
-      {/* Bulk action modals */}
+      {/* Import Modal */}
+      {showImportModal&&(
+        <Modal title="Import Projects from CSV" onClose={()=>setShowImportModal(false)} wide>
+          <div className={`p-4 rounded-xl mb-4 border ${tc(dark,"bg-slate-800/50 border-slate-700","bg-slate-50 border-slate-200")}`}>
+            <h4 className={`font-bold text-sm mb-2 ${tc(dark,"text-white","text-slate-800")}`}>Step 1 — Download the template</h4>
+            <p className={`text-xs mb-3 ${tc(dark,"text-slate-400","text-slate-500")}`}>Download a CSV template with correct headers and one example row. Fill it in, then upload below.</p>
+            <Btn size="sm" onClick={()=>{
+              const customerTypes = ["Residential","Commercial","Industrial","Government","Other"];
+              const units = [...(developer?.customUnits||[]),...PROJECT_UNITS].filter((v,i,a)=>a.indexOf(v)===i);
+              const laneNames = lanes.map(l=>l.name);
+              const teamNames = devTeam.map(u=>u.name);
+              const exampleRow = [
+                "SP-1001","John Doe","Residential","John Doe","","9876543210","john@email.com","400001","Mumbai","Maharashtra","123 Solar St","8.5","kW","New Enquiry","Warm","Unassigned",""
+              ];
+              const headers = ["Project ID","Customer Name","Customer Type ("+customerTypes.join("/")+")", "POC Name","Customer Email (optional)","Phone","Email","Pincode","City","State","Address","Project Size","Project Unit ("+units.join("/")+")", "Lane ("+laneNames.join("/")+")", "Enquiry (Hot/Warm/Cold)", "Assigned To ("+teamNames.join("/")+")", "Tags (comma separated)"];
+              const rows = [headers, exampleRow];
+              const csv = rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
+              const blob = new Blob([csv],{type:"text/csv"});
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a"); a.href=url; a.download="project_import_template.csv"; a.click();
+              URL.revokeObjectURL(url);
+            }}><Icon name="download" size={14}/>Download Template CSV</Btn>
+          </div>
+          <div className={`p-4 rounded-xl border ${tc(dark,"bg-slate-800/50 border-slate-700","bg-slate-50 border-slate-200")}`}>
+            <h4 className={`font-bold text-sm mb-2 ${tc(dark,"text-white","text-slate-800")}`}>Step 2 — Upload your filled CSV</h4>
+            <p className={`text-xs mb-3 ${tc(dark,"text-slate-400","text-slate-500")}`}>Make sure you keep the header row. Each row becomes a new project.</p>
+            <div className="flex gap-2">
+              <input ref={importFileRef} type="file" accept=".csv" onChange={e=>{ importExcel(e); setShowImportModal(false); }} className="hidden"/>
+              <Btn onClick={()=>importFileRef.current?.click()}><Icon name="import" size={14}/>Select CSV File</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
       {bulkModal==="delete"&&(
         <Modal title="Delete Selected Projects" onClose={()=>setBulkModal(null)}>
           <p className={`text-sm mb-4 ${tc(dark,"text-slate-300","text-slate-600")}`}>Delete {selected.size} selected project(s)? This can be undone within 30 seconds.</p>
@@ -2361,8 +2475,7 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
         <div className="flex gap-2 flex-wrap items-center">
           <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>setView(v=>v==="kanban"?"list":"kanban")}><Icon name={view==="kanban"?"sort":"kanban"} size={15}/>{view==="kanban"?"List":"Kanban"}</Btn>
           <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={exportExcel}><Icon name="export" size={14}/>Export</Btn>
-          <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>fileInputRef.current?.click()}><Icon name="import" size={14}/>Import</Btn>
-          <input ref={fileInputRef} type="file" accept=".csv,.xlsx" onChange={importExcel} className="hidden"/>
+          <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>setShowImportModal(true)}><Icon name="import" size={14}/>Import</Btn>
           <Btn onClick={()=>{setEditProject(null);setForm({...blankForm,laneId:lanes[0]?.id||""});setShowAdd(true);}}><Icon name="plus" size={15}/>New Project</Btn>
         </div>
       </div>
@@ -2419,8 +2532,11 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
             const totalSize = laneProjects.reduce((s,p)=>s+(parseFloat(p.projectSize)||0),0);
             const totalVal = laneProjects.reduce((s,p)=>s+Math.round((developer?.costPerKW||50000)*(parseFloat(p.projectSize)||0)),0);
             return (
-              <div key={lane.id} className={`flex-shrink-0 w-72`}>
-                <div className={`border-t-2 rounded-xl p-3 mb-3 ${laneAccents[lane.color]||"border-slate-500"} ${tc(dark,"bg-slate-800/30","bg-slate-50")}`}>
+              <div key={lane.id} className={`flex-shrink-0 w-72`}
+                onDragOver={e=>onLaneDragOver(e,lane.id)}
+                onDrop={e=>onLaneDrop(e,lane.id)}
+                onDragLeave={()=>setDragOverLane(null)}>
+                <div className={`border-t-2 rounded-xl p-3 mb-3 transition-all ${laneAccents[lane.color]||"border-slate-500"} ${dragOverLane===lane.id?tc(dark,"bg-amber-500/10 border-amber-400/50","bg-amber-50"):tc(dark,"bg-slate-800/30","bg-slate-50")}`}>
                   <div className="flex items-center justify-between mb-1">
                     <span className={`font-bold text-sm ${tc(dark,"text-white","text-slate-800")}`}>{lane.name}</span>
                     <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${tc(dark,"bg-slate-700 text-slate-300","bg-white text-slate-600 border border-slate-200")}`}>{laneProjects.length}</span>
@@ -2430,9 +2546,9 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
                     <span className={tc(dark,"text-amber-400","text-amber-600")}>~{fmtINR(totalVal)}</span>
                   </div>
                 </div>
-                <div>
+                <div className={`min-h-16 rounded-xl transition-all ${dragOverLane===lane.id?tc(dark,"bg-amber-500/5 border border-dashed border-amber-400/40","bg-amber-50 border border-dashed border-amber-300"):"border border-transparent"}`}>
                   {laneProjects.map(p=><ProjectCard key={p.id} p={p}/>)}
-                  {!laneProjects.length&&<div className={`border-2 border-dashed rounded-xl p-4 text-center text-xs ${tc(dark,"border-slate-700 text-slate-600","border-slate-200 text-slate-400")}`}>No projects</div>}
+                  {!laneProjects.length&&<div className={`rounded-xl p-4 text-center text-xs ${dragOverLane===lane.id?"":"border-2 border-dashed"} ${tc(dark,"border-slate-700 text-slate-600","border-slate-200 text-slate-400")}`}>{dragOverLane===lane.id?"Drop here":"No projects"}</div>}
                 </div>
               </div>
             );
@@ -2679,10 +2795,20 @@ const ProjectInvoicesPage = ({ invoices, setInvoices, projects, developer, curre
         <Modal title={`${viewInv.docType||"Invoice"} — ${viewInv.id.toUpperCase()}`} onClose={()=>setViewInv(null)} wide>
           <InvoicePreviewContent inv={viewInv} developer={developer} customer={{name:viewInv.customerName,address:viewInv.customerAddress,phone:viewInv.customerPhone,email:viewInv.customerEmail}}/>
           <div className="flex gap-2 flex-wrap mt-4 pt-4 border-t border-slate-700">
-            <Btn onClick={()=>printInvoiceTemplid(viewInv,developer)}><Icon name="print" size={15}/>Print</Btn>
-            <Btn variant="outline" onClick={()=>{const cxName=(viewInv.customerName||"Customer").replace(/\s+/g,"_");downloadHTML(buildInvoiceHTML({inv:viewInv,developer,customer:{}}),`Invoice_${cxName}_${viewInv.id}.html`);}}><Icon name="download" size={15}/>Download PDF</Btn>
-            {viewInv.customerPhone&&<Btn variant="outline" onClick={()=>{const p=myProjects.find(x=>x.id===viewInv.projectId);const msg=`Hi ${viewInv.customerName},\n\nHere is your ${viewInv.docType||"Invoice"} (${viewInv.id}) for your ${p?.projectSize||""}${p?.projectUnit||"kW"} ${p?.customerType||""} solar project worth ${fmtINR(calcInvoiceTotal(viewInv.items||[]).total)}.\n\nRegards,\n${developer?.companyName||""}`;shareWhatsApp(viewInv.customerPhone,msg);}}>WA WhatsApp</Btn>}
-            {viewInv.customerEmail&&<Btn variant="outline" onClick={()=>{const p=myProjects.find(x=>x.id===viewInv.projectId);const body=`Hi ${viewInv.customerName},\n\nHere is your ${viewInv.docType||"Invoice"} (${viewInv.id}) for your solar project worth ${fmtINR(calcInvoiceTotal(viewInv.items||[]).total)}.\n\nRegards,\n${developer?.companyName||""}`;shareMail(viewInv.customerEmail,`${viewInv.docType||"Invoice"} - ${viewInv.id}`,body);}}><Icon name="mail" size={15}/>Email</Btn>}
+            <Btn onClick={()=>printInvoiceTemplid(viewInv,developer)}><Icon name="print" size={15}/>Print / Save PDF</Btn>
+            <Btn variant="outline" onClick={()=>downloadInvoice(viewInv,developer,{})}><Icon name="download" size={15}/>Download PDF</Btn>
+            {viewInv.customerPhone&&<Btn variant="outline" onClick={()=>{
+              const p=myProjects.find(x=>x.id===viewInv.projectId);
+              const previewUrl=getInvoicePreviewUrl(viewInv,developer,{});
+              const msg=`Hi ${viewInv.customerName},\n\nHere is your ${viewInv.docType||"Invoice"} (${viewInv.id}) for your ${p?.projectSize||""}${p?.projectUnit||"kW"} ${p?.customerType||""} solar project worth ${fmtINR(calcInvoiceTotal(viewInv.items||[]).total)}.\n\nView invoice: ${previewUrl}\n\nRegards,\n${developer?.companyName||""}`;
+              shareWhatsApp(viewInv.customerPhone,msg);
+            }}>WA WhatsApp</Btn>}
+            {viewInv.customerEmail&&<Btn variant="outline" onClick={()=>{
+              const p=myProjects.find(x=>x.id===viewInv.projectId);
+              const previewUrl=getInvoicePreviewUrl(viewInv,developer,{});
+              const body=`Hi ${viewInv.customerName},\n\nHere is your ${viewInv.docType||"Invoice"} (${viewInv.id}) for your solar project worth ${fmtINR(calcInvoiceTotal(viewInv.items||[]).total)}.\n\nView invoice: ${previewUrl}\n\nRegards,\n${developer?.companyName||""}`;
+              shareMail(viewInv.customerEmail,`${viewInv.docType||"Invoice"} - ${viewInv.id}`,body);
+            }}><Icon name="mail" size={15}/>Email</Btn>}
             <Btn variant="secondary" onClick={()=>setViewInv(null)}>Close</Btn>
           </div>
         </Modal>
@@ -2707,7 +2833,8 @@ const printInvoiceTemplid = (inv, developer) => {
     </tr>`;
   }).join("");
   const logoHTML = developer?.logo ? `<img src="${developer.logo}" class="h-12"/>` : `<div style="font-size:1.25rem;font-weight:900;color:#5c6ac4">${developer?.companyName||""}</div>`;
-  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Invoice ${inv.id}</title><style>
+  const docTypeTitle = inv.docType || "Tax Invoice";
+  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${docTypeTitle} — ${inv.id.toUpperCase()}</title><style>
 *,::before,::after{box-sizing:border-box;border-width:0;border-style:solid;border-color:#e5e7eb}
 html{line-height:1.5;font-family:ui-sans-serif,system-ui,Arial,sans-serif}
 body{margin:0}table{text-indent:0;border-color:inherit;border-collapse:collapse}
@@ -2729,16 +2856,17 @@ img,svg{display:block;max-width:100%;height:auto}[hidden]{display:none}
 .font-bold{font-weight:700}.italic{font-style:italic}
 .text-main{color:#5c6ac4}.text-neutral-600{color:#525252}.text-neutral-700{color:#404040}
 .text-slate-300{color:#cbd5e1}.text-slate-400{color:#94a3b8}.text-white{color:#fff}
-@page{margin:0}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+@page{size:A4 portrait;margin:15mm}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;width:210mm}}
   </style></head><body>
   <div class="py-4">
+    <div style="text-align:center;font-size:20px;font-weight:900;letter-spacing:2px;text-transform:uppercase;color:#1e293b;border-bottom:3px solid #f59e0b;padding:12px 56px;margin-bottom:0">${docTypeTitle}</div>
     <div class="px-14 py-6">
       <table class="w-full border-collapse border-spacing-0"><tbody><tr>
         <td class="w-full align-top">${logoHTML}</td>
         <td class="align-top">
           <div class="text-sm"><table class="border-collapse border-spacing-0"><tbody><tr>
-            <td class="border-r pr-4"><p class="whitespace-nowrap text-slate-400 text-right">Date</p><p class="whitespace-nowrap font-bold text-main text-right">${inv.date}</p></td>
-            <td class="pl-4"><p class="whitespace-nowrap text-slate-400 text-right">Invoice #</p><p class="whitespace-nowrap font-bold text-main text-right">${inv.id.toUpperCase()}</p></td>
+            <td class="border-r pr-4"><p class="whitespace-nowrap text-slate-400 text-right">Date</p><p class="whitespace-nowrap font-bold text-main text-right">${fmtDate(inv.date)}</p></td>
+            <td class="pl-4"><p class="whitespace-nowrap text-slate-400 text-right">Document #</p><p class="whitespace-nowrap font-bold text-main text-right">${inv.id.toUpperCase()}</p></td>
           </tr></tbody></table></div>
         </td>
       </tr></tbody></table>
@@ -2799,7 +2927,7 @@ img,svg{display:block;max-width:100%;height:auto}[hidden]{display:none}
 // SOLARPRO v3 - PART 7: PROJECT DETAIL (Notes, Docs, Proposals)
 // ============================================================
 
-const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, proposals, setProposals, templates, developer, currentUser, onBack, setCurrentPage, setProjects }) => {
+const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, proposals, setProposals, templates, developer, currentUser, onBack, setCurrentPage, setProjects, users }) => {
   const { dark } = useTheme();
   const [tab, setTab] = useState("info");
   const [newNote, setNewNote] = useState("");
@@ -2861,9 +2989,13 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
     if (!pendingDocFile) return;
     const types={pdf:"PDF",doc:"Word",docx:"Word",xls:"Excel",xlsx:"Excel",jpg:"Image",jpeg:"Image",png:"Image",mp4:"Video",mov:"Video"};
     const ext=pendingDocFile.name.split(".").pop().toLowerCase();
-    setDocuments(ds=>[...ds,{id:`doc${Date.now()}`,projectId:project.id,title:docTitle||pendingDocFile.name,name:pendingDocFile.name,type:types[ext]||"Other",size:`${(pendingDocFile.size/1024).toFixed(0)} KB`,uploadDate:TODAY,uploadedBy:currentUser.name,uploadedById:currentUser.id}]);
-    if (setProjects) setProjects(ps=>ps.map(p=>p.id===project.id?{...p,activityLog:[...(p.activityLog||[]),{id:`act${Date.now()}`,type:"document",message:`Document uploaded: "${docTitle||pendingDocFile.name}"`,by:currentUser.name,at:new Date().toISOString()}]}:p));
-    setShowDocUpload(false); setDocTitle(""); setPendingDocFile(null);
+    const reader = new FileReader();
+    reader.onload = ev => {
+      setDocuments(ds=>[...ds,{id:`doc${Date.now()}`,projectId:project.id,title:docTitle||pendingDocFile.name,name:pendingDocFile.name,type:types[ext]||"Other",size:`${(pendingDocFile.size/1024).toFixed(0)} KB`,uploadDate:TODAY,uploadedBy:currentUser.name,uploadedById:currentUser.id,dataUrl:ev.target.result}]);
+      if (setProjects) setProjects(ps=>ps.map(p=>p.id===project.id?{...p,activityLog:[...(p.activityLog||[]),{id:`act${Date.now()}`,type:"document",message:`Document uploaded: "${docTitle||pendingDocFile.name}"`,by:currentUser.name,at:new Date().toISOString()}]}:p));
+      setShowDocUpload(false); setDocTitle(""); setPendingDocFile(null);
+    };
+    reader.readAsDataURL(pendingDocFile);
   };
 
   const vars = calcSolar(project.projectSize, developer);
@@ -2887,18 +3019,45 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
   };
 
   const tabs = ["info","notes","documents","proposal","activity"];
+  const devTeam = users ? users.filter(u=>u.developerId===project.developerId && u.active) : [];
+  const devLanes = developer?.lanes?.filter(l=>!l.disabled).sort((a,b)=>a.order-b.order) || [];
+  const currentLane = devLanes.find(l=>l.id===project.laneId);
+  const assignedUser = devTeam.find(u=>u.id===(project.assignedUserId||project.userId));
+
+  const quickUpdate = (changes) => {
+    if (!setProjects) return;
+    setProjects(ps=>ps.map(p=>p.id===project.id?{...p,...changes}:p));
+  };
 
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center gap-3 mb-5">
+      <div className="flex items-center gap-3 mb-4">
         <button onClick={onBack} className={`p-1.5 rounded-lg transition-colors ${tc(dark,"text-slate-400 hover:text-white hover:bg-slate-700","text-slate-400 hover:text-slate-600 hover:bg-slate-100")}`}><Icon name="back" size={18}/></button>
         <div className="flex-1">
           <h1 className={`text-xl font-bold ${tc(dark,"text-white","text-slate-800")}`}>{project.customerName}</h1>
           <p className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{project.projectId} · {[project.customerCity,project.customerState].filter(Boolean).join(", ")||project.customerAddress}</p>
         </div>
-        <span className={`text-xs px-2 py-1 rounded-full ${statusColor(project.laneId?"Active":"Active",dark)}`}>{project.enquiryType||"—"}</span>
-        <span className={`text-xs px-2 py-1 rounded-full ${tc(dark,"bg-slate-700 text-slate-300","bg-slate-100 text-slate-600")}`}>{project.customerType||project.projectType||"—"}</span>
+        {/* Quick lane + assign dropdowns */}
+        <div className="flex gap-2 items-center flex-wrap">
+          {devLanes.length>0&&(
+            <div className="flex items-center gap-1">
+              <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{backgroundColor:laneHex(currentLane?.color||"slate")}}/>
+              <select value={project.laneId||""} onChange={e=>quickUpdate({laneId:e.target.value})}
+                className={`border rounded-lg px-2 py-1.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+                {devLanes.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}
+              </select>
+            </div>
+          )}
+          {devTeam.length>0&&(
+            <select value={project.assignedUserId||project.userId||""} onChange={e=>quickUpdate({assignedUserId:e.target.value})}
+              className={`border rounded-lg px-2 py-1.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+              <option value="">Unassigned</option>
+              {devTeam.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+          )}
+          <span className={`text-xs px-2 py-1 rounded-full ${tc(dark,"bg-slate-700 text-slate-300","bg-slate-100 text-slate-600")}`}>{project.customerType||"—"}</span>
+        </div>
       </div>
 
       {/* Quick stats */}
@@ -2965,7 +3124,19 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
             {!filteredNotes.length ? <p className={`text-sm text-center py-8 ${tc(dark,"text-slate-400","text-slate-500")}`}>No notes yet.</p> : filteredNotes.map(n=>(
               <div key={n.id} className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
                 <p className={`text-sm mb-2 ${tc(dark,"text-white","text-slate-800")}`}>{n.content}</p>
-                {n.attachments?.length>0&&<div className="flex flex-wrap gap-1.5 mb-2">{n.attachments.map((a,i)=><span key={i} className={`text-xs px-2 py-1 rounded-lg flex items-center gap-1 ${tc(dark,"bg-slate-700 text-slate-300","bg-slate-100 text-slate-600")}`}><Icon name="file" size={11}/>{a.name}</span>)}</div>}
+                {n.attachments?.length>0&&(
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {n.attachments.map((a,i)=>(
+                      <div key={i} className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg border ${tc(dark,"bg-slate-700 border-slate-600 text-slate-300","bg-slate-100 border-slate-200 text-slate-600")}`}>
+                        <Icon name="file" size={11}/>
+                        <span>{a.name}</span>
+                        {a.data&&<button onClick={()=>{ const w=window.open("","_blank"); if(w){w.document.write(`<html><body style="margin:0;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh"><img src="${a.data}" style="max-width:100%;max-height:100vh;object-fit:contain"/></body></html>`);w.document.close();}}} title="Preview" className="text-sky-400 hover:text-sky-300 ml-1"><Icon name="eye" size={11}/></button>}
+                        {a.data&&<button onClick={()=>{ const el=document.createElement("a");el.href=a.data;el.download=a.name;el.click(); }} title="Download" className={`ml-0.5 ${tc(dark,"text-slate-400 hover:text-white","text-slate-500 hover:text-slate-700")}`}><Icon name="download" size={11}/></button>}
+                        {a.data&&<button onClick={()=>shareWhatsApp(project.customerPhone, `Hi ${project.customerName}, here is an attachment: ${a.name}. Regards, ${developer?.companyName||""}`)} title="Share WA" className="text-emerald-400 text-xs font-bold ml-0.5">WA</button>}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className={`flex gap-3 text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>
                   <span>{n.userName||currentUser.name}</span>
                   <span>{new Date(n.createdAt).toLocaleString("en-IN")}</span>
@@ -3005,7 +3176,12 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
                     <div className={`text-sm font-medium truncate ${tc(dark,"text-white","text-slate-800")}`}>{doc.title||doc.name}</div>
                     <div className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{doc.type} · {doc.size} · {fmtDate(doc.uploadDate)} · {doc.uploadedBy}</div>
                   </div>
-                  <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>setDocuments(ds=>ds.filter(d=>d.id!==doc.id))}><Icon name="trash" size={13}/></Btn>
+                  <div className="flex gap-1">
+                    {doc.dataUrl&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>{ const w=window.open("","_blank"); if(w){w.document.write(`<html><body style="margin:0;background:#000"><img src="${doc.dataUrl}" style="max-width:100%;display:block;margin:auto"/></body></html>`);w.document.close();} }} title="Preview"><Icon name="eye" size={12}/></Btn>}
+                    {doc.dataUrl&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>{ const a=document.createElement("a");a.href=doc.dataUrl;a.download=doc.name||doc.title;a.click(); }} title="Download"><Icon name="download" size={12}/></Btn>}
+                    {doc.dataUrl&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>shareWhatsApp(project.customerPhone, `Hi ${project.customerName}, here is your document: ${doc.title||doc.name}. Regards, ${developer?.companyName||""}`)} title="Share WA"><span className="text-emerald-400 text-xs font-bold">WA</span></Btn>}
+                    <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>setDocuments(ds=>ds.filter(d=>d.id!==doc.id))}><Icon name="trash" size={13}/></Btn>
+                  </div>
                 </div>
               ))}
             </div>
@@ -3038,7 +3214,15 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
             </div>
           ) : projProposals.map(pr=>{
             const tmpl=templates.find(t=>t.id===pr.templateId);
-            const propoMsg = `Hi ${project.customerName},\n\nHere is your Solar Proposal for your ${project.projectSize} ${project.projectUnit||"kW"} ${project.customerType||""} solar project.\n\nTotal System Cost: ${fmtINR(pr.data?.totalCost||0)}\nAnnual Savings: ${fmtINR(pr.data?.annualSavings||0)}\nPayback Period: ${pr.data?.paybackPeriod||"—"} years\n\nRegards,\n${developer?.companyName||""}`;
+            const getPropoPreview = () => {
+              const html = buildProposalHTML(pr, project, developer);
+              const blob = new Blob([html],{type:"text/html"});
+              return URL.createObjectURL(blob);
+            };
+            const buildPropoMsg = () => {
+              const url = getPropoPreview();
+              return `Hi ${project.customerName},\n\nHere is your Solar Proposal for your ${project.projectSize} ${project.projectUnit||"kW"} ${project.customerType||""} solar project.\n\nTotal System Cost: ${fmtINR(pr.data?.totalCost||0)}\nAnnual Savings: ${fmtINR(pr.data?.annualSavings||0)}\nPayback Period: ${pr.data?.paybackPeriod||"—"} years\n\nView Proposal: ${url}\n\nRegards,\n${developer?.companyName||""}`;
+            };
             return (
               <div key={pr.id} className={`border rounded-xl p-4 flex items-center gap-3 mb-2 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
                 <div className="w-9 h-9 rounded-lg bg-amber-500/15 flex items-center justify-center text-amber-400 flex-shrink-0"><Icon name="file" size={18}/></div>
@@ -3049,10 +3233,9 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
                 <span className={`text-xs px-2 py-0.5 rounded-full ${statusColor(pr.status,dark)}`}>{pr.status}</span>
                 <div className="flex gap-1.5 flex-wrap">
                   <Btn size="sm" variant="outline" onClick={()=>setViewProposal(pr)}><Icon name="eye" size={13}/>View</Btn>
-                  <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>printProposal(pr,project,developer)}><Icon name="print" size={13}/>Print</Btn>
-                  <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>{const cxName=project.customerName.replace(/\s+/g,"_");downloadHTML(buildProposalHTML(pr,project,developer),`Proposal_${cxName}_${project.projectSize}${project.projectUnit||"kW"}.html`);}}><Icon name="download" size={13}/>PDF</Btn>
-                  {project.customerPhone&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>shareWhatsApp(project.customerPhone,propoMsg)}><span className="text-emerald-400 font-bold text-xs">WA</span></Btn>}
-                  {project.customerEmail&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>shareMail(project.customerEmail,"Solar Proposal | "+developer?.companyName,propoMsg)}><Icon name="mail" size={13}/></Btn>}
+                  <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>printProposal(pr,project,developer)}><Icon name="print" size={13}/>Print PDF</Btn>
+                  {project.customerPhone&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>shareWhatsApp(project.customerPhone,buildPropoMsg())}><span className="text-emerald-400 font-bold text-xs">WA</span></Btn>}
+                  {project.customerEmail&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>shareMail(project.customerEmail,"Solar Proposal | "+developer?.companyName,buildPropoMsg())}><Icon name="mail" size={13}/></Btn>}
                 </div>
               </div>
             );
@@ -3139,7 +3322,7 @@ const buildProposalHTML = (proposal, project, developer) => {
     return `<tr style="border-bottom:1px solid #e2e8f0"><td>${yr}</td><td style="color:#dc2626">₹${Math.round(before).toLocaleString("en-IN")}</td><td style="color:#059669">₹${Math.round(after).toLocaleString("en-IN")}</td><td style="color:#d97706">₹${Math.round(savings).toLocaleString("en-IN")}</td><td style="color:#0284c7">₹${Math.round(cum).toLocaleString("en-IN")}</td></tr>`;
   }).join("");
   return `<!DOCTYPE html><html><head><title>Solar Proposal — ${d.customer_name}</title>
-  <style>body{font-family:Arial,sans-serif;color:#111;background:#fff;padding:32px;max-width:900px;margin:0 auto}h1,h2,h3{margin:0 0 8px}table{width:100%;border-collapse:collapse}th,td{padding:8px;text-align:left;font-size:13px}th{background:#fef3c7;font-weight:700}tr:hover{background:#fafafa}img{max-height:60px;display:block;margin-bottom:8px}pre{white-space:pre-wrap;font-family:inherit;font-size:12px}.amber{color:#d97706}.section{margin-bottom:24px;padding:16px;border:1px solid #e2e8f0;border-radius:12px}@media print{body{padding:0}@page{margin:1cm}}</style>
+  <style>body{font-family:Arial,sans-serif;color:#111;background:#fff;padding:32px;max-width:900px;margin:0 auto}h1,h2,h3{margin:0 0 8px}table{width:100%;border-collapse:collapse}th,td{padding:8px;text-align:left;font-size:13px}th{background:#fef3c7;font-weight:700}tr:hover{background:#fafafa}img{max-height:60px;display:block;margin-bottom:8px}pre{white-space:pre-wrap;font-family:inherit;font-size:12px}.amber{color:#d97706}.section{margin-bottom:24px;padding:16px;border:1px solid #e2e8f0;border-radius:12px}@media print{body{padding:0}@page{size:A4 portrait;margin:15mm}}</style>
   </head><body>
   <div class="section" style="background:#fffbeb;border-color:#fde68a">
     ${developer?.logo?`<img src="${developer.logo}" alt="logo"/>`:""}
@@ -3183,7 +3366,15 @@ const ProposalPreview = ({ proposal, project, developer, templates }) => {
   const tmpl = templates.find(t=>t.id===proposal.templateId);
   const cxName = (project?.customerName||d?.customer_name||"Customer").replace(/\s+/g,"_");
   const projSize = `${project?.projectSize||d?.project_size||""}${project?.projectUnit||"kW"}`;
-  const propoMsg = `Hi ${project?.customerName||d?.customer_name},\n\nHere is your Solar Proposal for your ${project?.projectSize} ${project?.projectUnit||"kW"} ${project?.customerType||""} solar project.\n\nTotal Cost: ${fmtINR(d?.totalCost||0)}\nAnnual Savings: ${fmtINR(d?.annualSavings||0)}\nPayback: ${d?.paybackPeriod||"—"} years\n\nRegards,\n${developer?.companyName||""}`;
+  const getPropoPreviewUrl = () => {
+    const html = buildProposalHTML(proposal, project, developer);
+    const blob = new Blob([html],{type:"text/html"});
+    return URL.createObjectURL(blob);
+  };
+  const buildPropoMsg = () => {
+    const url = getPropoPreviewUrl();
+    return `Hi ${project?.customerName||d?.customer_name},\n\nHere is your Solar Proposal for your ${project?.projectSize} ${project?.projectUnit||"kW"} ${project?.customerType||""} solar project.\n\nTotal Cost: ${fmtINR(d?.totalCost||0)}\nAnnual Savings: ${fmtINR(d?.annualSavings||0)}\nPayback: ${d?.paybackPeriod||"—"} years\n\nView Proposal: ${url}\n\nRegards,\n${developer?.companyName||""}`;
+  };
 
   return (
     <div>
@@ -3263,10 +3454,9 @@ const ProposalPreview = ({ proposal, project, developer, templates }) => {
       {developer?.terms&&<div className={`border rounded-xl p-4 mb-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200")}`}><h4 className={`font-bold mb-2 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Terms & Conditions</h4><p className={`text-xs ${tc(dark,"text-slate-400","text-slate-600")}`}>{developer.terms}</p></div>}
 
       <div className="flex gap-2 flex-wrap mt-4 pt-4 border-t border-slate-700">
-        <Btn onClick={()=>printProposal(proposal,project,developer)}><Icon name="print" size={15}/>Print</Btn>
-        <Btn variant="outline" onClick={()=>downloadHTML(buildProposalHTML(proposal,project,developer),`Proposal_${cxName}_${projSize}.html`)}><Icon name="download" size={15}/>Download PDF</Btn>
-        {d.customer_phone&&<Btn variant="outline" onClick={()=>shareWhatsApp(d.customer_phone,propoMsg)}><span className="text-emerald-400 font-bold">WA</span> WhatsApp</Btn>}
-        {d.customer_email&&<Btn variant="outline" onClick={()=>shareMail(d.customer_email,`Solar Proposal | ${developer?.companyName||""}`,propoMsg)}><Icon name="mail" size={15}/>Email</Btn>}
+        <Btn onClick={()=>printProposal(proposal,project,developer)}><Icon name="print" size={15}/>Print / Save PDF</Btn>
+        {d.customer_phone&&<Btn variant="outline" onClick={()=>shareWhatsApp(d.customer_phone,buildPropoMsg())}><span className="text-emerald-400 font-bold">WA</span> WhatsApp</Btn>}
+        {d.customer_email&&<Btn variant="outline" onClick={()=>shareMail(d.customer_email,`Solar Proposal | ${developer?.companyName||""}`,buildPropoMsg())}><Icon name="mail" size={15}/>Email</Btn>}
       </div>
     </div>
   );
@@ -3347,7 +3537,7 @@ export default function SolarProApp() {
           proposals={proposals} setProposals={setProposals}
           templates={templates} developer={developer}
           currentUser={currentUser} onBack={() => setCurrentProjectId(null)}
-          setProjects={setProjects}
+          setProjects={setProjects} users={users}
         />
       );
     }
