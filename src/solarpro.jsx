@@ -2502,50 +2502,103 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
 
   const addCustomCity = (city) => setDevelopers(ds=>ds.map(d=>d.id===developer?.id?{...d,customCities:[...(d.customCities||[]),city]}:d));
 
+  // ── DRAG AND DROP ENGINE ────────────────────────────────────
   const [dragId, setDragId] = useState(null);
   const [dragOverLane, setDragOverLane] = useState(null);
   const [ghostPos, setGhostPos] = useState({x:0,y:0});
   const [isDraggingActive, setIsDraggingActive] = useState(false);
-  const dragRef = useRef({id:null, startX:0, startY:0, moved:false});
+  const [dropDirection, setDropDirection] = useState(null); // "forward"|"backward"|"same"
+  const [dragSourceLane, setDragSourceLane] = useState(null);
+  const [isDropping, setIsDropping] = useState(false); // brief flash on successful drop
+  const dragRef = useRef({id:null, startX:0, startY:0, moved:false, sourceLane:null});
   const laneRefs = useRef({});
+  const kanbanScrollRef = useRef(null);
+  const edgeScrollRef = useRef(null);
+  const droppedCardRef = useRef(null); // track last dropped for flash animation
 
   const getDraggedProject = () => projects.find(p=>p.id===dragRef.current.id);
+
+  // Stub API call – replace URL with your real endpoint
+  const apiUpdateProjectStage = async (projectId, laneId, laneName) => {
+    try {
+      await fetch(`/api/projects/${projectId}/stage`, {
+        method: "PATCH",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ laneId, laneName, updatedAt: new Date().toISOString() })
+      });
+    } catch (_) { /* offline / dev mode — silently ignore */ }
+  };
+
+  const getLaneOrder = (laneId) => lanes.findIndex(l=>l.id===laneId);
+
+  const calcDropDirection = (srcLaneId, dstLaneId) => {
+    if (!srcLaneId || !dstLaneId || srcLaneId===dstLaneId) return "same";
+    return getLaneOrder(dstLaneId) > getLaneOrder(srcLaneId) ? "forward" : "backward";
+  };
+
+  const startEdgeScroll = (dir) => {
+    if (edgeScrollRef.current) return;
+    edgeScrollRef.current = setInterval(() => {
+      if (!kanbanScrollRef.current) return;
+      kanbanScrollRef.current.scrollLeft += dir * 12;
+    }, 16);
+  };
+  const stopEdgeScroll = () => {
+    if (edgeScrollRef.current) { clearInterval(edgeScrollRef.current); edgeScrollRef.current = null; }
+  };
 
   const onCardPointerDown = (e, projectId) => {
     if (e.button !== 0) return;
     e.preventDefault();
-    dragRef.current = { id: projectId, startX: e.clientX, startY: e.clientY, moved: false };
+    const srcLane = projects.find(p=>p.id===projectId)?.laneId || null;
+    dragRef.current = { id: projectId, startX: e.clientX, startY: e.clientY, moved: false, sourceLane: srcLane };
     setGhostPos({ x: e.clientX, y: e.clientY });
+    setDragSourceLane(srcLane);
 
     const onMove = (ev) => {
       const dx = ev.clientX - dragRef.current.startX;
       const dy = ev.clientY - dragRef.current.startY;
-      if (!dragRef.current.moved && Math.sqrt(dx*dx+dy*dy) > 6) {
+      if (!dragRef.current.moved && Math.sqrt(dx*dx+dy*dy) > 5) {
         dragRef.current.moved = true;
         setDragId(dragRef.current.id);
         setIsDraggingActive(true);
       }
-      if (dragRef.current.moved) {
-        setGhostPos({ x: ev.clientX, y: ev.clientY });
-        // Find which lane we're over
-        let found = null;
-        Object.entries(laneRefs.current).forEach(([laneId, el]) => {
-          if (!el) return;
-          const rect = el.getBoundingClientRect();
-          if (ev.clientX >= rect.left && ev.clientX <= rect.right &&
-              ev.clientY >= rect.top  && ev.clientY <= rect.bottom) {
-            found = laneId;
-          }
-        });
-        setDragOverLane(found);
+      if (!dragRef.current.moved) return;
+
+      setGhostPos({ x: ev.clientX, y: ev.clientY });
+
+      // Find hovered lane using bounding rect hit test
+      let found = null;
+      Object.entries(laneRefs.current).forEach(([laneId, el]) => {
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+        if (ev.clientX >= rect.left && ev.clientX <= rect.right &&
+            ev.clientY >= rect.top  && ev.clientY <= rect.bottom) {
+          found = laneId;
+        }
+      });
+      setDragOverLane(found);
+      setDropDirection(found ? calcDropDirection(dragRef.current.sourceLane, found) : null);
+
+      // Edge-scroll the kanban container
+      if (kanbanScrollRef.current) {
+        const kr = kanbanScrollRef.current.getBoundingClientRect();
+        const edgeW = 80;
+        if (ev.clientX < kr.left + edgeW) startEdgeScroll(-1);
+        else if (ev.clientX > kr.right - edgeW) startEdgeScroll(1);
+        else stopEdgeScroll();
       }
     };
 
     const onUp = (ev) => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
-      if (dragRef.current.moved && dragRef.current.id) {
-        // Find drop lane
+      stopEdgeScroll();
+
+      const movedCard = dragRef.current.moved && dragRef.current.id;
+
+      if (movedCard) {
+        // Final lane hit-test
         let dropLane = null;
         Object.entries(laneRefs.current).forEach(([laneId, el]) => {
           if (!el) return;
@@ -2555,16 +2608,46 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
             dropLane = laneId;
           }
         });
-        if (dropLane && dropLane !== projects.find(p=>p.id===dragRef.current.id)?.laneId) {
-          const laneName = lanes.find(l=>l.id===dropLane)?.name || "lane";
-          setProjects(ps=>ps.map(p=>p.id===dragRef.current.id?{...p,laneId:dropLane}:p));
-          toast.show({message:`Moved to ${laneName}`});
+
+        if (dropLane) {
+          const proj = projects.find(p=>p.id===dragRef.current.id);
+          const laneName = lanes.find(l=>l.id===dropLane)?.name || "";
+          const dir = calcDropDirection(dragRef.current.sourceLane, dropLane);
+          const dirLabel = dir==="forward" ? " → advanced" : dir==="backward" ? " ← moved back" : "";
+
+          // Update UI state immediately
+          const actEntry = {
+            id: `act${Date.now()}`,
+            type: "stage_change",
+            message: `Stage changed to “${laneName}”${dirLabel}`,
+            by: "You",
+            at: new Date().toISOString()
+          };
+          setProjects(ps=>ps.map(p=>p.id===dragRef.current.id
+            ? {...p, laneId:dropLane, lastActivity:new Date().toISOString().slice(0,10),
+               activityLog:[...(p.activityLog||[]),actEntry]}
+            : p
+          ));
+
+          // Flash on successful drop
+          droppedCardRef.current = dragRef.current.id;
+          setIsDropping(true);
+          setTimeout(()=>setIsDropping(false), 600);
+
+          // Fire API
+          if (proj) apiUpdateProjectStage(proj.projectId || proj.id, dropLane, laneName);
+
+          const dirIcon = dir==="forward"?"⟶":dir==="backward"?"⟵":"•";
+          toast.show({message:`${dirIcon} Moved to ${laneName}`});
         }
       }
+
       dragRef.current.id = null;
       dragRef.current.moved = false;
       setDragId(null);
       setDragOverLane(null);
+      setDropDirection(null);
+      setDragSourceLane(null);
       setIsDraggingActive(false);
     };
 
@@ -2603,14 +2686,16 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
   const isLocked = !currentUser?.active || (developer && (developer.paused || (developer.subscriptionEnd && new Date(developer.subscriptionEnd)<new Date())));
   if (isLocked) return <LockedPage developer={developer} reason={!currentUser?.active?"inactive":developer?.paused?"paused":"expired"}/>;
 
+  // ── PROJECT CARD ─────────────────────────────────────────────
   const ProjectCard = ({p}) => {
     const user = devTeam.find(u=>u.id===(p.assignedUserId||p.userId));
     const isDragging = dragId===p.id;
+    const justDropped = isDropping && droppedCardRef.current===p.id;
     return (
       <div
-        className={`border rounded-xl p-3 mb-2 select-none transition-all duration-150 ${isDragging?"opacity-20 scale-95":"hover:shadow-md"} ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}
-        style={{touchAction:"none"}}>
-        {/* Drag handle + header row */}
+        className={`border rounded-xl p-3 mb-2 select-none ${isDragging?"opacity-15 scale-95 pointer-events-none":"hover:shadow-lg"} ${justDropped?tc(dark,"border-amber-400 shadow-amber-500/20 shadow-lg","border-amber-400 shadow-amber-300/40 shadow-lg"):tc(dark,"border-slate-700/50","border-slate-200 shadow-sm")} ${tc(dark,"bg-[#0c1929]","bg-white")}`}
+        style={{touchAction:"none", transition:"opacity 120ms, transform 120ms, border-color 400ms, box-shadow 400ms"}}>
+        {/* Drag handle bar */}
         <div
           onPointerDown={e=>onCardPointerDown(e, p.id)}
           className={`flex items-center justify-between mb-2 cursor-grab active:cursor-grabbing rounded-lg px-1 py-0.5 -mx-1 transition-colors group ${tc(dark,"hover:bg-slate-700/60","hover:bg-slate-100")}`}>
@@ -2642,9 +2727,46 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
     );
   };
 
+  // Ghost card rendered during drag
+  const GhostCard = () => {
+    const dp = getDraggedProject();
+    if (!dp) return null;
+    const dirColor = dropDirection==="forward"?"#10b981":dropDirection==="backward"?"#f59e0b":"#64748b";
+    const dirIcon  = dropDirection==="forward"?"⇢":dropDirection==="backward"?"⇠":"•";
+    const targetLane = dragOverLane ? lanes.find(l=>l.id===dragOverLane) : null;
+    return (
+      <div style={{
+        position:"fixed", left:ghostPos.x+16, top:ghostPos.y+16,
+        width:228, zIndex:9999, pointerEvents:"none",
+        transform:"rotate(2.5deg) scale(1.03)",
+        filter:"drop-shadow(0 24px 48px rgba(0,0,0,0.6))",
+      }}>
+        <div style={{borderRadius:14, padding:12, border:"2px solid "+dirColor, background: dark?"#0c1929":"#fff", boxShadow:"0 0 0 4px "+dirColor+"22"}}>
+          <div className="flex items-center justify-between mb-2">
+            <span style={{fontSize:10,fontFamily:"monospace",padding:"2px 6px",borderRadius:4,background:dark?"#1e293b":"#f1f5f9",color:dark?"#94a3b8":"#64748b"}}>{dp.projectId||"—"}</span>
+            {targetLane && (
+              <span style={{fontSize:10,fontWeight:700,color:dirColor}}>{dirIcon} {targetLane.name}</span>
+            )}
+          </div>
+          <div style={{fontWeight:700,fontSize:13,marginBottom:2,color:dark?"#fff":"#1e293b"}}>{dp.customerName}</div>
+          <div style={{fontSize:11,color:dark?"#94a3b8":"#64748b"}}>{dp.projectSize} {dp.projectUnit||"kW"} · {dp.customerType||"—"}</div>
+          {targetLane && (
+            <div style={{marginTop:8,paddingTop:6,borderTop:"1px solid "+(dark?"#1e293b":"#e2e8f0"),display:"flex",alignItems:"center",gap:4}}>
+              <span style={{fontSize:10,color:dark?"#64748b":"#94a3b8"}}>Moving to</span>
+              <span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:laneHex(targetLane.color)}}/>
+              <span style={{fontSize:11,fontWeight:600,color:dirColor}}>{targetLane.name}</span>
+              <span style={{marginLeft:"auto",fontSize:10,fontWeight:700,color:dirColor,letterSpacing:"0.05em"}}>{dropDirection==="forward"?"ADVANCE":dropDirection==="backward"?"REVERT":"SAME"}</span>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div style={isDraggingActive?{userSelect:"none",cursor:"grabbing"}:{}}>
       {/* Floating ghost card during drag */}
+      {isDraggingActive && dragId && <GhostCard/>}
       {isDraggingActive && dragId && (()=>{
         const dp = getDraggedProject();
         if (!dp) return null;
@@ -2802,37 +2924,107 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
 
       {/* KANBAN VIEW */}
       {view==="kanban"&&(
-        <div className="flex gap-4 overflow-x-auto pb-4">
-          {lanes.map(lane=>{
-            const laneProjects = filteredProjects.filter(p=>p.laneId===lane.id);
-            const totalSize = laneProjects.reduce((s,p)=>s+(parseFloat(p.projectSize)||0),0);
-            const totalVal = laneProjects.reduce((s,p)=>s+Math.round((developer?.costPerKW||50000)*(parseFloat(p.projectSize)||0)),0);
-            return (
-              <div key={lane.id} className={`flex-shrink-0 w-72`}
-                ref={el => laneRefs.current[lane.id] = el}>
-                <div className={`border-t-2 rounded-xl p-3 mb-3 transition-all ${laneAccents[lane.color]||"border-slate-500"} ${dragOverLane===lane.id?tc(dark,"bg-amber-500/10","bg-amber-50"):tc(dark,"bg-slate-800/30","bg-slate-50")}`}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className={`font-bold text-sm ${tc(dark,"text-white","text-slate-800")}`}>{lane.name}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${tc(dark,"bg-slate-700 text-slate-300","bg-white text-slate-600 border border-slate-200")}`}>{laneProjects.length}</span>
-                  </div>
-                  <div className="flex gap-3 text-xs">
-                    <span className={tc(dark,"text-slate-400","text-slate-500")}>{totalSize.toFixed(1)} kW total</span>
-                    <span className={tc(dark,"text-amber-400","text-amber-600")}>~{fmtINR(totalVal)}</span>
-                  </div>
-                </div>
-                <div className={`rounded-xl transition-all duration-150 ${dragOverLane===lane.id?tc(dark,"bg-amber-500/5 ring-2 ring-amber-400/40 ring-dashed","bg-amber-50 ring-2 ring-amber-300 ring-dashed"):"ring-0"}`}
-                  style={{minHeight:60, maxHeight: laneProjects.length>5 ? 520 : "none", overflowY: laneProjects.length>5 ? "auto" : "visible"}}>
-                  {laneProjects.map(p=><ProjectCard key={p.id} p={p}/>)}
-                  {!laneProjects.length&&(
-                    <div className={`rounded-xl p-5 text-center text-xs transition-all ${dragOverLane===lane.id?tc(dark,"text-amber-400","text-amber-600"):"border-2 border-dashed "+tc(dark,"border-slate-700 text-slate-600","border-slate-200 text-slate-400")}`}>
-                      {dragOverLane===lane.id?"✦ Drop here":"No projects"}
+        <>
+          {/* Pipeline progress bar shown while dragging */}
+          {isDraggingActive && dragSourceLane && (
+            <div className={`flex items-center gap-1 mb-3 p-2 px-3 rounded-xl border ${tc(dark,"bg-slate-900/60 border-slate-700","bg-slate-50 border-slate-200")}`}>
+              {lanes.map((lane,i)=>{
+                const isSource = lane.id===dragSourceLane;
+                const isTarget = lane.id===dragOverLane;
+                const srcIdx = lanes.findIndex(l=>l.id===dragSourceLane);
+                const tgtIdx = lanes.findIndex(l=>l.id===dragOverLane);
+                const inRange = dragOverLane && i>=Math.min(srcIdx,tgtIdx) && i<=Math.max(srcIdx,tgtIdx);
+                const lineColor = inRange ? (dropDirection==="forward"?"#10b981":"#f59e0b") : (dark?"#1e293b":"#e2e8f0");
+                return (
+                  <React.Fragment key={lane.id}>
+                    {i>0&&<div style={{flex:1,height:2,background:lineColor,transition:"background 180ms"}}/>}
+                    <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                      <div style={{width:18,height:18,borderRadius:"50%",border:"2px solid "+(isSource?"#f59e0b":isTarget?(dropDirection==="forward"?"#10b981":"#f59e0b"):inRange?"#475569":"#1e293b"),background:isSource?"#f59e0b22":isTarget?(dropDirection==="forward"?"#10b98122":"#f59e0b22"):inRange?"#47556920":"transparent",transition:"all 160ms",transform:isSource||isTarget?"scale(1.25)":"scale(1)"}}>
+                        <div style={{width:7,height:7,borderRadius:"50%",margin:"auto",background:isSource?"#f59e0b":isTarget?(dropDirection==="forward"?"#10b981":"#f59e0b"):inRange?"#475569":"#334155"}}/>
+                      </div>
+                      <span style={{fontSize:8,color:isSource||isTarget?dark?"#fbbf24":"#d97706":dark?"#475569":"#94a3b8",textAlign:"center",lineHeight:1.1,maxWidth:40,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{lane.name}</span>
                     </div>
-                  )}
+                  </React.Fragment>
+                );
+              })}
+            </div>
+          )}
+
+          <div ref={kanbanScrollRef} className="flex gap-4 overflow-x-auto pb-4" style={{scrollBehavior:"smooth"}}>
+            {lanes.map((lane)=>{
+              const laneProjects = filteredProjects.filter(p=>p.laneId===lane.id);
+              const totalSize = laneProjects.reduce((s,p)=>s+(parseFloat(p.projectSize)||0),0);
+              const totalVal  = laneProjects.reduce((s,p)=>s+Math.round((developer?.costPerKW||50000)*(parseFloat(p.projectSize)||0)),0);
+              const isOver    = dragOverLane===lane.id;
+              const isSource  = dragSourceLane===lane.id && isDraggingActive;
+              const dir       = isOver ? dropDirection : null;
+              const dirColor  = dir==="forward"?"#10b981":dir==="backward"?"#f59e0b":"#6366f1";
+              const laneColor = laneHex(lane.color);
+              return (
+                <div key={lane.id} className="flex-shrink-0 w-72"
+                  ref={el => laneRefs.current[lane.id] = el}>
+
+                  {/* Lane header */}
+                  <div style={{
+                    borderRadius:12, padding:12, marginBottom:8,
+                    borderTop:`3px solid ${isOver?dirColor:laneColor}`,
+                    background: isOver?(dark?`${dirColor}14`:`${dirColor}0f`):isSource?(dark?"rgba(30,41,59,0.3)":"rgba(241,245,249,0.6)"):(dark?"rgba(12,25,41,0.7)":"rgba(248,250,252,1)"),
+                    boxShadow: isOver?`0 0 0 2px ${dirColor}44`:"none",
+                    transition:"all 180ms ease",
+                  }}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <span style={{width:10,height:10,borderRadius:"50%",background:isOver?dirColor:laneColor,flexShrink:0,display:"inline-block"}}/>
+                        <span className={`font-bold text-sm ${isSource?tc(dark,"text-slate-500","text-slate-400"):tc(dark,"text-white","text-slate-800")}`}>{lane.name}</span>
+                        {isOver&&dir&&dir!=="same"&&(
+                          <span style={{fontSize:9,fontWeight:800,letterSpacing:"0.06em",color:dirColor,padding:"1px 5px",borderRadius:5,background:dirColor+"22"}}>
+                            {dir==="forward"?"⇢ ADVANCE":"⇠ REVERT"}
+                          </span>
+                        )}
+                      </div>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${tc(dark,"bg-slate-700/60 text-slate-300","bg-white text-slate-600 border border-slate-200")}`}>{laneProjects.length}</span>
+                    </div>
+                    <div className="flex gap-3 text-xs">
+                      <span className={tc(dark,"text-slate-400","text-slate-500")}>{totalSize.toFixed(1)} kW</span>
+                      <span style={{color:isOver?dirColor:dark?"#f59e0b":"#d97706",fontWeight:600}}>~{fmtINR(totalVal)}</span>
+                    </div>
+                  </div>
+
+                  {/* Cards + drop zone */}
+                  <div style={{
+                    minHeight:64,
+                    maxHeight: laneProjects.length>5 ? 520 : "none",
+                    overflowY: laneProjects.length>5 ? "auto" : "visible",
+                    outline: isOver?`2px dashed ${dirColor}70`:"2px dashed transparent",
+                    outlineOffset:3, borderRadius:12,
+                    background: isOver?(dark?`${dirColor}08`:`${dirColor}05`):"transparent",
+                    transition:"all 160ms ease",
+                  }}>
+                    {laneProjects.map(p=><ProjectCard key={p.id} p={p}/>)}
+                    {isOver&&isDraggingActive&&(
+                      <div style={{
+                        borderRadius:10, padding:"14px 8px", textAlign:"center",
+                        border:`2px dashed ${dirColor}90`,
+                        background:dirColor+"10", margin:"4px 0",
+                        color:dirColor, fontSize:12, fontWeight:700,
+                        animation:"dnd-pulse 700ms ease infinite",
+                      }}>
+                        {dir==="forward"?"⇢ Drop to advance":dir==="backward"?"⇠ Drop to revert":"◆ Drop here"}
+                      </div>
+                    )}
+                    {!laneProjects.length&&!isOver&&(
+                      <div className={`rounded-xl p-5 text-center text-xs border-2 border-dashed ${tc(dark,"border-slate-800 text-slate-700","border-slate-200 text-slate-400")}`}>
+                        No projects
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+
+          <style>{`@keyframes dnd-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.65;transform:scale(0.985)}}`}</style>
+        </>
       )}
 
       {/* LIST VIEW */}
