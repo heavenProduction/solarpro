@@ -2319,17 +2319,72 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
 
   const [dragId, setDragId] = useState(null);
   const [dragOverLane, setDragOverLane] = useState(null);
+  const [ghostPos, setGhostPos] = useState({x:0,y:0});
+  const [isDraggingActive, setIsDraggingActive] = useState(false);
+  const dragRef = useRef({id:null, startX:0, startY:0, moved:false});
+  const laneRefs = useRef({});
 
-  const onDragStart = (e, projectId) => { setDragId(projectId); e.dataTransfer.effectAllowed="move"; };
-  const onDragEnd = () => { setDragId(null); setDragOverLane(null); };
-  const onLaneDragOver = (e, laneId) => { e.preventDefault(); e.dataTransfer.dropEffect="move"; setDragOverLane(laneId); };
-  const onLaneDrop = (e, laneId) => {
+  const getDraggedProject = () => projects.find(p=>p.id===dragRef.current.id);
+
+  const onCardPointerDown = (e, projectId) => {
+    if (e.button !== 0) return;
     e.preventDefault();
-    if (dragId) {
-      setProjects(ps=>ps.map(p=>p.id===dragId?{...p,laneId}:p));
-      toast.show({message:"Project moved to new lane."});
-    }
-    setDragId(null); setDragOverLane(null);
+    dragRef.current = { id: projectId, startX: e.clientX, startY: e.clientY, moved: false };
+    setGhostPos({ x: e.clientX, y: e.clientY });
+
+    const onMove = (ev) => {
+      const dx = ev.clientX - dragRef.current.startX;
+      const dy = ev.clientY - dragRef.current.startY;
+      if (!dragRef.current.moved && Math.sqrt(dx*dx+dy*dy) > 6) {
+        dragRef.current.moved = true;
+        setDragId(dragRef.current.id);
+        setIsDraggingActive(true);
+      }
+      if (dragRef.current.moved) {
+        setGhostPos({ x: ev.clientX, y: ev.clientY });
+        // Find which lane we're over
+        let found = null;
+        Object.entries(laneRefs.current).forEach(([laneId, el]) => {
+          if (!el) return;
+          const rect = el.getBoundingClientRect();
+          if (ev.clientX >= rect.left && ev.clientX <= rect.right &&
+              ev.clientY >= rect.top  && ev.clientY <= rect.bottom) {
+            found = laneId;
+          }
+        });
+        setDragOverLane(found);
+      }
+    };
+
+    const onUp = (ev) => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      if (dragRef.current.moved && dragRef.current.id) {
+        // Find drop lane
+        let dropLane = null;
+        Object.entries(laneRefs.current).forEach(([laneId, el]) => {
+          if (!el) return;
+          const rect = el.getBoundingClientRect();
+          if (ev.clientX >= rect.left && ev.clientX <= rect.right &&
+              ev.clientY >= rect.top  && ev.clientY <= rect.bottom) {
+            dropLane = laneId;
+          }
+        });
+        if (dropLane && dropLane !== projects.find(p=>p.id===dragRef.current.id)?.laneId) {
+          const laneName = lanes.find(l=>l.id===dropLane)?.name || "lane";
+          setProjects(ps=>ps.map(p=>p.id===dragRef.current.id?{...p,laneId:dropLane}:p));
+          toast.show({message:`Moved to ${laneName}`});
+        }
+      }
+      dragRef.current.id = null;
+      dragRef.current.moved = false;
+      setDragId(null);
+      setDragOverLane(null);
+      setIsDraggingActive(false);
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
   };
   const selectAll = () => setSelected(new Set(filteredProjects.map(p=>p.id)));
   const clearSelect = () => setSelected(new Set());
@@ -2364,20 +2419,27 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
   if (isLocked) return <LockedPage developer={developer} reason={!currentUser?.active?"inactive":developer?.paused?"paused":"expired"}/>;
 
   const ProjectCard = ({p}) => {
-    const lane = lanes.find(l=>l.id===p.laneId);
     const user = devTeam.find(u=>u.id===(p.assignedUserId||p.userId));
     const isDragging = dragId===p.id;
     return (
       <div
-        draggable
-        onDragStart={e=>onDragStart(e,p.id)}
-        onDragEnd={onDragEnd}
-        className={`border rounded-xl p-3 mb-2 cursor-grab active:cursor-grabbing transition-all hover:shadow-md ${isDragging?"opacity-40":""} ${tc(dark,"bg-[#0c1929] border-slate-700/50 hover:border-amber-500/30","bg-white border-slate-200 hover:border-amber-300 shadow-sm")}`}>
-        <div className="flex items-start justify-between mb-2">
+        className={`border rounded-xl p-3 mb-2 select-none transition-all duration-150 ${isDragging?"opacity-20 scale-95":"hover:shadow-md"} ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}
+        style={{touchAction:"none"}}>
+        {/* Drag handle + header row */}
+        <div
+          onPointerDown={e=>onCardPointerDown(e, p.id)}
+          className={`flex items-center justify-between mb-2 cursor-grab active:cursor-grabbing rounded-lg px-1 py-0.5 -mx-1 transition-colors group ${tc(dark,"hover:bg-slate-700/60","hover:bg-slate-100")}`}>
           <span className={`text-xs font-mono px-1.5 py-0.5 rounded ${tc(dark,"bg-slate-700 text-slate-400","bg-slate-100 text-slate-500")}`}>{p.projectId||"—"}</span>
-          <span className={`text-xs px-2 py-0.5 rounded-full border ${tc(dark,enquiryColors[p.enquiryType]||"bg-slate-500/20 text-slate-300 border-slate-500/30",enquiryColorsL[p.enquiryType]||"bg-slate-100 text-slate-600")}`}>{p.enquiryType||"—"}</span>
+          <div className="flex items-center gap-1.5">
+            <span className={`text-xs px-2 py-0.5 rounded-full border ${tc(dark,enquiryColors[p.enquiryType]||"bg-slate-500/20 text-slate-300 border-slate-500/30",enquiryColorsL[p.enquiryType]||"bg-slate-100 text-slate-600")}`}>{p.enquiryType||"—"}</span>
+            <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" className={`opacity-30 group-hover:opacity-70 transition-opacity ${tc(dark,"text-slate-300","text-slate-500")}`}>
+              <circle cx="3" cy="2.5" r="1.3"/><circle cx="7" cy="2.5" r="1.3"/>
+              <circle cx="3" cy="7" r="1.3"/><circle cx="7" cy="7" r="1.3"/>
+              <circle cx="3" cy="11.5" r="1.3"/><circle cx="7" cy="11.5" r="1.3"/>
+            </svg>
+          </div>
         </div>
-        <div onClick={()=>setCurrentProjectId(p.id)}>
+        <div onClick={()=>{ if(!dragRef.current.moved) setCurrentProjectId(p.id); }} className="cursor-pointer">
           <h4 className={`font-bold text-sm mb-0.5 ${tc(dark,"text-white","text-slate-800")}`}>{p.customerName}</h4>
           {p.pocName&&<p className={`text-xs mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>POC: {p.pocName}</p>}
           <p className={`text-xs mb-2 ${tc(dark,"text-slate-400","text-slate-500")}`}>{[p.customerCity,p.customerState].filter(Boolean).join(", ")||p.customerAddress||"—"}</p>
@@ -2389,14 +2451,43 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
         </div>
         <div className="flex gap-1 mt-2">
           <button onClick={e=>{e.stopPropagation();openEdit(p);}} className={`text-xs px-2 py-1 rounded-lg transition-colors ${tc(dark,"bg-slate-700 text-slate-300 hover:bg-slate-600","bg-slate-100 text-slate-600 hover:bg-slate-200")}`}><Icon name="edit" size={11}/></button>
-          <button onClick={e=>{e.stopPropagation();setCurrentProjectId(p.id);}} className={`text-xs px-2 py-1 rounded-lg transition-colors ${tc(dark,"bg-slate-700 text-slate-300 hover:bg-slate-600","bg-slate-100 text-slate-600 hover:bg-slate-200")}`}><Icon name="eye" size={11}/></button>
+          <button onClick={e=>{e.stopPropagation();if(!dragRef.current.moved)setCurrentProjectId(p.id);}} className={`text-xs px-2 py-1 rounded-lg transition-colors ${tc(dark,"bg-slate-700 text-slate-300 hover:bg-slate-600","bg-slate-100 text-slate-600 hover:bg-slate-200")}`}><Icon name="eye" size={11}/></button>
         </div>
       </div>
     );
   };
 
   return (
-    <div>
+    <div style={isDraggingActive?{userSelect:"none",cursor:"grabbing"}:{}}>
+      {/* Floating ghost card during drag */}
+      {isDraggingActive && dragId && (()=>{
+        const dp = getDraggedProject();
+        if (!dp) return null;
+        return (
+          <div style={{
+            position:"fixed", left:ghostPos.x+12, top:ghostPos.y+12,
+            width:240, zIndex:9999, pointerEvents:"none",
+            transform:"rotate(2deg)",
+            filter:"drop-shadow(0 20px 40px rgba(0,0,0,0.5))",
+            transition:"none",
+          }}>
+            <div className={`border-2 rounded-xl p-3 border-amber-400/80 ${tc(dark,"bg-[#0c1929]","bg-white")}`}>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className={`text-xs font-mono px-1.5 py-0.5 rounded ${tc(dark,"bg-slate-700 text-slate-400","bg-slate-100 text-slate-500")}`}>{dp.projectId||"—"}</span>
+                <span className={`text-xs px-2 py-0.5 rounded-full border ${tc(dark,enquiryColors[dp.enquiryType]||"bg-slate-500/20 text-slate-300 border-slate-500/30",enquiryColorsL[dp.enquiryType]||"bg-slate-100 text-slate-600")}`}>{dp.enquiryType||"—"}</span>
+              </div>
+              <div className={`font-bold text-sm mb-0.5 ${tc(dark,"text-white","text-slate-800")}`}>{dp.customerName}</div>
+              <div className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{dp.projectSize} {dp.projectUnit||"kW"} · {dp.customerType||"—"}</div>
+              {dragOverLane && (
+                <div className="mt-2 text-xs text-amber-400 font-medium">
+                  → {lanes.find(l=>l.id===dragOverLane)?.name||""}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Import Modal */}
       {showImportModal&&(
         <Modal title="Import Projects from CSV" onClose={()=>setShowImportModal(false)} wide>
@@ -2533,10 +2624,8 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
             const totalVal = laneProjects.reduce((s,p)=>s+Math.round((developer?.costPerKW||50000)*(parseFloat(p.projectSize)||0)),0);
             return (
               <div key={lane.id} className={`flex-shrink-0 w-72`}
-                onDragOver={e=>onLaneDragOver(e,lane.id)}
-                onDrop={e=>onLaneDrop(e,lane.id)}
-                onDragLeave={()=>setDragOverLane(null)}>
-                <div className={`border-t-2 rounded-xl p-3 mb-3 transition-all ${laneAccents[lane.color]||"border-slate-500"} ${dragOverLane===lane.id?tc(dark,"bg-amber-500/10 border-amber-400/50","bg-amber-50"):tc(dark,"bg-slate-800/30","bg-slate-50")}`}>
+                ref={el => laneRefs.current[lane.id] = el}>
+                <div className={`border-t-2 rounded-xl p-3 mb-3 transition-all ${laneAccents[lane.color]||"border-slate-500"} ${dragOverLane===lane.id?tc(dark,"bg-amber-500/10","bg-amber-50"):tc(dark,"bg-slate-800/30","bg-slate-50")}`}>
                   <div className="flex items-center justify-between mb-1">
                     <span className={`font-bold text-sm ${tc(dark,"text-white","text-slate-800")}`}>{lane.name}</span>
                     <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${tc(dark,"bg-slate-700 text-slate-300","bg-white text-slate-600 border border-slate-200")}`}>{laneProjects.length}</span>
@@ -2546,9 +2635,13 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
                     <span className={tc(dark,"text-amber-400","text-amber-600")}>~{fmtINR(totalVal)}</span>
                   </div>
                 </div>
-                <div className={`min-h-16 rounded-xl transition-all ${dragOverLane===lane.id?tc(dark,"bg-amber-500/5 border border-dashed border-amber-400/40","bg-amber-50 border border-dashed border-amber-300"):"border border-transparent"}`}>
+                <div className={`min-h-20 rounded-xl transition-all duration-150 ${dragOverLane===lane.id?tc(dark,"bg-amber-500/5 ring-2 ring-amber-400/40 ring-dashed","bg-amber-50 ring-2 ring-amber-300 ring-dashed"):"ring-0"}`}>
                   {laneProjects.map(p=><ProjectCard key={p.id} p={p}/>)}
-                  {!laneProjects.length&&<div className={`rounded-xl p-4 text-center text-xs ${dragOverLane===lane.id?"":"border-2 border-dashed"} ${tc(dark,"border-slate-700 text-slate-600","border-slate-200 text-slate-400")}`}>{dragOverLane===lane.id?"Drop here":"No projects"}</div>}
+                  {!laneProjects.length&&(
+                    <div className={`rounded-xl p-5 text-center text-xs transition-all ${dragOverLane===lane.id?tc(dark,"text-amber-400","text-amber-600"):"border-2 border-dashed "+tc(dark,"border-slate-700 text-slate-600","border-slate-200 text-slate-400")}`}>
+                      {dragOverLane===lane.id?"✦ Drop here":"No projects"}
+                    </div>
+                  )}
                 </div>
               </div>
             );
