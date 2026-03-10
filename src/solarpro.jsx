@@ -99,23 +99,39 @@ function fmtDate(iso) {
 
 // ── LANE COLORS ───────────────────────────────────────────────
 const LANE_COLORS = [
-  { key:"slate",   hex:"#64748b", label:"Slate"   },
-  { key:"gray",    hex:"#6b7280", label:"Gray"    },
-  { key:"zinc",    hex:"#71717a", label:"Zinc"    },
-  { key:"red",     hex:"#ef4444", label:"Red"     },
-  { key:"orange",  hex:"#f97316", label:"Orange"  },
-  { key:"amber",   hex:"#f59e0b", label:"Amber"   },
-  { key:"yellow",  hex:"#eab308", label:"Yellow"  },
-  { key:"lime",    hex:"#84cc16", label:"Lime"    },
-  { key:"green",   hex:"#22c55e", label:"Green"   },
-  { key:"emerald", hex:"#10b981", label:"Emerald" },
-  { key:"teal",    hex:"#14b8a6", label:"Teal"    },
-  { key:"cyan",    hex:"#06b6d4", label:"Cyan"    },
-  { key:"sky",     hex:"#0ea5e9", label:"Sky"     },
-  { key:"blue",    hex:"#3b82f6", label:"Blue"    },
-  { key:"indigo",  hex:"#6366f1", label:"Indigo"  },
-  { key:"violet",  hex:"#8b5cf6", label:"Violet"  },
-  { key:"pink",    hex:"#ec4899", label:"Pink"    },
+  { key:"slate",      hex:"#64748b", label:"Slate Gray"    },
+  { key:"gray",       hex:"#6b7280", label:"Cool Gray"     },
+  { key:"zinc",       hex:"#71717a", label:"Zinc"          },
+  { key:"stone",      hex:"#78716c", label:"Warm Stone"    },
+  { key:"red",        hex:"#ef4444", label:"Bright Red"    },
+  { key:"rose",       hex:"#f43f5e", label:"Rose Red"      },
+  { key:"crimson",    hex:"#dc2626", label:"Crimson"       },
+  { key:"orange",     hex:"#f97316", label:"Orange"        },
+  { key:"deeporange", hex:"#ea580c", label:"Deep Orange"   },
+  { key:"amber",      hex:"#f59e0b", label:"Amber Gold"    },
+  { key:"yellow",     hex:"#eab308", label:"Bright Yellow" },
+  { key:"lime",       hex:"#84cc16", label:"Lime Green"    },
+  { key:"green",      hex:"#22c55e", label:"Bright Green"  },
+  { key:"emerald",    hex:"#10b981", label:"Emerald Green" },
+  { key:"forest",     hex:"#16a34a", label:"Forest Green"  },
+  { key:"teal",       hex:"#14b8a6", label:"Teal"          },
+  { key:"cyan",       hex:"#06b6d4", label:"Cyan"          },
+  { key:"sky",        hex:"#0ea5e9", label:"Sky Blue"      },
+  { key:"blue",       hex:"#3b82f6", label:"Royal Blue"    },
+  { key:"navy",       hex:"#1d4ed8", label:"Navy Blue"     },
+  { key:"indigo",     hex:"#6366f1", label:"Indigo"        },
+  { key:"violet",     hex:"#8b5cf6", label:"Violet"        },
+  { key:"purple",     hex:"#a855f7", label:"Purple"        },
+  { key:"fuchsia",    hex:"#d946ef", label:"Fuchsia"       },
+  { key:"pink",       hex:"#ec4899", label:"Hot Pink"      },
+  { key:"coral",      hex:"#fb7185", label:"Coral"         },
+  { key:"gold",       hex:"#d97706", label:"Dark Gold"     },
+  { key:"brown",      hex:"#92400e", label:"Brown"         },
+  { key:"maroon",     hex:"#991b1b", label:"Maroon"        },
+  { key:"olive",      hex:"#4d7c0f", label:"Olive Green"   },
+  { key:"steel",      hex:"#334155", label:"Steel Blue"    },
+  { key:"lavender",   hex:"#c4b5fd", label:"Lavender"      },
+  { key:"mint",       hex:"#6ee7b7", label:"Mint Green"    },
 ];
 function laneHex(colorKey) {
   return (LANE_COLORS.find(c=>c.key===colorKey)||LANE_COLORS[0]).hex;
@@ -801,11 +817,16 @@ const InvoiceItemEditor = ({ items, setItems }) => {
 const InvoiceListView = ({ invoices, developers, projects, users, onView, onPrint, onDownload, onMarkPaid, onConvert, currentUser, developer }) => {
   const { dark } = useTheme();
   const toast = useToast();
+  const [search, setSearch] = useState("");
   const [dateFilter, setDateFilter] = useState("all");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [docTypeFilter, setDocTypeFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("date_desc");
+  const [minAmt, setMinAmt] = useState("");
+  const [maxAmt, setMaxAmt] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
   const [convertAllModal, setConvertAllModal] = useState(false);
   const [convertAllTarget, setConvertAllTarget] = useState("Tax Invoice");
 
@@ -815,8 +836,26 @@ const InvoiceListView = ({ invoices, developers, projects, users, onView, onPrin
   const startOfLastMonth = (d) => new Date(d.getFullYear(), d.getMonth()-1, 1);
   const endOfLastMonth   = (d) => new Date(d.getFullYear(), d.getMonth(), 0, 23, 59, 59);
 
-  const filtered = [...invoices].sort((a,b)=>new Date(b.date)-new Date(a.date)).filter(inv=>{
+  const sortFn = (a, b) => {
+    const ta = calcInvoiceTotal(a.items||[]).total || a.amount || 0;
+    const tb = calcInvoiceTotal(b.items||[]).total || b.amount || 0;
+    if (sortBy==="date_desc")  return new Date(b.date)-new Date(a.date);
+    if (sortBy==="date_asc")   return new Date(a.date)-new Date(b.date);
+    if (sortBy==="amt_desc")   return tb-ta;
+    if (sortBy==="amt_asc")    return ta-tb;
+    if (sortBy==="cust_asc")   return (a.customerName||"").localeCompare(b.customerName||"");
+    if (sortBy==="cust_desc")  return (b.customerName||"").localeCompare(a.customerName||"");
+    return 0;
+  };
+
+  const filtered = [...invoices].sort(sortFn).filter(inv=>{
     const invDate = new Date(inv.date);
+    const {total} = calcInvoiceTotal(inv.items||[]);
+    const displayAmt = total || inv.amount || 0;
+    if (search) {
+      const q = search.toLowerCase();
+      if (!(inv.id||"").toLowerCase().includes(q) && !(inv.customerName||"").toLowerCase().includes(q) && !(inv.docType||"").toLowerCase().includes(q)) return false;
+    }
     let pass = true;
     if (dateFilter==="7d")   pass = invDate >= new Date(now - 7*86400000);
     else if (dateFilter==="15d")  pass = invDate >= new Date(now - 15*86400000);
@@ -825,10 +864,16 @@ const InvoiceListView = ({ invoices, developers, projects, users, onView, onPrin
     else if (dateFilter==="month")pass = invDate >= startOfMonth(now);
     else if (dateFilter==="lastmonth") pass = invDate >= startOfLastMonth(now) && invDate <= endOfLastMonth(now);
     else if (dateFilter==="custom") pass = (!fromDate||invDate>=new Date(fromDate)) && (!toDate||invDate<=new Date(toDate+" 23:59:59"));
-    if (statusFilter!=="all") pass = pass && inv.status===statusFilter;
-    if (docTypeFilter!=="all") pass = pass && (inv.docType||"Tax Invoice")===docTypeFilter;
-    return pass;
+    if (!pass) return false;
+    if (statusFilter!=="all" && inv.status!==statusFilter) return false;
+    if (docTypeFilter!=="all" && (inv.docType||"Tax Invoice")!==docTypeFilter) return false;
+    if (minAmt && displayAmt < parseFloat(minAmt)) return false;
+    if (maxAmt && displayAmt > parseFloat(maxAmt)) return false;
+    return true;
   });
+
+  const activeFilters = [search, dateFilter!=="all", statusFilter!=="all", docTypeFilter!=="all", minAmt, maxAmt].filter(Boolean).length;
+  const clearAll = () => { setSearch(""); setDateFilter("all"); setStatusFilter("all"); setDocTypeFilter("all"); setSortBy("date_desc"); setMinAmt(""); setMaxAmt(""); setFromDate(""); setToDate(""); };
 
   const selCls = `border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none transition-colors ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`;
 
@@ -864,37 +909,76 @@ const InvoiceListView = ({ invoices, developers, projects, users, onView, onPrin
         </Modal>
       )}
 
-      {/* Advanced filters bar */}
-      <div className={`border rounded-xl p-3 mb-4 flex flex-wrap items-center gap-2 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
-        <select value={dateFilter} onChange={e=>setDateFilter(e.target.value)} className={selCls}>
-          <option value="all">All Time</option>
-          <option value="7d">Last 7 Days</option>
-          <option value="15d">Last 15 Days</option>
-          <option value="30d">Last 30 Days</option>
-          <option value="week">This Week</option>
-          <option value="month">This Month</option>
-          <option value="lastmonth">Last Month</option>
-          <option value="custom">Custom Range</option>
-        </select>
-        {dateFilter==="custom"&&<>
-          <input type="date" value={fromDate} onChange={e=>setFromDate(e.target.value)} className={selCls}/>
-          <span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>to</span>
-          <input type="date" value={toDate} onChange={e=>setToDate(e.target.value)} className={selCls}/>
-        </>}
-        <select value={docTypeFilter} onChange={e=>setDocTypeFilter(e.target.value)} className={selCls}>
-          <option value="all">All Doc Types</option>
-          {INV_DOC_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
-        </select>
-        <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} className={selCls}>
-          <option value="all">All Status</option>
-          <option value="Draft">Draft</option>
-          <option value="Pending">Pending</option>
-          <option value="Sent">Sent</option>
-          <option value="Accepted">Accepted</option>
-          <option value="Paid">Paid</option>
-        </select>
-        <span className={`text-xs ml-auto ${tc(dark,"text-slate-400","text-slate-500")}`}>{filtered.length} record{filtered.length!==1?"s":""}</span>
-        {filtered.length>0&&onConvert&&<Btn size="sm" variant="ghost" onClick={()=>setConvertAllModal(true)}><Icon name="convert" size={13}/>Convert All</Btn>}
+      {/* Search + Sort + Filter bar */}
+      <div className={`border rounded-xl mb-3 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+        <div className="flex flex-wrap gap-2 p-3 items-center">
+          <div className={`flex items-center gap-2 flex-1 min-w-48 border rounded-lg px-3 py-1.5 ${tc(dark,"bg-slate-800 border-slate-600","bg-slate-50 border-slate-300")}`}>
+            <Icon name="search" size={14}/>
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by ID, customer, type…" className={`flex-1 bg-transparent text-sm focus:outline-none ${tc(dark,"text-white placeholder-slate-500","text-slate-800 placeholder-slate-400")}`}/>
+            {search&&<button onClick={()=>setSearch("")} className={tc(dark,"text-slate-500 hover:text-white","text-slate-400 hover:text-slate-700")}>×</button>}
+          </div>
+          <select value={sortBy} onChange={e=>setSortBy(e.target.value)} className={selCls}>
+            <option value="date_desc">↓ Newest First</option>
+            <option value="date_asc">↑ Oldest First</option>
+            <option value="amt_desc">↓ Highest Amount</option>
+            <option value="amt_asc">↑ Lowest Amount</option>
+            <option value="cust_asc">A–Z Customer</option>
+            <option value="cust_desc">Z–A Customer</option>
+          </select>
+          <button onClick={()=>setShowFilters(f=>!f)} className={`flex items-center gap-1.5 border rounded-lg px-3 py-1.5 text-xs transition-colors ${showFilters?tc(dark,"bg-amber-500/20 border-amber-400/50 text-amber-300","bg-amber-50 border-amber-300 text-amber-700"):tc(dark,"border-slate-600 text-slate-400 hover:border-slate-500","border-slate-300 text-slate-500 hover:border-slate-400")}`}>
+            <Icon name="filter" size={13}/>Filters{activeFilters>0&&<span className="ml-0.5 bg-amber-500 text-slate-900 rounded-full w-4 h-4 flex items-center justify-center font-bold" style={{fontSize:10}}>{activeFilters}</span>}
+          </button>
+          <span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{filtered.length} result{filtered.length!==1?"s":""}</span>
+          {activeFilters>0&&<button onClick={clearAll} className="text-xs text-amber-400 underline">Clear all</button>}
+          {filtered.length>0&&onConvert&&<Btn size="sm" variant="ghost" onClick={()=>setConvertAllModal(true)}><Icon name="convert" size={13}/>Convert All</Btn>}
+        </div>
+        {showFilters&&(
+          <div className={`border-t px-3 pb-3 pt-3 flex flex-wrap gap-2 items-end ${tc(dark,"border-slate-700/50","border-slate-200")}`}>
+            <div>
+              <p className={`text-xs mb-1 font-medium ${tc(dark,"text-slate-400","text-slate-500")}`}>Date Range</p>
+              <select value={dateFilter} onChange={e=>setDateFilter(e.target.value)} className={selCls}>
+                <option value="all">All Time</option>
+                <option value="7d">Last 7 Days</option>
+                <option value="15d">Last 15 Days</option>
+                <option value="30d">Last 30 Days</option>
+                <option value="week">This Week</option>
+                <option value="month">This Month</option>
+                <option value="lastmonth">Last Month</option>
+                <option value="custom">Custom Range</option>
+              </select>
+            </div>
+            {dateFilter==="custom"&&<>
+              <div><p className={`text-xs mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>From</p><input type="date" value={fromDate} onChange={e=>setFromDate(e.target.value)} className={selCls}/></div>
+              <div><p className={`text-xs mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>To</p><input type="date" value={toDate} onChange={e=>setToDate(e.target.value)} className={selCls}/></div>
+            </>}
+            <div>
+              <p className={`text-xs mb-1 font-medium ${tc(dark,"text-slate-400","text-slate-500")}`}>Doc Type</p>
+              <select value={docTypeFilter} onChange={e=>setDocTypeFilter(e.target.value)} className={selCls}>
+                <option value="all">All Types</option>
+                {INV_DOC_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <p className={`text-xs mb-1 font-medium ${tc(dark,"text-slate-400","text-slate-500")}`}>Status</p>
+              <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} className={selCls}>
+                <option value="all">All Status</option>
+                <option value="Draft">Draft</option>
+                <option value="Pending">Pending</option>
+                <option value="Sent">Sent</option>
+                <option value="Accepted">Accepted</option>
+                <option value="Paid">Paid</option>
+              </select>
+            </div>
+            <div>
+              <p className={`text-xs mb-1 font-medium ${tc(dark,"text-slate-400","text-slate-500")}`}>Min Amount (₹)</p>
+              <input type="number" value={minAmt} onChange={e=>setMinAmt(e.target.value)} placeholder="0" className={selCls} style={{width:100}}/>
+            </div>
+            <div>
+              <p className={`text-xs mb-1 font-medium ${tc(dark,"text-slate-400","text-slate-500")}`}>Max Amount (₹)</p>
+              <input type="number" value={maxAmt} onChange={e=>setMaxAmt(e.target.value)} placeholder="Any" className={selCls} style={{width:100}}/>
+            </div>
+          </div>
+        )}
       </div>
 
       {!filtered.length ? (
@@ -905,8 +989,11 @@ const InvoiceListView = ({ invoices, developers, projects, users, onView, onPrin
         <div className={`border rounded-xl overflow-hidden ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
           <table className="w-full text-sm">
             <thead><tr className={`border-b ${tc(dark,"border-slate-700 bg-slate-800/30","border-slate-200 bg-slate-50")}`}>
-              {["Doc #","Type","Customer","Amount","Date","Status","Actions"].map(h=>(
-                <th key={h} className={`text-left px-3 py-3 font-medium text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{h}</th>
+              {[["Doc #",""],["Type",""],["Customer","cust"],["Amount","amt"],["Date","date"],["Status",""],["Actions",""]].map(([h,sk])=>(
+                <th key={h} onClick={sk?()=>setSortBy(s=>s===sk+'_desc'?sk+'_asc':sk+'_desc'):undefined}
+                  className={`text-left px-3 py-3 font-medium text-xs ${sk?'cursor-pointer select-none':''} ${tc(dark,'text-slate-400 hover:text-white','text-slate-500 hover:text-slate-800')}`}>
+                  {h}{sk&&(sortBy.startsWith(sk)?(sortBy.endsWith('desc')?' ↓':' ↑'):' ⇅')}
+                </th>
               ))}
             </tr></thead>
             <tbody>
@@ -1768,7 +1855,7 @@ const InvoicePreviewContent = ({ inv, developer, customer }) => {
 // ============================================================
 
 // ── USERS / TEAM PAGE (used by both Super Admin & Dev Admin) ──
-const UsersPage = ({ users, setUsers, currentUser, developers }) => {
+const UsersPage = ({ users, setUsers, currentUser, developers, projects, setProjects }) => {
   const { dark } = useTheme();
   const [search, setSearch]   = useState("");
   const [filterRole, setFilterRole] = useState("all");
@@ -1816,10 +1903,60 @@ const UsersPage = ({ users, setUsers, currentUser, developers }) => {
   const toggleActive = (u) => setUsers(us => us.map(x => x.id===u.id ? {...x,active:!x.active} : x));
   const togglePause  = (u) => setUsers(us => us.map(x => x.id===u.id ? {...x,paused:!x.paused} : x));
 
+  const [deleteUserModal, setDeleteUserModal] = useState(null); // {user, transferTo, hasProjects}
+  const openDeleteUser = (u) => {
+    const devUsers = visibleUsers.filter(x=>x.id!==u.id && x.developerId===u.developerId && x.active);
+    const assignedCount = (projects||[]).filter(p=>p.assignedUserId===u.id||p.userId===u.id).length;
+    setDeleteUserModal({ user:u, transferTo: devUsers[0]?.id||"", hasProjects: assignedCount>0, count: assignedCount, devUsers });
+  };
+  const confirmDeleteUser = () => {
+    if (!deleteUserModal) return;
+    if (deleteUserModal.hasProjects && setProjects && deleteUserModal.transferTo) {
+      setProjects(ps=>ps.map(p=>{
+        const upd = {...p};
+        if (p.assignedUserId===deleteUserModal.user.id) upd.assignedUserId = deleteUserModal.transferTo;
+        if (p.userId===deleteUserModal.user.id) upd.userId = deleteUserModal.transferTo;
+        return upd;
+      }));
+    }
+    setUsers(us=>us.filter(u=>u.id!==deleteUserModal.user.id));
+    setDeleteUserModal(null);
+  };
+
   const devName = (devId) => developers?.find(d=>d.id===devId)?.companyName || "—";
 
   return (
     <div>
+      {/* Delete user modal */}
+      {deleteUserModal && (
+        <Modal title="Delete User" onClose={()=>setDeleteUserModal(null)}>
+          {deleteUserModal.hasProjects ? (
+            <>
+              <div className={`flex items-start gap-2 p-3 rounded-xl mb-4 border ${tc(dark,"bg-amber-500/10 border-amber-400/30","bg-amber-50 border-amber-200")}`}>
+                <span className="text-amber-400 text-lg leading-none">⚠</span>
+                <div>
+                  <p className={`text-sm font-bold mb-1 ${tc(dark,"text-amber-300","text-amber-700")}`}>{deleteUserModal.count} project{deleteUserModal.count!==1?"s":""} assigned to this user</p>
+                  <p className={`text-xs ${tc(dark,"text-amber-300/80","text-amber-600")}`}>Choose a team member to transfer all assigned projects to before deletion:</p>
+                </div>
+              </div>
+              {deleteUserModal.devUsers.length>0 ? (
+                <select value={deleteUserModal.transferTo} onChange={e=>setDeleteUserModal(d=>({...d,transferTo:e.target.value}))}
+                  className={`w-full border rounded-lg px-3 py-2 text-sm mb-4 ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+                  {deleteUserModal.devUsers.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+              ) : (
+                <p className={`text-xs mb-4 p-3 rounded-xl ${tc(dark,"bg-red-500/10 text-red-400","bg-red-50 text-red-600")}`}>No other active users available. Projects will remain unassigned.</p>
+              )}
+            </>
+          ) : (
+            <p className={`text-sm mb-4 ${tc(dark,"text-slate-300","text-slate-600")}`}>Are you sure you want to permanently delete <strong>{deleteUserModal.user.name}</strong>? This cannot be undone.</p>
+          )}
+          <div className="flex gap-2 justify-end">
+            <Btn variant="ghost" size="sm" onClick={()=>setDeleteUserModal(null)}>Cancel</Btn>
+            <Btn variant="danger" size="sm" onClick={confirmDeleteUser}>{deleteUserModal.hasProjects?"Transfer & Delete":"Delete User"}</Btn>
+          </div>
+        </Modal>
+      )}
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className={`text-xl font-bold ${tc(dark,"text-white","text-slate-800")}`}>{isSuperAdmin?"All Users":"Team Members"}</h1>
@@ -1881,6 +2018,7 @@ const UsersPage = ({ users, setUsers, currentUser, developers }) => {
                     <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>togglePause(u)}>
                       {u.paused?<><Icon name="play" size={12}/>Resume</>:<><Icon name="pause" size={12}/>Pause</>}
                     </Btn>
+                    <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>openDeleteUser(u)} className="text-red-400 hover:text-red-300"><Icon name="trash" size={12}/>Delete</Btn>
                   </div>
                 </td>
               </tr>
@@ -1962,7 +2100,7 @@ const TemplatesPage = ({ templates, setTemplates, developers, currentUser }) => 
 };
 
 // ── SETTINGS PAGE (Dev Admin) ─────────────────────────────────
-const SettingsPage = ({ developer, setDevelopers, dateFormat, setDateFormat }) => {
+const SettingsPage = ({ developer, setDevelopers, dateFormat, setDateFormat, projects, setProjects }) => {
   const { dark } = useTheme();
   const toast = useToast();
   const [form, setForm] = useState({...developer});
@@ -1984,13 +2122,17 @@ const SettingsPage = ({ developer, setDevelopers, dateFormat, setDateFormat }) =
   const removeLane = (id) => {
     const lanes = form.lanes||[];
     if (lanes.length <= 1) { toast.show({message:"Cannot delete the only lane."}); return; }
-    setDeleteModal({ laneId: id, transferTo: lanes.find(l=>l.id!==id)?.id||"" });
+    const hasProjects = (projects||[]).filter(p=>p.developerId===developer.id && p.laneId===id).length > 0;
+    setDeleteModal({ laneId: id, transferTo: lanes.find(l=>l.id!==id)?.id||"", hasProjects });
   };
   const confirmDeleteLane = () => {
     if (!deleteModal) return;
+    if (deleteModal.hasProjects && setProjects) {
+      setProjects(ps=>ps.map(p=>p.laneId===deleteModal.laneId?{...p,laneId:deleteModal.transferTo}:p));
+    }
     F("lanes",(form.lanes||[]).filter(l=>l.id!==deleteModal.laneId));
     setDeleteModal(null);
-    toast.show({message:"Lane deleted."});
+    toast.show({message:"Lane deleted. Projects transferred."});
   };
   const moveLane = (id,dir) => {
     const lanes=[...(form.lanes||[])].sort((a,b)=>a.order-b.order);
@@ -1999,6 +2141,23 @@ const SettingsPage = ({ developer, setDevelopers, dateFormat, setDateFormat }) =
     [lanes[idx].order,lanes[idx+dir].order]=[lanes[idx+dir].order,lanes[idx].order];
     F("lanes",lanes);
   };
+  // Lane drag-drop reorder
+  const [laneDragId, setLaneDragId] = useState(null);
+  const [laneDragOver, setLaneDragOver] = useState(null);
+  const onLaneRowDragStart = (e, id) => { setLaneDragId(id); e.dataTransfer.effectAllowed="move"; };
+  const onLaneRowDragOver  = (e, id) => { e.preventDefault(); setLaneDragOver(id); };
+  const onLaneRowDrop      = (e, targetId) => {
+    e.preventDefault();
+    if (!laneDragId || laneDragId===targetId) { setLaneDragId(null); setLaneDragOver(null); return; }
+    const sorted=[...(form.lanes||[])].sort((a,b)=>a.order-b.order);
+    const fromIdx=sorted.findIndex(l=>l.id===laneDragId);
+    const toIdx  =sorted.findIndex(l=>l.id===targetId);
+    const moved=sorted.splice(fromIdx,1)[0];
+    sorted.splice(toIdx,0,moved);
+    F("lanes",sorted.map((l,i)=>({...l,order:i})));
+    setLaneDragId(null); setLaneDragOver(null);
+  };
+  const onLaneRowDragEnd = () => { setLaneDragId(null); setLaneDragOver(null); };
   const addCustomUnit = () => { if(newUnit.trim()) { F("customUnits",[...(form.customUnits||[]),newUnit.trim()]); setNewUnit(""); }};
 
   return (
@@ -2006,14 +2165,26 @@ const SettingsPage = ({ developer, setDevelopers, dateFormat, setDateFormat }) =
       {/* Delete lane modal */}
       {deleteModal && (
         <Modal title="Delete Lane" onClose={()=>setDeleteModal(null)}>
-          <p className={`text-sm mb-4 ${tc(dark,"text-slate-300","text-slate-600")}`}>Projects in this lane will be moved to:</p>
-          <select value={deleteModal.transferTo} onChange={e=>setDeleteModal(d=>({...d,transferTo:e.target.value}))}
-            className={`w-full border rounded-lg px-3 py-2 text-sm mb-4 ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
-            {(form.lanes||[]).filter(l=>l.id!==deleteModal.laneId).map(l=><option key={l.id} value={l.id}>{l.name}</option>)}
-          </select>
+          {deleteModal.hasProjects ? (
+            <>
+              <div className={`flex items-start gap-2 p-3 rounded-xl mb-4 border ${tc(dark,"bg-amber-500/10 border-amber-400/30","bg-amber-50 border-amber-200")}`}>
+                <span className="text-amber-400 text-lg leading-none">⚠</span>
+                <div>
+                  <p className={`text-sm font-bold mb-1 ${tc(dark,"text-amber-300","text-amber-700")}`}>This lane has projects</p>
+                  <p className={`text-xs ${tc(dark,"text-amber-300/80","text-amber-600")}`}>All projects in this lane will be transferred before deletion. Choose the destination lane:</p>
+                </div>
+              </div>
+              <select value={deleteModal.transferTo} onChange={e=>setDeleteModal(d=>({...d,transferTo:e.target.value}))}
+                className={`w-full border rounded-lg px-3 py-2 text-sm mb-4 ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+                {(form.lanes||[]).filter(l=>l.id!==deleteModal.laneId).map(l=><option key={l.id} value={l.id}>{l.name}</option>)}
+              </select>
+            </>
+          ) : (
+            <p className={`text-sm mb-4 ${tc(dark,"text-slate-300","text-slate-600")}`}>This lane is empty. Are you sure you want to delete it?</p>
+          )}
           <div className="flex gap-2 justify-end">
             <Btn variant="ghost" size="sm" onClick={()=>setDeleteModal(null)}>Cancel</Btn>
-            <Btn variant="danger" size="sm" onClick={confirmDeleteLane}>Delete Lane</Btn>
+            <Btn variant="danger" size="sm" onClick={confirmDeleteLane}>{deleteModal.hasProjects?"Transfer & Delete":"Delete Lane"}</Btn>
           </div>
         </Modal>
       )}
@@ -2123,20 +2294,34 @@ const SettingsPage = ({ developer, setDevelopers, dateFormat, setDateFormat }) =
       {settingsTab==="lanes"&&(
         <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
           <h3 className={`font-bold mb-3 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Project Lanes / Status</h3>
+          <p className={`text-xs mb-2 ${tc(dark,"text-slate-500","text-slate-400")}`}>Drag ↕ to reorder lanes</p>
           <div className="space-y-2 mb-4">
-            {[...(form.lanes||[])].sort((a,b)=>a.order-b.order).map((lane,i,arr)=>(
-              <div key={lane.id} className={`flex items-center gap-2 border rounded-xl p-3 ${tc(dark,"bg-slate-800/40 border-slate-700","bg-slate-50 border-slate-200")}`}>
+            {[...(form.lanes||[])].sort((a,b)=>a.order-b.order).map((lane,i,arr)=>{
+              const laneProjectCount = (projects||[]).filter(p=>p.developerId===developer.id&&p.laneId===lane.id).length;
+              return (
+              <div key={lane.id}
+                draggable
+                onDragStart={e=>onLaneRowDragStart(e,lane.id)}
+                onDragOver={e=>onLaneRowDragOver(e,lane.id)}
+                onDrop={e=>onLaneRowDrop(e,lane.id)}
+                onDragEnd={onLaneRowDragEnd}
+                className={`flex items-center gap-2 border rounded-xl p-3 transition-all cursor-grab active:cursor-grabbing ${laneDragOver===lane.id?tc(dark,"border-amber-400/60 bg-amber-500/10","border-amber-400 bg-amber-50"):tc(dark,"bg-slate-800/40 border-slate-700","bg-slate-50 border-slate-200")} ${laneDragId===lane.id?"opacity-40":""}`}>
+                <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor" className={`flex-shrink-0 ${tc(dark,"text-slate-600","text-slate-300")}`}>
+                  <circle cx="3" cy="3" r="1.3"/><circle cx="7" cy="3" r="1.3"/>
+                  <circle cx="3" cy="8" r="1.3"/><circle cx="7" cy="8" r="1.3"/>
+                  <circle cx="3" cy="13" r="1.3"/><circle cx="7" cy="13" r="1.3"/>
+                </svg>
                 <div className="w-3 h-3 rounded-full flex-shrink-0" style={{backgroundColor:laneHex(lane.color)}}/>
                 <span className={`flex-1 text-sm font-medium ${lane.disabled?tc(dark,"text-slate-500 line-through","text-slate-400 line-through"):tc(dark,"text-white","text-slate-800")}`}>{lane.name}</span>
+                {laneProjectCount>0&&<span className={`text-xs px-2 py-0.5 rounded-full ${tc(dark,"bg-slate-700 text-slate-400","bg-slate-200 text-slate-500")}`}>{laneProjectCount} project{laneProjectCount!==1?"s":""}</span>}
                 <span className={`text-xs px-2 py-0.5 rounded-full ${lane.disabled?tc(dark,"bg-red-500/20 text-red-400","bg-red-100 text-red-600"):tc(dark,"bg-emerald-500/20 text-emerald-400","bg-emerald-100 text-emerald-700")}`}>{lane.disabled?"Disabled":"Active"}</span>
                 <div className="flex gap-1">
-                  {i>0&&<button onClick={()=>moveLane(lane.id,-1)} className={`p-1 rounded ${tc(dark,"hover:bg-slate-700 text-slate-400","hover:bg-slate-200 text-slate-500")}`}><Icon name="up" size={12}/></button>}
-                  {i<arr.length-1&&<button onClick={()=>moveLane(lane.id,1)} className={`p-1 rounded ${tc(dark,"hover:bg-slate-700 text-slate-400","hover:bg-slate-200 text-slate-500")}`}><Icon name="down" size={12}/></button>}
                   <button onClick={()=>updateLane(lane.id,{disabled:!lane.disabled})} className={`p-1 rounded text-xs ${tc(dark,"hover:bg-slate-700 text-amber-400","hover:bg-amber-50 text-amber-600")}`}>{lane.disabled?"Enable":"Disable"}</button>
-                  <button onClick={()=>removeLane(lane.id)} className={`p-1 rounded ${tc(dark,"hover:bg-slate-700 text-red-400","hover:bg-red-50 text-red-500")}`}><Icon name="trash" size={12}/></button>
+                  <button onClick={()=>removeLane(lane.id)} title={laneProjectCount>0?"Transfer & delete":"Delete lane"} className={`p-1 rounded ${tc(dark,"hover:bg-slate-700 text-red-400","hover:bg-red-50 text-red-500")}`}><Icon name="trash" size={12}/></button>
                 </div>
               </div>
-            ))}
+            );
+            })}
           </div>
           <div className={`border rounded-xl p-3 ${tc(dark,"bg-slate-800/30 border-slate-700","bg-slate-50 border-slate-200")}`}>
             <h4 className={`text-xs font-bold mb-2 ${tc(dark,"text-slate-400","text-slate-500")}`}>Add New Lane</h4>
@@ -2635,7 +2820,8 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
                     <span className={tc(dark,"text-amber-400","text-amber-600")}>~{fmtINR(totalVal)}</span>
                   </div>
                 </div>
-                <div className={`min-h-20 rounded-xl transition-all duration-150 ${dragOverLane===lane.id?tc(dark,"bg-amber-500/5 ring-2 ring-amber-400/40 ring-dashed","bg-amber-50 ring-2 ring-amber-300 ring-dashed"):"ring-0"}`}>
+                <div className={`rounded-xl transition-all duration-150 ${dragOverLane===lane.id?tc(dark,"bg-amber-500/5 ring-2 ring-amber-400/40 ring-dashed","bg-amber-50 ring-2 ring-amber-300 ring-dashed"):"ring-0"}`}
+                  style={{minHeight:60, maxHeight: laneProjects.length>5 ? 520 : "none", overflowY: laneProjects.length>5 ? "auto" : "visible"}}>
                   {laneProjects.map(p=><ProjectCard key={p.id} p={p}/>)}
                   {!laneProjects.length&&(
                     <div className={`rounded-xl p-5 text-center text-xs transition-all ${dragOverLane===lane.id?tc(dark,"text-amber-400","text-amber-600"):"border-2 border-dashed "+tc(dark,"border-slate-700 text-slate-600","border-slate-200 text-slate-400")}`}>
@@ -2701,9 +2887,12 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
           <div className="grid grid-cols-2 gap-3">
             <Field label="Customer Type" type="select" value={form.customerType} onChange={v=>SF("customerType",v)} options={["Residential","Commercial","Industrial","Government","Other"]} required/>
             <div>
-              <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Project ID</label>
+              <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Project ID <span className="text-xs font-normal opacity-60">(auto)</span></label>
               <div className="flex gap-2 mb-4">
-                <input value={form.projectIdOverride||autoProjectId()} onChange={e=>SF("projectIdOverride",e.target.value)} className={`flex-1 border rounded-lg px-3 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}/>
+                {editProject
+                  ? <input value={form.projectIdOverride||editProject.projectId||autoProjectId()} onChange={e=>SF("projectIdOverride",e.target.value)} className={`flex-1 border rounded-lg px-3 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}/>
+                  : <div className={`flex-1 border rounded-lg px-3 py-2.5 text-sm ${tc(dark,"bg-slate-700/50 border-slate-600 text-slate-400","bg-slate-100 border-slate-200 text-slate-500")}`}>{autoProjectId()} <span className="text-xs opacity-50">- assigned automatically</span></div>
+                }
               </div>
             </div>
             <Field label="Customer Name" value={form.customerName} onChange={v=>SF("customerName",v)} required/>
@@ -2735,7 +2924,13 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
               <input value={form.customerPincode} onChange={e=>onPincodeChange(e.target.value)} placeholder="400001" maxLength={6} className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none mb-4 ${tc(dark,"bg-slate-800 border-slate-600 text-white placeholder-slate-500 focus:border-amber-400","bg-white border-slate-300 text-slate-800 focus:border-amber-500")}`}/>
             </div>
             <CityField label="City" value={form.customerCity} onChange={v=>SF("customerCity",v)} customCities={customCities} onAddCity={addCustomCity}/>
-            <Field label="State" value={form.customerState||""} onChange={v=>SF("customerState",v)} placeholder="Maharashtra"/>
+            <div>
+              <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>State</label>
+              <select value={form.customerState||""} onChange={e=>SF("customerState",e.target.value)} className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none mb-4 ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+                <option value="">Select State / UT</option>
+                {INDIA_STATES.map(s=><option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
           </div>
           <Field label="Address" type="textarea" rows={2} value={form.customerAddress} onChange={v=>SF("customerAddress",v)}/>
 
@@ -3377,28 +3572,67 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
       )}
 
       {/* ACTIVITY TAB */}
-      {tab==="activity"&&(
-        <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
-          <h3 className={`font-bold mb-3 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Activity Log</h3>
-          {!(project.activityLog||[]).length ? (
-            <p className={`text-sm text-center py-8 ${tc(dark,"text-slate-400","text-slate-500")}`}>No activity recorded yet.</p>
-          ) : (
-            <div className="space-y-2">
-              {[...(project.activityLog||[])].reverse().map(entry=>(
-                <div key={entry.id} className={`flex gap-3 p-3 rounded-lg border ${tc(dark,"bg-slate-800/30 border-slate-700/30","bg-slate-50 border-slate-100")}`}>
-                  <div className="w-7 h-7 rounded-full bg-amber-500/20 flex items-center justify-center flex-shrink-0">
-                    <Icon name={entry.type==="created"?"plus":entry.type==="note"?"note":entry.type==="document"?"file":"edit"} size={13} className="text-amber-400"/>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-sm ${tc(dark,"text-white","text-slate-800")}`}>{entry.message}</p>
-                    <p className={`text-xs mt-0.5 ${tc(dark,"text-slate-500","text-slate-400")}`}>{entry.by} · {entry.at ? new Date(entry.at).toLocaleString() : "—"}</p>
+      {tab==="activity"&&(()=>{
+        const [actQ, setActQ] = React.useState("");
+        const [actType, setActType] = React.useState("all");
+        const allLogs = [...(project.activityLog||[])].reverse();
+        const actTypes = [...new Set(allLogs.map(e=>e.type).filter(Boolean))];
+        const actFiltered = allLogs.filter(e=>{
+          if (actType!=="all" && e.type!==actType) return false;
+          if (actQ) {
+            const q=actQ.toLowerCase();
+            return (e.message||"").toLowerCase().includes(q)||(e.by||"").toLowerCase().includes(q);
+          }
+          return true;
+        });
+        const actIconColor = (t) => t==="created"?"bg-emerald-500/20 text-emerald-400":t==="note"?"bg-blue-500/20 text-blue-400":t==="document"?"bg-violet-500/20 text-violet-400":t==="invoice"?"bg-amber-500/20 text-amber-400":"bg-slate-600/30 text-slate-400";
+        const actIconName = (t) => t==="created"?"plus":t==="note"?"note":t==="document"?"file":t==="invoice"?"invoice":"edit";
+        return (
+          <div className={`border rounded-xl ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+            <div className={`flex flex-wrap items-center gap-2 p-4 border-b ${tc(dark,"border-slate-700/50","border-slate-200")}`}>
+              <h3 className={`font-bold text-sm flex-1 ${tc(dark,"text-white","text-slate-800")}`}>Activity Log <span className={`text-xs font-normal ${tc(dark,"text-slate-400","text-slate-500")}`}>({actFiltered.length})</span></h3>
+              <div className={`flex items-center gap-2 border rounded-lg px-3 py-1.5 ${tc(dark,"bg-slate-800 border-slate-600","bg-slate-50 border-slate-300")}`} style={{minWidth:180}}>
+                <Icon name="search" size={13}/>
+                <input value={actQ} onChange={e=>setActQ(e.target.value)} placeholder="Search activity…" className={`flex-1 bg-transparent text-xs focus:outline-none ${tc(dark,"text-white placeholder-slate-500","text-slate-800 placeholder-slate-400")}`}/>
+                {actQ&&<button onClick={()=>setActQ("")} className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>×</button>}
+              </div>
+              <select value={actType} onChange={e=>setActType(e.target.value)} className={`border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+                <option value="all">All Types</option>
+                {actTypes.map(t=><option key={t} value={t}>{t.charAt(0).toUpperCase()+t.slice(1)}</option>)}
+              </select>
+            </div>
+            <div className="p-4">
+              {!actFiltered.length ? (
+                <p className={`text-sm text-center py-8 ${tc(dark,"text-slate-400","text-slate-500")}`}>{allLogs.length ? "No activity matches your filters." : "No activity recorded yet."}</p>
+              ) : (
+                <div className="relative">
+                  <div className={`absolute left-3.5 top-0 bottom-0 w-px ${tc(dark,"bg-slate-700","bg-slate-200")}`}/>
+                  <div className="space-y-3">
+                    {actFiltered.map((entry,idx)=>{
+                      const d = entry.at ? new Date(entry.at) : null;
+                      return (
+                        <div key={entry.id||idx} className="flex gap-3 relative">
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 z-10 border-2 ${tc(dark,"border-[#0c1929]","border-white")} ${actIconColor(entry.type)}`}>
+                            <Icon name={actIconName(entry.type)} size={12}/>
+                          </div>
+                          <div className={`flex-1 border rounded-xl p-3 ${tc(dark,"bg-slate-800/40 border-slate-700/40","bg-slate-50 border-slate-200")}`}>
+                            <p className={`text-sm ${tc(dark,"text-white","text-slate-800")}`}>{entry.message}</p>
+                            <div className={`flex flex-wrap gap-x-3 mt-1.5 text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>
+                              <span className="font-medium">{entry.by||"—"}</span>
+                              {d&&<span>{d.toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}</span>}
+                              {d&&<span>{d.toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"})}</span>}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
-              ))}
+              )}
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        );
+      })()}
     </div>
   );
 };
@@ -3670,7 +3904,7 @@ export default function SolarProApp() {
       // ── SHARED: USERS ──
       case "users":
       case "team":
-        return <UsersPage users={users} setUsers={setUsers} currentUser={currentUser} developers={developers}/>;
+        return <UsersPage users={users} setUsers={setUsers} currentUser={currentUser} developers={developers} projects={projects} setProjects={setProjects}/>;
 
       // ── DEV + USER: PROJECTS ──
       case "projects":
@@ -3678,7 +3912,7 @@ export default function SolarProApp() {
 
       // ── DEV ADMIN: SETTINGS ──
       case "settings":
-        return developer ? <SettingsPage developer={developer} setDevelopers={setDevelopers} dateFormat={dateFormat} setDateFormat={setDateFormat}/> : null;
+        return developer ? <SettingsPage developer={developer} setDevelopers={setDevelopers} dateFormat={dateFormat} setDateFormat={setDateFormat} projects={projects} setProjects={setProjects}/> : null;
 
       // ── ALL USERS: MY PROFILE/SETTINGS ──
       case "my-settings":
