@@ -2729,10 +2729,7 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
   const enquiryColorsL = { Hot:"bg-red-100 text-red-700", Warm:"bg-orange-100 text-orange-700", Cold:"bg-sky-100 text-sky-700" };
   const laneAccents = { slate:"border-slate-500", sky:"border-sky-400", amber:"border-amber-400", orange:"border-orange-400", emerald:"border-emerald-400", red:"border-red-400", purple:"border-purple-400" };
 
-  const isLocked = !currentUser?.active || (developer && (developer.paused || (developer.subscriptionEnd && new Date(developer.subscriptionEnd)<new Date())));
-  if (isLocked) return <LockedPage developer={developer} reason={!currentUser?.active?"inactive":developer?.paused?"paused":"expired"}/>;
-
-  // ── PROJECT CARD ─────────────────────────────────────────────
+  // Hooks must be before any conditional return (Rules of Hooks)
   const [openCardMenuId, setOpenCardMenuId] = useState(null);
   React.useEffect(()=>{
     if (!openCardMenuId) return;
@@ -2740,6 +2737,9 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
     window.addEventListener("pointerdown", handler, true);
     return ()=>window.removeEventListener("pointerdown", handler, true);
   },[openCardMenuId]);
+
+  const isLocked = !currentUser?.active || (developer && (developer.paused || (developer.subscriptionEnd && new Date(developer.subscriptionEnd)<new Date())));
+  if (isLocked) return <LockedPage developer={developer} reason={!currentUser?.active?"inactive":developer?.paused?"paused":"expired"}/>;
 
   const ProjectCard = ({p}) => {
     const user = devTeam.find(u=>u.id===(p.assignedUserId||p.userId));
