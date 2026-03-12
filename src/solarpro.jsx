@@ -2,7 +2,7 @@
 // SOLARPRO v3 - PART 1: CONSTANTS, DATA, UTILITIES
 // ============================================================
 
-import { useState, useEffect, useRef, createContext, useContext } from "react";
+import React, { useState, useEffect, useRef, createContext, useContext } from "react";
 
 // ── ROLES ────────────────────────────────────────────────────
 const ROLES = { SUPER_ADMIN: "super_admin", DEV_ADMIN: "dev_admin", USER: "user" };
@@ -2731,7 +2731,7 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
 
   // Hooks must be before any conditional return (Rules of Hooks)
   const [openCardMenuId, setOpenCardMenuId] = useState(null);
-  React.useEffect(()=>{
+  useEffect(()=>{
     if (!openCardMenuId) return;
     const handler = ()=>setOpenCardMenuId(null);
     window.addEventListener("pointerdown", handler, true);
@@ -4044,8 +4044,8 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
 
       {/* ACTIVITY TAB */}
       {tab==="activity"&&(()=>{
-        const [actQ, setActQ] = React.useState("");
-        const [actType, setActType] = React.useState("all");
+        const [actQ, setActQ] = useState("");
+        const [actType, setActType] = useState("all");
         const allLogs = [...(project.activityLog||[])].reverse();
         const actTypes = [...new Set(allLogs.map(e=>e.type).filter(Boolean))];
         const actFiltered = allLogs.filter(e=>{
