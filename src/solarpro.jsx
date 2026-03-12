@@ -3954,7 +3954,7 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
         const devTeamLocal = users ? users.filter(u=>u.developerId===project.developerId && u.active) : [];
         const lanesLocal = developer?.lanes?.filter(l=>!l.disabled).sort((a,b)=>a.order-b.order)||[];
         const PROJECT_UNITS_LOCAL = ["kW","kWp","MW","MWp","W","Wp"];
-        const [ef, setEF] = useState({...project, countryCode:"+91", customerPhone:(project.customerPhone||"").replace(/^+d+s*/,""), tags:project.tags||[]});
+        const [ef, setEF] = useState({...project, countryCode:"+91", customerPhone:(project.customerPhone||"").replace(/^\+\d+\s*/,""), tags:project.tags||[]});
         const SEF = (k,v) => setEF(f=>({...f,[k]:v}));
         const saveEdit = () => {
           const entry={id:`act${Date.now()}`,type:"edited",message:"Project updated",by:currentUser.name,at:new Date().toISOString()};
