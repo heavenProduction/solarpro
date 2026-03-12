@@ -2365,26 +2365,72 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
   const devTeam = users ? users.filter(u=>u.developerId===currentUser.developerId && u.role!==ROLES.SUPER_ADMIN && u.active) : [];
   const customCities = developer?.customCities||[];
 
-  // Filter state
-  const [filters, setFilters] = useState({ q:"", projectId:"", customerName:"", customerPhone:"", customerType:"all", assignedTo:"all", minSize:"", maxSize:"", enquiryType:"all" });
+  // Filter state — extended with multi-select and date search
+  const blankFilters = { q:"", projectId:"", customerName:"", customerPhone:"", customerEmail:"", customerCity:"", customerPincode:"", customerState:"", customerTypes:[], enquiryTypes:[], assignedTos:[], laneIds:[], minSize:"", maxSize:"", datePreset:"all", dateFrom:"", dateTo:"" };
+  const [filters, setFilters] = useState({...blankFilters});
   const FF = (k,v) => setFilters(f=>({...f,[k]:v}));
+  const toggleFilterArr = (k, val) => setFilters(f => {
+    const arr = f[k]||[];
+    return {...f, [k]: arr.includes(val) ? arr.filter(x=>x!==val) : [...arr, val]};
+  });
+  const clearFilters = () => setFilters({...blankFilters});
+  const selCls = `border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none transition-colors ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`;
+  const activeFilterCount = Object.entries(filters).filter(([k,v])=>{
+    if (k==="q") return v.length>0;
+    if (Array.isArray(v)) return v.length>0;
+    if (k==="datePreset") return v!=="all";
+    return v.length>0;
+  }).length;
 
   const myProjects = projects.filter(p => {
     if (currentUser.role===ROLES.USER) return p.assignedUserId===currentUser.id || p.userId===currentUser.id;
     return p.developerId===currentUser.developerId;
   });
 
+  // Date range helpers for project search
+  const _now = new Date();
+  const _d7  = new Date(_now - 7*86400000);
+  const _d15 = new Date(_now - 15*86400000);
+  const _d30 = new Date(_now - 30*86400000);
+  const _som  = new Date(_now.getFullYear(),_now.getMonth(),1);
+  const _sow  = (()=>{const d=new Date(_now);d.setDate(_now.getDate()-_now.getDay());d.setHours(0,0,0,0);return d;})();
+  const _slm  = new Date(_now.getFullYear(),_now.getMonth()-1,1);
+  const _elm  = new Date(_now.getFullYear(),_now.getMonth(),0,23,59,59);
+  const _dateInRange = (dateStr) => {
+    if (filters.datePreset==="all"&&!filters.dateFrom&&!filters.dateTo) return true;
+    const d = new Date(dateStr);
+    if (filters.datePreset==="7d")    return d >= _d7;
+    if (filters.datePreset==="15d")   return d >= _d15;
+    if (filters.datePreset==="30d")   return d >= _d30;
+    if (filters.datePreset==="week")  return d >= _sow;
+    if (filters.datePreset==="month") return d >= _som;
+    if (filters.datePreset==="lastmonth") return d>=_slm && d<=_elm;
+    if (filters.datePreset==="custom") return (!filters.dateFrom||d>=new Date(filters.dateFrom)) && (!filters.dateTo||d<=new Date(filters.dateTo+" 23:59:59"));
+    return true;
+  };
+
   const applyFilters = (list) => list.filter(p => {
-    const qs = filters.q.toLowerCase();
-    if (qs && !p.customerName?.toLowerCase().includes(qs) && !p.projectId?.toLowerCase().includes(qs) && !(p.customerAddress||"").toLowerCase().includes(qs)) return false;
+    // Global search — hits all text fields
+    if (filters.q) {
+      const qs = filters.q.toLowerCase();
+      const fields = [p.customerName,p.projectId,p.customerAddress,p.customerCity,p.customerState,p.customerPincode,p.customerPhone,p.customerEmail,p.pocName].map(x=>(x||"").toLowerCase());
+      if (!fields.some(f=>f.includes(qs))) return false;
+    }
     if (filters.projectId && !p.projectId?.toLowerCase().includes(filters.projectId.toLowerCase())) return false;
     if (filters.customerName && !p.customerName?.toLowerCase().includes(filters.customerName.toLowerCase())) return false;
     if (filters.customerPhone && !(p.customerPhone||"").includes(filters.customerPhone)) return false;
-    if (filters.customerType!=="all" && p.customerType!==filters.customerType) return false;
-    if (filters.assignedTo!=="all" && p.assignedUserId!==filters.assignedTo && p.userId!==filters.assignedTo) return false;
+    if (filters.customerEmail && !(p.customerEmail||"").toLowerCase().includes(filters.customerEmail.toLowerCase())) return false;
+    if (filters.customerCity && !(p.customerCity||"").toLowerCase().includes(filters.customerCity.toLowerCase())) return false;
+    if (filters.customerPincode && !(p.customerPincode||"").includes(filters.customerPincode)) return false;
+    if (filters.customerState && !(p.customerState||"").toLowerCase().includes(filters.customerState.toLowerCase())) return false;
+    // Multi-select arrays — empty means "all"
+    if (filters.customerTypes.length>0 && !filters.customerTypes.includes(p.customerType)) return false;
+    if (filters.enquiryTypes.length>0 && !filters.enquiryTypes.includes(p.enquiryType)) return false;
+    if (filters.laneIds.length>0 && !filters.laneIds.includes(p.laneId)) return false;
+    if (filters.assignedTos.length>0 && !filters.assignedTos.includes(p.assignedUserId) && !filters.assignedTos.includes(p.userId)) return false;
     if (filters.minSize && parseFloat(p.projectSize)<parseFloat(filters.minSize)) return false;
     if (filters.maxSize && parseFloat(p.projectSize)>parseFloat(filters.maxSize)) return false;
-    if (filters.enquiryType!=="all" && p.enquiryType!==filters.enquiryType) return false;
+    if (!_dateInRange(p.createdAt)) return false;
     return true;
   });
 
@@ -2687,29 +2733,104 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
   if (isLocked) return <LockedPage developer={developer} reason={!currentUser?.active?"inactive":developer?.paused?"paused":"expired"}/>;
 
   // ── PROJECT CARD ─────────────────────────────────────────────
+  const [openCardMenuId, setOpenCardMenuId] = useState(null);
+  React.useEffect(()=>{
+    if (!openCardMenuId) return;
+    const handler = ()=>setOpenCardMenuId(null);
+    window.addEventListener("pointerdown", handler, true);
+    return ()=>window.removeEventListener("pointerdown", handler, true);
+  },[openCardMenuId]);
+
   const ProjectCard = ({p}) => {
     const user = devTeam.find(u=>u.id===(p.assignedUserId||p.userId));
     const isDragging = dragId===p.id;
     const justDropped = isDropping && droppedCardRef.current===p.id;
+    const isSelected = selected.has(p.id);
+    const menuOpen = openCardMenuId===p.id;
+
+    const quickUpdateLane = (laneId) => {
+      const laneName = lanes.find(l=>l.id===laneId)?.name||"";
+      const entry = {id:`act${Date.now()}`,type:"stage_change",message:`Lane changed to "${laneName}"`,by:"You",at:new Date().toISOString()};
+      setProjects(ps=>ps.map(x=>x.id===p.id?{...x,laneId,activityLog:[...(x.activityLog||[]),entry]}:x));
+      setOpenCardMenuId(null);
+      toast.show({message:`Moved to ${laneName}`});
+    };
+    const quickUpdateAssignee = (uid) => {
+      const uname = devTeam.find(u=>u.id===uid)?.name||"Unassigned";
+      const entry = {id:`act${Date.now()}`,type:"assigned",message:`Assigned to ${uname}`,by:"You",at:new Date().toISOString()};
+      setProjects(ps=>ps.map(x=>x.id===p.id?{...x,assignedUserId:uid,activityLog:[...(x.activityLog||[]),entry]}:x));
+      setOpenCardMenuId(null);
+      toast.show({message:`Assigned to ${uname}`});
+    };
+
     return (
       <div
-        className={`border rounded-xl p-3 mb-2 select-none ${isDragging?"opacity-15 scale-95 pointer-events-none":"hover:shadow-lg"} ${justDropped?tc(dark,"border-amber-400 shadow-amber-500/20 shadow-lg","border-amber-400 shadow-amber-300/40 shadow-lg"):tc(dark,"border-slate-700/50","border-slate-200 shadow-sm")} ${tc(dark,"bg-[#0c1929]","bg-white")}`}
-        style={{touchAction:"none", transition:"opacity 120ms, transform 120ms, border-color 400ms, box-shadow 400ms"}}>
-        {/* Drag handle bar */}
-        <div
-          onPointerDown={e=>onCardPointerDown(e, p.id)}
-          className={`flex items-center justify-between mb-2 cursor-grab active:cursor-grabbing rounded-lg px-1 py-0.5 -mx-1 transition-colors group ${tc(dark,"hover:bg-slate-700/60","hover:bg-slate-100")}`}>
-          <span className={`text-xs font-mono px-1.5 py-0.5 rounded ${tc(dark,"bg-slate-700 text-slate-400","bg-slate-100 text-slate-500")}`}>{p.projectId||"—"}</span>
-          <div className="flex items-center gap-1.5">
-            <span className={`text-xs px-2 py-0.5 rounded-full border ${tc(dark,enquiryColors[p.enquiryType]||"bg-slate-500/20 text-slate-300 border-slate-500/30",enquiryColorsL[p.enquiryType]||"bg-slate-100 text-slate-600")}`}>{p.enquiryType||"—"}</span>
-            <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" className={`opacity-30 group-hover:opacity-70 transition-opacity ${tc(dark,"text-slate-300","text-slate-500")}`}>
-              <circle cx="3" cy="2.5" r="1.3"/><circle cx="7" cy="2.5" r="1.3"/>
-              <circle cx="3" cy="7" r="1.3"/><circle cx="7" cy="7" r="1.3"/>
-              <circle cx="3" cy="11.5" r="1.3"/><circle cx="7" cy="11.5" r="1.3"/>
-            </svg>
+        className={`border rounded-xl p-3 mb-2 select-none ${isDragging?"opacity-15 scale-95 pointer-events-none":""} ${justDropped?tc(dark,"border-amber-400 shadow-lg","border-amber-400 shadow-lg"):isSelected?tc(dark,"border-amber-500/60 bg-amber-500/5","border-amber-400 bg-amber-50"):tc(dark,"border-slate-700/50","border-slate-200 shadow-sm")} ${tc(dark,"bg-[#0c1929]","bg-white")}`}
+        style={{touchAction:"none", transition:"opacity 120ms, transform 120ms, border-color 300ms"}}>
+
+        {/* Top row: checkbox + drag handle + quick-action menu */}
+        <div className="flex items-center gap-1.5 mb-2">
+          {/* Checkbox for multi-select */}
+          <input type="checkbox" checked={isSelected} onChange={()=>toggleSelect(p.id)}
+            onClick={e=>e.stopPropagation()}
+            className="w-3.5 h-3.5 accent-amber-500 flex-shrink-0 cursor-pointer"/>
+
+          {/* Drag handle area (also shows project ID + enquiry badge) */}
+          <div
+            onPointerDown={e=>onCardPointerDown(e, p.id)}
+            className={`flex items-center justify-between flex-1 cursor-grab active:cursor-grabbing rounded-lg px-1 py-0.5 -mx-1 transition-colors group ${tc(dark,"hover:bg-slate-700/60","hover:bg-slate-100")}`}>
+            <span className={`text-xs font-mono px-1.5 py-0.5 rounded ${tc(dark,"bg-slate-700 text-slate-400","bg-slate-100 text-slate-500")}`}>{p.projectId||"—"}</span>
+            <div className="flex items-center gap-1.5">
+              <span className={`text-xs px-2 py-0.5 rounded-full border ${tc(dark,enquiryColors[p.enquiryType]||"bg-slate-500/20 text-slate-300 border-slate-500/30",enquiryColorsL[p.enquiryType]||"bg-slate-100 text-slate-600")}`}>{p.enquiryType||"—"}</span>
+              <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" className={`opacity-30 group-hover:opacity-70 transition-opacity ${tc(dark,"text-slate-300","text-slate-500")}`}>
+                <circle cx="3" cy="2.5" r="1.3"/><circle cx="7" cy="2.5" r="1.3"/>
+                <circle cx="3" cy="7" r="1.3"/><circle cx="7" cy="7" r="1.3"/>
+                <circle cx="3" cy="11.5" r="1.3"/><circle cx="7" cy="11.5" r="1.3"/>
+              </svg>
+            </div>
+          </div>
+
+          {/* Quick-action menu button */}
+          <div className="relative">
+            <button
+              onClick={e=>{e.stopPropagation();setOpenCardMenuId(menuOpen?null:p.id);}}
+              className={`w-6 h-6 flex items-center justify-center rounded-md transition-colors flex-shrink-0 ${menuOpen?tc(dark,"bg-slate-600 text-white","bg-slate-200 text-slate-700"):tc(dark,"text-slate-500 hover:bg-slate-700 hover:text-white","text-slate-400 hover:bg-slate-100 hover:text-slate-700")}`}
+              title="Quick actions">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+                <circle cx="7" cy="2.5" r="1.4"/><circle cx="7" cy="7" r="1.4"/><circle cx="7" cy="11.5" r="1.4"/>
+              </svg>
+            </button>
+            {menuOpen&&(
+              <div className={`absolute right-0 top-8 z-50 rounded-xl shadow-2xl border w-52 overflow-hidden ${tc(dark,"bg-slate-800 border-slate-700","bg-white border-slate-200")}`}
+                onClick={e=>e.stopPropagation()}>
+                {/* Move to Lane */}
+                <div className={`px-3 py-2 border-b ${tc(dark,"border-slate-700 text-slate-400","border-slate-100 text-slate-500")}`} style={{fontSize:10,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase"}}>Move to Lane</div>
+                {lanes.map(l=>(
+                  <button key={l.id} onClick={()=>quickUpdateLane(l.id)}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-left transition-colors ${p.laneId===l.id?tc(dark,"bg-amber-500/10 text-amber-300","bg-amber-50 text-amber-700"):tc(dark,"hover:bg-slate-700 text-white","hover:bg-slate-50 text-slate-700")}`}>
+                    <span style={{width:8,height:8,borderRadius:"50%",background:laneHex(l.color),flexShrink:0,display:"inline-block"}}/>
+                    {l.name}
+                    {p.laneId===l.id&&<span className="ml-auto text-amber-400" style={{fontSize:10}}>current</span>}
+                  </button>
+                ))}
+                {/* Assign To */}
+                <div className={`px-3 py-2 border-t border-b ${tc(dark,"border-slate-700 text-slate-400","border-slate-100 text-slate-500")}`} style={{fontSize:10,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase"}}>Assign To</div>
+                {devTeam.map(u=>(
+                  <button key={u.id} onClick={()=>quickUpdateAssignee(u.id)}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-left transition-colors ${(p.assignedUserId||p.userId)===u.id?tc(dark,"bg-amber-500/10 text-amber-300","bg-amber-50 text-amber-700"):tc(dark,"hover:bg-slate-700 text-white","hover:bg-slate-50 text-slate-700")}`}>
+                    <span className={`w-5 h-5 rounded-md flex items-center justify-center text-white font-bold flex-shrink-0 ${tc(dark,"bg-slate-600","bg-amber-400")}`} style={{fontSize:9}}>{u.name.charAt(0)}</span>
+                    {u.name}
+                    {(p.assignedUserId||p.userId)===u.id&&<span className="ml-auto text-amber-400" style={{fontSize:10}}>assigned</span>}
+                  </button>
+                ))}
+                {devTeam.length===0&&<p className={`px-3 py-2 text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>No team members</p>}
+              </div>
+            )}
           </div>
         </div>
-        <div onClick={()=>{ if(!dragRef.current.moved) setCurrentProjectId(p.id); }} className="cursor-pointer">
+
+        {/* Card body */}
+        <div onClick={()=>{ if(!dragRef.current.moved) { setOpenCardMenuId(null); setCurrentProjectId(p.id); }}} className="cursor-pointer">
           <h4 className={`font-bold text-sm mb-0.5 ${tc(dark,"text-white","text-slate-800")}`}>{p.customerName}</h4>
           {p.pocName&&<p className={`text-xs mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>POC: {p.pocName}</p>}
           <p className={`text-xs mb-2 ${tc(dark,"text-slate-400","text-slate-500")}`}>{[p.customerCity,p.customerState].filter(Boolean).join(", ")||p.customerAddress||"—"}</p>
@@ -2721,7 +2842,7 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
         </div>
         <div className="flex gap-1 mt-2">
           <button onClick={e=>{e.stopPropagation();openEdit(p);}} className={`text-xs px-2 py-1 rounded-lg transition-colors ${tc(dark,"bg-slate-700 text-slate-300 hover:bg-slate-600","bg-slate-100 text-slate-600 hover:bg-slate-200")}`}><Icon name="edit" size={11}/></button>
-          <button onClick={e=>{e.stopPropagation();if(!dragRef.current.moved)setCurrentProjectId(p.id);}} className={`text-xs px-2 py-1 rounded-lg transition-colors ${tc(dark,"bg-slate-700 text-slate-300 hover:bg-slate-600","bg-slate-100 text-slate-600 hover:bg-slate-200")}`}><Icon name="eye" size={11}/></button>
+          <button onClick={e=>{e.stopPropagation();if(!dragRef.current.moved){setOpenCardMenuId(null);setCurrentProjectId(p.id);}}} className={`text-xs px-2 py-1 rounded-lg transition-colors ${tc(dark,"bg-slate-700 text-slate-300 hover:bg-slate-600","bg-slate-100 text-slate-600 hover:bg-slate-200")}`}><Icon name="eye" size={11}/></button>
         </div>
       </div>
     );
@@ -2878,49 +2999,158 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
         </div>
       </div>
 
-      {/* Bulk selection bar */}
-      {selected.size>0&&(
-        <div className={`flex items-center gap-2 p-2 px-3 rounded-xl mb-3 border ${tc(dark,"bg-amber-500/10 border-amber-500/30","bg-amber-50 border-amber-200")}`}>
-          <span className={`text-sm font-medium ${tc(dark,"text-amber-300","text-amber-700")}`}>{selected.size} selected</span>
-          <div className="flex gap-1 ml-1">
-            <Btn size="sm" variant="ghost" onClick={()=>{setBulkTarget(lanes[0]?.id||"");setBulkModal("lane");}}><Icon name="kanban" size={13}/>Move Lane</Btn>
-            <Btn size="sm" variant="ghost" onClick={()=>{setBulkTarget(devTeam[0]?.id||"");setBulkModal("assign");}}><Icon name="user" size={13}/>Assign</Btn>
-            <Btn size="sm" variant="ghost" onClick={()=>setBulkModal("delete")} className="text-red-400"><Icon name="trash" size={13}/>Delete</Btn>
+
+
+      {/* Select all row — shown in both views */}
+      <div className="flex items-center gap-2 mb-2">
+        <input type="checkbox"
+          checked={selected.size===filteredProjects.length&&filteredProjects.length>0}
+          onChange={e=>e.target.checked?selectAll():clearSelect()}
+          className="w-3.5 h-3.5 accent-amber-500"/>
+        <span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>
+          {selected.size>0?`${selected.size} of ${filteredProjects.length} selected`:"Select all"}
+        </span>
+        {selected.size>0&&(
+          <div className="flex gap-1.5 ml-1">
+            <button onClick={()=>{setBulkTarget(lanes[0]?.id||"");setBulkModal("lane");}} className={`text-xs px-2 py-0.5 rounded border ${tc(dark,"border-slate-700 text-slate-400 hover:bg-slate-700","border-slate-300 text-slate-500 hover:bg-slate-100")}`}>Move Lane</button>
+            <button onClick={()=>{setBulkTarget(devTeam[0]?.id||"");setBulkModal("assign");}} className={`text-xs px-2 py-0.5 rounded border ${tc(dark,"border-slate-700 text-slate-400 hover:bg-slate-700","border-slate-300 text-slate-500 hover:bg-slate-100")}`}>Assign</button>
+            <button onClick={()=>setBulkModal("delete")} className="text-xs px-2 py-0.5 rounded border border-red-500/40 text-red-400 hover:bg-red-500/10">Delete</button>
+            <button onClick={clearSelect} className={`text-xs ${tc(dark,"text-slate-500 hover:text-white","text-slate-400 hover:text-slate-700")}`}>✕ Clear</button>
           </div>
-          <button onClick={clearSelect} className={`ml-auto text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>Clear</button>
-        </div>
-      )}
-
-      {/* Select all row for list view */}
-      {view==="list"&&(
-        <div className="flex items-center gap-2 mb-2">
-          <input type="checkbox" checked={selected.size===filteredProjects.length&&filteredProjects.length>0} onChange={e=>e.target.checked?selectAll():clearSelect()} className="w-4 h-4 accent-amber-500"/>
-          <span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>Select all</span>
-        </div>
-      )}
-
-      {/* Search + Quick Filters */}
-      <div className="flex flex-wrap gap-2 mb-3">
-        <div className="flex-1 min-w-48"><SearchBar value={filters.q} onChange={v=>FF("q",v)} placeholder="Search project ID, customer, address…"/></div>
-        <button onClick={()=>setShowFilters(f=>!f)} className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm transition-colors ${showFilters?tc(dark,"bg-amber-500/20 border-amber-500/40 text-amber-300","bg-amber-50 border-amber-300 text-amber-700"):tc(dark,"border-slate-600 text-slate-400 hover:border-slate-500","border-slate-300 text-slate-500 hover:border-slate-400")}`}>
-          <Icon name="filter" size={15}/> Filters
-        </button>
+        )}
       </div>
 
-      {/* Advanced Filters */}
-      {showFilters&&(
-        <div className={`border rounded-xl p-4 mb-4 grid grid-cols-2 lg:grid-cols-4 gap-3 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
-          <Field label="Project ID" value={filters.projectId} onChange={v=>FF("projectId",v)}/>
-          <Field label="Customer Name" value={filters.customerName} onChange={v=>FF("customerName",v)}/>
-          <Field label="Customer Phone" value={filters.customerPhone} onChange={v=>FF("customerPhone",v)}/>
-          <Field label="Customer Type" type="select" value={filters.customerType} onChange={v=>FF("customerType",v)} options={[{value:"all",label:"All Types"},...["Residential","Commercial","Industrial","Government","Other"].map(t=>({value:t,label:t}))]}/>
-          <Field label="Enquiry Type" type="select" value={filters.enquiryType} onChange={v=>FF("enquiryType",v)} options={[{value:"all",label:"All"},...["Hot","Warm","Cold"].map(t=>({value:t,label:t}))]}/>
-          <Field label="Assigned To" type="select" value={filters.assignedTo} onChange={v=>FF("assignedTo",v)} options={[{value:"all",label:"Anyone"},...devTeam.map(u=>({value:u.id,label:u.name}))]}/>
-          <Field label="Min Size" type="number" value={filters.minSize} onChange={v=>FF("minSize",v)} placeholder="0"/>
-          <Field label="Max Size" type="number" value={filters.maxSize} onChange={v=>FF("maxSize",v)} placeholder="Any"/>
-          <button onClick={()=>setFilters({q:"",projectId:"",customerName:"",customerPhone:"",customerType:"all",assignedTo:"all",minSize:"",maxSize:"",enquiryType:"all"})} className="text-xs text-amber-400 underline self-end pb-3">Clear Filters</button>
+      {/* Search + Filter Bar */}
+      <div className={`border rounded-xl mb-3 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+        <div className="flex flex-wrap gap-2 p-3 items-center">
+          <div className={`flex items-center gap-2 flex-1 min-w-48 border rounded-lg px-3 py-1.5 ${tc(dark,"bg-slate-800 border-slate-600","bg-slate-50 border-slate-300")}`}>
+            <Icon name="search" size={14}/>
+            <input value={filters.q} onChange={e=>FF("q",e.target.value)}
+              placeholder="Search name, ID, city, state, pincode, phone, email…"
+              className={`flex-1 bg-transparent text-sm focus:outline-none ${tc(dark,"text-white placeholder-slate-500","text-slate-800 placeholder-slate-400")}`}/>
+            {filters.q&&<button onClick={()=>FF("q","")} className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>×</button>}
+          </div>
+          <button onClick={()=>setShowFilters(f=>!f)} className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-medium transition-colors ${showFilters?tc(dark,"bg-amber-500/20 border-amber-500/40 text-amber-300","bg-amber-50 border-amber-300 text-amber-700"):tc(dark,"border-slate-600 text-slate-400 hover:border-slate-500","border-slate-300 text-slate-500 hover:border-slate-400")}`}>
+            <Icon name="filter" size={13}/>Filters
+            {activeFilterCount>0&&<span className="ml-0.5 bg-amber-500 text-slate-900 rounded-full w-4 h-4 flex items-center justify-center font-bold" style={{fontSize:10}}>{activeFilterCount}</span>}
+          </button>
+          <span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{filteredProjects.length}/{myProjects.length}</span>
+          {activeFilterCount>0&&<button onClick={clearFilters} className="text-xs text-amber-400 underline">Clear all</button>}
         </div>
-      )}
+
+        {showFilters&&(
+          <div className={`border-t px-4 pb-4 pt-3 ${tc(dark,"border-slate-700/50","border-slate-200")}`}>
+            {/* Row 1: Text searches */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
+              <div>
+                <p className={`text-xs font-medium mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>Project ID</p>
+                <input value={filters.projectId} onChange={e=>FF("projectId",e.target.value)} placeholder="SP-1001…" className={`w-full ${selCls}`}/>
+              </div>
+              <div>
+                <p className={`text-xs font-medium mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>Customer Name</p>
+                <input value={filters.customerName} onChange={e=>FF("customerName",e.target.value)} placeholder="John Doe…" className={`w-full ${selCls}`}/>
+              </div>
+              <div>
+                <p className={`text-xs font-medium mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>Phone</p>
+                <input value={filters.customerPhone} onChange={e=>FF("customerPhone",e.target.value)} placeholder="+91…" className={`w-full ${selCls}`}/>
+              </div>
+              <div>
+                <p className={`text-xs font-medium mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>Email</p>
+                <input value={filters.customerEmail} onChange={e=>FF("customerEmail",e.target.value)} placeholder="user@email.com" className={`w-full ${selCls}`}/>
+              </div>
+              <div>
+                <p className={`text-xs font-medium mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>City</p>
+                <input value={filters.customerCity} onChange={e=>FF("customerCity",e.target.value)} placeholder="Mumbai…" className={`w-full ${selCls}`}/>
+              </div>
+              <div>
+                <p className={`text-xs font-medium mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>Pincode</p>
+                <input value={filters.customerPincode} onChange={e=>FF("customerPincode",e.target.value)} placeholder="400001…" className={`w-full ${selCls}`}/>
+              </div>
+              <div>
+                <p className={`text-xs font-medium mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>State</p>
+                <input value={filters.customerState} onChange={e=>FF("customerState",e.target.value)} placeholder="Maharashtra…" className={`w-full ${selCls}`}/>
+              </div>
+              <div>
+                <p className={`text-xs font-medium mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>Size Range (kW)</p>
+                <div className="flex gap-1 items-center">
+                  <input type="number" value={filters.minSize} onChange={e=>FF("minSize",e.target.value)} placeholder="Min" className={`flex-1 ${selCls}`}/>
+                  <span className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>–</span>
+                  <input type="number" value={filters.maxSize} onChange={e=>FF("maxSize",e.target.value)} placeholder="Max" className={`flex-1 ${selCls}`}/>
+                </div>
+              </div>
+            </div>
+
+            {/* Row 2: Multi-select chips */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-3">
+              {/* Customer Type multi-select */}
+              <div>
+                <p className={`text-xs font-medium mb-1.5 ${tc(dark,"text-slate-400","text-slate-500")}`}>Customer Type <span className={`font-normal ${tc(dark,"text-slate-600","text-slate-400")}`}>(select multiple)</span></p>
+                <div className="flex flex-wrap gap-1.5">
+                  {["Residential","Commercial","Industrial","Government","Other"].map(t=>(
+                    <button key={t} onClick={()=>toggleFilterArr("customerTypes",t)}
+                      className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${filters.customerTypes.includes(t)?tc(dark,"bg-amber-500/20 border-amber-400/60 text-amber-300","bg-amber-100 border-amber-400 text-amber-700"):tc(dark,"border-slate-700 text-slate-400 hover:border-slate-500","border-slate-200 text-slate-500 hover:border-slate-300")}`}>{t}</button>
+                  ))}
+                </div>
+              </div>
+              {/* Enquiry Type multi-select */}
+              <div>
+                <p className={`text-xs font-medium mb-1.5 ${tc(dark,"text-slate-400","text-slate-500")}`}>Enquiry Type</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {["Hot","Warm","Cold"].map(t=>{
+                    const colors = {Hot:tc(dark,"bg-red-500/20 border-red-400/60 text-red-300","bg-red-100 border-red-400 text-red-700"),Warm:tc(dark,"bg-orange-500/20 border-orange-400/60 text-orange-300","bg-orange-100 border-orange-400 text-orange-700"),Cold:tc(dark,"bg-sky-500/20 border-sky-400/60 text-sky-300","bg-sky-100 border-sky-400 text-sky-700")};
+                    return (
+                      <button key={t} onClick={()=>toggleFilterArr("enquiryTypes",t)}
+                        className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${filters.enquiryTypes.includes(t)?colors[t]:tc(dark,"border-slate-700 text-slate-400 hover:border-slate-500","border-slate-200 text-slate-500 hover:border-slate-300")}`}>{t}</button>
+                    );
+                  })}
+                </div>
+              </div>
+              {/* Lane multi-select */}
+              <div>
+                <p className={`text-xs font-medium mb-1.5 ${tc(dark,"text-slate-400","text-slate-500")}`}>Lane / Stage</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {lanes.map(l=>(
+                    <button key={l.id} onClick={()=>toggleFilterArr("laneIds",l.id)}
+                      style={filters.laneIds.includes(l.id)?{background:laneHex(l.color)+"22",borderColor:laneHex(l.color)+"99",color:laneHex(l.color)}:{}}
+                      className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${filters.laneIds.includes(l.id)?"":""+tc(dark,"border-slate-700 text-slate-400 hover:border-slate-500","border-slate-200 text-slate-500 hover:border-slate-300")}`}>
+                      <span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:laneHex(l.color),marginRight:4,verticalAlign:"middle"}}/>
+                      {l.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* Assigned To multi-select */}
+              <div>
+                <p className={`text-xs font-medium mb-1.5 ${tc(dark,"text-slate-400","text-slate-500")}`}>Assigned To</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {devTeam.map(u=>(
+                    <button key={u.id} onClick={()=>toggleFilterArr("assignedTos",u.id)}
+                      className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${filters.assignedTos.includes(u.id)?tc(dark,"bg-amber-500/20 border-amber-400/60 text-amber-300","bg-amber-100 border-amber-400 text-amber-700"):tc(dark,"border-slate-700 text-slate-400 hover:border-slate-500","border-slate-200 text-slate-500 hover:border-slate-300")}`}>{u.name}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Row 3: Date created */}
+            <div>
+              <p className={`text-xs font-medium mb-1.5 ${tc(dark,"text-slate-400","text-slate-500")}`}>Created Date</p>
+              <div className="flex flex-wrap gap-1.5 items-center">
+                {[["all","All Time"],["7d","Last 7d"],["15d","Last 15d"],["30d","Last 30d"],["week","This Week"],["month","This Month"],["lastmonth","Last Month"],["custom","Custom…"]].map(([v,label])=>(
+                  <button key={v} onClick={()=>FF("datePreset",v)}
+                    className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${filters.datePreset===v?tc(dark,"bg-amber-500/20 border-amber-400/60 text-amber-300","bg-amber-100 border-amber-400 text-amber-700"):tc(dark,"border-slate-700 text-slate-400 hover:border-slate-500","border-slate-200 text-slate-500 hover:border-slate-300")}`}>{label}</button>
+                ))}
+                {filters.datePreset==="custom"&&(
+                  <>
+                    <input type="date" value={filters.dateFrom} onChange={e=>FF("dateFrom",e.target.value)} className={`${selCls}`}/>
+                    <span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>to</span>
+                    <input type="date" value={filters.dateTo} onChange={e=>FF("dateTo",e.target.value)} className={`${selCls}`}/>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* KANBAN VIEW */}
       {view==="kanban"&&(
@@ -2990,15 +3220,17 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
                     </div>
                   </div>
 
-                  {/* Cards + drop zone */}
+                  {/* Cards + drop zone — max 5 visible, scrollable */}
                   <div style={{
                     minHeight:64,
-                    maxHeight: laneProjects.length>5 ? 520 : "none",
+                    maxHeight:"640px",
                     overflowY: laneProjects.length>5 ? "auto" : "visible",
                     outline: isOver?`2px dashed ${dirColor}70`:"2px dashed transparent",
                     outlineOffset:3, borderRadius:12,
                     background: isOver?(dark?`${dirColor}08`:`${dirColor}05`):"transparent",
                     transition:"all 160ms ease",
+                    scrollbarWidth:"thin",
+                    scrollbarColor: dark?"#334155 transparent":"#cbd5e1 transparent",
                   }}>
                     {laneProjects.map(p=><ProjectCard key={p.id} p={p}/>)}
                     {isOver&&isDraggingActive&&(
@@ -3018,6 +3250,13 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
                       </div>
                     )}
                   </div>
+                  {/* "N more" badge below capped lane */}
+                  {laneProjects.length>5&&(
+                    <div className={`flex items-center justify-center gap-1 mt-1.5 text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><circle cx="2" cy="5" r="1.2"/><circle cx="5" cy="5" r="1.2"/><circle cx="8" cy="5" r="1.2"/></svg>
+                      <span>Scroll to see all {laneProjects.length} ↕</span>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -3414,6 +3653,9 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
   const [noteFileRef] = [useRef()];
   const [noteAttachments, setNoteAttachments] = useState([]);
   const [noteFilterUser, setNoteFilterUser] = useState("all");
+  const [noteDate, setNoteDate] = useState("all");
+  const [noteDateFrom, setNoteDateFrom] = useState("");
+  const [noteDateTo, setNoteDateTo] = useState("");
   const [showGen, setShowGen] = useState(false);
   const [selectedTmpl, setSelectedTmpl] = useState("");
   const [pForm, setPForm] = useState({});
@@ -3434,7 +3676,21 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
 
   // Unique note authors
   const noteAuthors = [...new Set(projNotes.map(n=>n.userName||n.userId))];
-  const filteredNotes = projNotes.filter(n=> noteFilterUser==="all"||(n.userName||n.userId)===noteFilterUser);
+  const filteredNotes = projNotes.filter(n=>{
+    if (noteFilterUser!=="all" && (n.userName||n.userId)!==noteFilterUser) return false;
+    if (noteDate!=="all"||noteDateFrom||noteDateTo) {
+      const d = new Date(n.createdAt);
+      const now2 = new Date();
+      if (noteDate==="7d"  && d < new Date(now2-7*86400000)) return false;
+      if (noteDate==="15d" && d < new Date(now2-15*86400000)) return false;
+      if (noteDate==="30d" && d < new Date(now2-30*86400000)) return false;
+      if (noteDate==="week"){const sw=new Date(now2);sw.setDate(now2.getDate()-now2.getDay());sw.setHours(0,0,0,0);if(d<sw)return false;}
+      if (noteDate==="month" && d < new Date(now2.getFullYear(),now2.getMonth(),1)) return false;
+      if (noteDate==="lastmonth"){const slm=new Date(now2.getFullYear(),now2.getMonth()-1,1);const elm=new Date(now2.getFullYear(),now2.getMonth(),0,23,59,59);if(d<slm||d>elm)return false;}
+      if (noteDate==="custom"){if(noteDateFrom&&d<new Date(noteDateFrom))return false;if(noteDateTo&&d>new Date(noteDateTo+" 23:59:59"))return false;}
+    }
+    return true;
+  });
   const filteredDocs = projDocs.filter(d=>{
     const matchSearch = !docSearch || d.title?.toLowerCase().includes(docSearch.toLowerCase()) || d.name?.toLowerCase().includes(docSearch.toLowerCase());
     const matchType = docFilterType==="all" || d.type===docFilterType;
@@ -3594,12 +3850,35 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
             </div>
           </div>
           {/* Filter bar */}
-          {projNotes.length>0&&<div className="flex gap-2 mb-3">
-            <select value={noteFilterUser} onChange={e=>setNoteFilterUser(e.target.value)} className={`border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
-              <option value="all">All Authors</option>
-              {noteAuthors.map(u=><option key={u} value={u}>{u}</option>)}
-            </select>
-          </div>}
+          {projNotes.length>0&&(
+            <div className={`border rounded-xl p-3 mb-3 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+              <div className="flex flex-wrap gap-2 items-center mb-2">
+                <span className={`text-xs font-medium ${tc(dark,"text-slate-400","text-slate-500")}`}>Author:</span>
+                <select value={noteFilterUser} onChange={e=>setNoteFilterUser(e.target.value)} className={`border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+                  <option value="all">All Authors</option>
+                  {noteAuthors.map(u=><option key={u} value={u}>{u}</option>)}
+                </select>
+                <span className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>{filteredNotes.length}/{projNotes.length} notes</span>
+                {(noteFilterUser!=="all"||noteDate!=="all")&&<button onClick={()=>{setNoteFilterUser("all");setNoteDate("all");setNoteDateFrom("");setNoteDateTo("");}} className="text-xs text-amber-400 underline ml-auto">Clear</button>}
+              </div>
+              <div>
+                <span className={`text-xs font-medium mr-2 ${tc(dark,"text-slate-400","text-slate-500")}`}>Date:</span>
+                <span className="flex flex-wrap gap-1.5 mt-1.5">
+                  {[["all","All"],["7d","7d"],["15d","15d"],["30d","30d"],["week","This Wk"],["month","This Mo"],["lastmonth","Last Mo"],["custom","Custom…"]].map(([v,label])=>(
+                    <button key={v} onClick={()=>setNoteDate(v)}
+                      className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${noteDate===v?tc(dark,"bg-amber-500/20 border-amber-400/60 text-amber-300","bg-amber-100 border-amber-400 text-amber-700"):tc(dark,"border-slate-700 text-slate-400 hover:border-slate-500","border-slate-200 text-slate-500")}`}>{label}</button>
+                  ))}
+                  {noteDate==="custom"&&(
+                    <span className="flex items-center gap-1">
+                      <input type="date" value={noteDateFrom} onChange={e=>setNoteDateFrom(e.target.value)} className={`border rounded px-2 py-0.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}/>
+                      <span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>to</span>
+                      <input type="date" value={noteDateTo} onChange={e=>setNoteDateTo(e.target.value)} className={`border rounded px-2 py-0.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}/>
+                    </span>
+                  )}
+                </span>
+              </div>
+            </div>
+          )}
           <div className="space-y-2">
             {!filteredNotes.length ? <p className={`text-sm text-center py-8 ${tc(dark,"text-slate-400","text-slate-500")}`}>No notes yet.</p> : filteredNotes.map(n=>(
               <div key={n.id} className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
