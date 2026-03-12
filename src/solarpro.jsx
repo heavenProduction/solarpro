@@ -2436,7 +2436,7 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
 
   const filteredProjects = applyFilters(myProjects);
 
-  const blankForm = { customerName:"", customerType:"Residential", pocName:"", countryCode:"+91", customerPhone:"", customerEmail:"", customerPincode:"", customerCity:"", customerState:"", customerAddress:"", projectSize:"", projectUnit:developer?.defaultProjectUnit||"kW", enquiryType:"Warm", laneId:lanes[0]?.id||"", assignedUserId:currentUser.id, projectIdOverride:"" };
+  const blankForm = { customerName:"", customerType:"Residential", pocName:"", countryCode:"+91", customerPhone:"", customerEmail:"", customerPincode:"", customerCity:"", customerState:"", customerAddress:"", projectSize:"", projectUnit:developer?.defaultProjectUnit||"kW", enquiryType:"Warm", laneId:lanes[0]?.id||"", assignedUserId:currentUser.id, projectIdOverride:"", tags:[...(developer?.defaultTags||[])] };
   const [form, setForm] = useState(blankForm);
   const SF = (k,v) => setForm(f=>({...f,[k]:v}));
 
@@ -2507,16 +2507,34 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
     const reader = new FileReader();
     reader.onload = (ev) => {
       const text = ev.target.result;
-      const lines = text.split("\n").slice(1); // skip header
+      const lines = text.split("\n").slice(1);
+
+      // Build a running counter starting above the highest existing project number
+      const prefix = developer?.projectPrefix || "PRJ";
+      const allExistingNums = projects
+        .filter(p=>p.developerId===currentUser.developerId)
+        .map(p=>{ const m=(p.projectId||"").match(/(d+)$/); return m?parseInt(m[1]):0; });
+      let nextNum = Math.max(developer?.projectNextNum||1001, ...allExistingNums) + 0;
+      // We'll bump it as we assign IDs
+
       const imported = lines.filter(l=>l.trim()).map((line,i)=>{
-        const cols = line.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(c=>c.replace(/^"|"$/g,"").replace(/""/g,'"').trim());
-        // Resolve lane name to id
+        const cols = line.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(x=>x.replace(/^"|"$/g,"").replace(/""/g,'"').trim());
         const laneByName = lanes.find(l=>l.name.toLowerCase()===(cols[13]||"").toLowerCase());
-        // Resolve user name to id
         const userByName = devTeam.find(u=>u.name.toLowerCase()===(cols[15]||"").toLowerCase());
+
+        // Use provided project ID if valid & unique, otherwise assign next auto ID
+        const providedId = (cols[0]||"").trim();
+        let projectId;
+        if (providedId) {
+          projectId = providedId;
+        } else {
+          projectId = `${prefix}-${nextNum}`;
+          nextNum++;
+        }
+
         return {
           id:`p${Date.now()}${i}`,
-          projectId: cols[0]||autoProjectId(),
+          projectId,
           customerName: cols[1]||"",
           customerType: cols[2]||"Residential",
           pocName: cols[3]||"",
@@ -2539,6 +2557,11 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
           activityLog: [{id:`act${Date.now()}`,type:"created",message:"Imported from CSV",by:currentUser.name,at:new Date().toISOString()}],
         };
       });
+
+      // Update developer's nextNum to be above all imported IDs
+      const maxImportedNum = Math.max(...imported.map(p=>{ const m=(p.projectId||"").match(/(d+)$/); return m?parseInt(m[1]):0; }), 0);
+      setDevelopers(ds=>ds.map(d=>d.id===developer.id?{...d,projectNextNum:Math.max((d.projectNextNum||1001),maxImportedNum+1)}:d));
+
       setProjects(ps=>[...ps,...imported]);
       toast.show({message:`Imported ${imported.length} project(s).`});
     };
@@ -2700,6 +2723,7 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
   };
+  const toggleSelect = (id) => setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const selectAll = () => setSelected(new Set(filteredProjects.map(p=>p.id)));
   const clearSelect = () => setSelected(new Set());
 
@@ -2839,6 +2863,14 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
             <span className={`text-xs font-medium ${tc(dark,"text-amber-400","text-amber-600")}`}>{p.projectSize} {p.projectUnit||"kW"}</span>
             {user&&<span className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>→{user.name}</span>}
           </div>
+          {(p.tags||[]).length>0&&(
+            <div className="flex flex-wrap gap-1 mt-1.5">
+              {(p.tags||[]).slice(0,3).map(t=>(
+                <span key={t} className={`text-xs px-1.5 py-0.5 rounded-md ${tc(dark,"bg-amber-500/15 text-amber-400/90","bg-amber-100 text-amber-700")}`}># {t}</span>
+              ))}
+              {(p.tags||[]).length>3&&<span className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>+{(p.tags||[]).length-3}</span>}
+            </div>
+          )}
         </div>
         <div className="flex gap-1 mt-2">
           <button onClick={e=>{e.stopPropagation();openEdit(p);}} className={`text-xs px-2 py-1 rounded-lg transition-colors ${tc(dark,"bg-slate-700 text-slate-300 hover:bg-slate-600","bg-slate-100 text-slate-600 hover:bg-slate-200")}`}><Icon name="edit" size={11}/></button>
@@ -2919,32 +2951,119 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
       {/* Import Modal */}
       {showImportModal&&(
         <Modal title="Import Projects from CSV" onClose={()=>setShowImportModal(false)} wide>
+          {/* Step 1 */}
           <div className={`p-4 rounded-xl mb-4 border ${tc(dark,"bg-slate-800/50 border-slate-700","bg-slate-50 border-slate-200")}`}>
-            <h4 className={`font-bold text-sm mb-2 ${tc(dark,"text-white","text-slate-800")}`}>Step 1 — Download the template</h4>
-            <p className={`text-xs mb-3 ${tc(dark,"text-slate-400","text-slate-500")}`}>Download a CSV template with correct headers and one example row. Fill it in, then upload below.</p>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="w-5 h-5 rounded-full bg-amber-500 text-slate-900 flex items-center justify-center font-bold text-xs flex-shrink-0">1</span>
+              <h4 className={`font-bold text-sm ${tc(dark,"text-white","text-slate-800")}`}>Download the template CSV</h4>
+            </div>
+            <p className={`text-xs mb-3 ${tc(dark,"text-slate-400","text-slate-500")}`}>
+              The template includes correct column headers, an example row, and valid options for each field based on your account settings.
+            </p>
+            {/* Column reference table */}
+            <div className={`rounded-lg overflow-hidden border mb-3 ${tc(dark,"border-slate-700","border-slate-200")}`}>
+              <table className="w-full text-xs">
+                <thead><tr className={`${tc(dark,"bg-slate-700 text-slate-300","bg-slate-100 text-slate-600")}`}>
+                  <th className="px-3 py-1.5 text-left font-medium">Column</th>
+                  <th className="px-3 py-1.5 text-left font-medium">Valid Values</th>
+                  <th className="px-3 py-1.5 text-left font-medium w-16">Required</th>
+                </tr></thead>
+                <tbody>
+                  {[
+                    ["Project ID","Leave blank for auto-assign, or enter custom ID","No"],
+                    ["Customer Name","Any text","Yes"],
+                    ["Customer Type",["Residential","Commercial","Industrial","Government","Other"].join(" / "),"Yes"],
+                    ["POC Name","Any text (for commercial/industrial)","No"],
+                    ["Customer Email","Valid email address","No"],
+                    ["Phone","10-digit number","Yes"],
+                    ["Email","Alternate email","No"],
+                    ["Pincode","6-digit pincode","No"],
+                    ["City","City name","No"],
+                    ["State","State name","No"],
+                    ["Address","Full address","No"],
+                    ["Project Size","Numeric value, e.g. 8.5","Yes"],
+                    ["Project Unit",[...(developer?.customUnits||[]),...PROJECT_UNITS].filter((v,i,a)=>a.indexOf(v)===i).join(" / "),"Yes"],
+                    ["Lane",lanes.map(l=>l.name).join(" / "),"No"],
+                    ["Enquiry","Hot / Warm / Cold","No"],
+                    ["Assigned To",devTeam.map(u=>u.name).join(" / ")||"Your name","No"],
+                    ["Tags","Comma-separated, e.g. Rooftop,Priority","No"],
+                  ].map(([col,vals,req])=>(
+                    <tr key={col} className={`border-t ${tc(dark,"border-slate-700/50 text-slate-300","border-slate-100 text-slate-700")}`}>
+                      <td className="px-3 py-1.5 font-medium whitespace-nowrap">{col}</td>
+                      <td className={`px-3 py-1.5 ${tc(dark,"text-slate-400","text-slate-500")}`}>{vals}</td>
+                      <td className="px-3 py-1.5 text-center">{req==="Yes"?<span className="text-amber-400 font-bold">✓</span>:<span className={`${tc(dark,"text-slate-600","text-slate-400")}`}>—</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
             <Btn size="sm" onClick={()=>{
               const customerTypes = ["Residential","Commercial","Industrial","Government","Other"];
               const units = [...(developer?.customUnits||[]),...PROJECT_UNITS].filter((v,i,a)=>a.indexOf(v)===i);
               const laneNames = lanes.map(l=>l.name);
               const teamNames = devTeam.map(u=>u.name);
-              const exampleRow = [
-                "SP-1001","John Doe","Residential","John Doe","","9876543210","john@email.com","400001","Mumbai","Maharashtra","123 Solar St","8.5","kW","New Enquiry","Warm","Unassigned",""
+              const prefix = developer?.projectPrefix||"SP";
+              const nextN = developer?.projectNextNum||1001;
+              // Header row with valid options inline
+              const headers = [
+                "Project ID (blank = auto)",
+                "Customer Name *",
+                `Customer Type (${customerTypes.join("|")})`,
+                "POC Name",
+                "Customer Email",
+                "Phone *",
+                "Email (alt)",
+                "Pincode",
+                "City",
+                "State",
+                "Address",
+                "Project Size *",
+                `Project Unit (${units.join("|")})`,
+                `Lane (${laneNames.join("|")})`,
+                "Enquiry (Hot|Warm|Cold)",
+                `Assigned To (${teamNames.join("|")||"Unassigned"})`,
+                "Tags (comma separated)"
               ];
-              const headers = ["Project ID","Customer Name","Customer Type ("+customerTypes.join("/")+")", "POC Name","Customer Email (optional)","Phone","Email","Pincode","City","State","Address","Project Size","Project Unit ("+units.join("/")+")", "Lane ("+laneNames.join("/")+")", "Enquiry (Hot/Warm/Cold)", "Assigned To ("+teamNames.join("/")+")", "Tags (comma separated)"];
-              const rows = [headers, exampleRow];
-              const csv = rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
+              const example = [
+                `${prefix}-${nextN}`,
+                "John Doe",
+                "Residential",
+                "",
+                "john@email.com",
+                "9876543210",
+                "",
+                "400001",
+                "Mumbai",
+                "Maharashtra",
+                "123 Solar Street",
+                "8.5",
+                units[0]||"kW",
+                laneNames[0]||"New Enquiry",
+                "Warm",
+                teamNames[0]||"",
+                "Rooftop,Priority"
+              ];
+              const rows = [headers, example];
+              const csv = rows.map(r=>r.map(x=>`"${String(x).replace(/"/g,'""')}"`).join(",")).join("\n");
               const blob = new Blob([csv],{type:"text/csv"});
               const url = URL.createObjectURL(blob);
-              const a = document.createElement("a"); a.href=url; a.download="project_import_template.csv"; a.click();
+              const a = document.createElement("a"); a.href=url; a.download=`${developer?.companyName||"SolarPro"}_import_template.csv`; a.click();
               URL.revokeObjectURL(url);
             }}><Icon name="download" size={14}/>Download Template CSV</Btn>
           </div>
+
+          {/* Step 2 */}
           <div className={`p-4 rounded-xl border ${tc(dark,"bg-slate-800/50 border-slate-700","bg-slate-50 border-slate-200")}`}>
-            <h4 className={`font-bold text-sm mb-2 ${tc(dark,"text-white","text-slate-800")}`}>Step 2 — Upload your filled CSV</h4>
-            <p className={`text-xs mb-3 ${tc(dark,"text-slate-400","text-slate-500")}`}>Make sure you keep the header row. Each row becomes a new project.</p>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="w-5 h-5 rounded-full bg-amber-500 text-slate-900 flex items-center justify-center font-bold text-xs flex-shrink-0">2</span>
+              <h4 className={`font-bold text-sm ${tc(dark,"text-white","text-slate-800")}`}>Upload your filled CSV</h4>
+            </div>
+            <p className={`text-xs mb-3 ${tc(dark,"text-slate-400","text-slate-500")}`}>
+              Keep the header row intact. Each row becomes a new project. Project IDs from the file will be preserved; blank IDs are auto-assigned.
+            </p>
+            <div className="flex gap-2 flex-wrap">
               <input ref={importFileRef} type="file" accept=".csv" onChange={e=>{ importExcel(e); setShowImportModal(false); }} className="hidden"/>
-              <Btn onClick={()=>importFileRef.current?.click()}><Icon name="import" size={14}/>Select CSV File</Btn>
+              <Btn onClick={()=>importFileRef.current?.click()}><Icon name="import" size={14}/>Choose CSV File to Upload</Btn>
             </div>
           </div>
         </Modal>
@@ -3384,6 +3503,39 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
             <Field label="Assign To" type="select" value={form.assignedUserId||currentUser.id} onChange={v=>SF("assignedUserId",v)} options={[{value:currentUser.id,label:"Myself"},...devTeam.filter(u=>u.id!==currentUser.id).map(u=>({value:u.id,label:u.name}))]}/>
           </div>
 
+          {/* Tags */}
+          <div className="mb-3">
+            <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Tags</label>
+            <div className={`flex flex-wrap gap-1.5 p-2.5 border rounded-lg min-h-[42px] ${tc(dark,"bg-slate-800 border-slate-600","bg-white border-slate-300")}`}>
+              {(form.tags||[]).map(t=>(
+                <span key={t} className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 ${tc(dark,"bg-amber-500/20 text-amber-300","bg-amber-100 text-amber-700")}`}>
+                  {t}
+                  <button type="button" onClick={()=>SF("tags",(form.tags||[]).filter(x=>x!==t))} className="ml-0.5 opacity-60 hover:opacity-100">×</button>
+                </span>
+              ))}
+              <input
+                placeholder={form.tags?.length ? "Add more…" : "Type a tag and press Enter…"}
+                onKeyDown={e=>{
+                  if ((e.key==="Enter"||e.key===",")&&e.target.value.trim()) {
+                    e.preventDefault();
+                    const tag=e.target.value.trim().replace(/,$/,"");
+                    if (tag && !(form.tags||[]).includes(tag)) SF("tags",[...(form.tags||[]),tag]);
+                    e.target.value="";
+                  }
+                }}
+                className={`flex-1 min-w-24 bg-transparent text-sm focus:outline-none ${tc(dark,"text-white placeholder-slate-500","text-slate-800 placeholder-slate-400")}`}/>
+            </div>
+            {(developer?.defaultTags||[]).filter(t=>!(form.tags||[]).includes(t)).length>0&&(
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                <span className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>Suggestions:</span>
+                {(developer?.defaultTags||[]).filter(t=>!(form.tags||[]).includes(t)).map(t=>(
+                  <button key={t} type="button" onClick={()=>SF("tags",[...(form.tags||[]),t])}
+                    className={`text-xs px-2 py-0.5 rounded-full border ${tc(dark,"border-slate-600 text-slate-400 hover:border-amber-400 hover:text-amber-300","border-slate-300 text-slate-500 hover:border-amber-400 hover:text-amber-600")}`}>+ {t}</button>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="flex gap-3 mt-2">
             <Btn onClick={()=>saveProject(!!editProject)} className="flex-1" disabled={!form.customerName||!form.projectSize}>{editProject?"Update Project":"Add Project"}</Btn>
             <Btn variant="secondary" onClick={()=>{setShowAdd(false);setEditProject(null);setForm(blankForm);}}>Cancel</Btn>
@@ -3793,8 +3945,73 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
             </select>
           )}
           <span className={`text-xs px-2 py-1 rounded-full ${tc(dark,"bg-slate-700 text-slate-300","bg-slate-100 text-slate-600")}`}>{project.customerType||"—"}</span>
+          <Btn size="sm" onClick={()=>setEditingProject(true)}><Icon name="edit" size={13}/>Edit Project</Btn>
         </div>
       </div>
+
+      {/* Inline edit modal */}
+      {editingProject&&(()=>{
+        const devTeamLocal = users ? users.filter(u=>u.developerId===project.developerId && u.active) : [];
+        const lanesLocal = developer?.lanes?.filter(l=>!l.disabled).sort((a,b)=>a.order-b.order)||[];
+        const PROJECT_UNITS_LOCAL = ["kW","kWp","MW","MWp","W","Wp"];
+        const [ef, setEF] = useState({...project, countryCode:"+91", customerPhone:(project.customerPhone||"").replace(/^+d+s*/,""), tags:project.tags||[]});
+        const SEF = (k,v) => setEF(f=>({...f,[k]:v}));
+        const saveEdit = () => {
+          const entry={id:`act${Date.now()}`,type:"edited",message:"Project updated",by:currentUser.name,at:new Date().toISOString()};
+          setProjects(ps=>ps.map(p=>p.id===project.id?{...ef,activityLog:[...(p.activityLog||[]),entry]}:p));
+          setEditingProject(false);
+        };
+        return (
+          <Modal title="Edit Project" onClose={()=>setEditingProject(false)} wide>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <Field label="Customer Name" value={ef.customerName} onChange={v=>SEF("customerName",v)} required/>
+              <Field label="Customer Type" type="select" value={ef.customerType} onChange={v=>SEF("customerType",v)} options={["Residential","Commercial","Industrial","Government","Other"]}/>
+              <Field label="Pincode" value={ef.customerPincode||""} onChange={v=>SEF("customerPincode",v)} placeholder="400001"/>
+              <Field label="City" value={ef.customerCity||""} onChange={v=>SEF("customerCity",v)}/>
+              <div>
+                <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>State</label>
+                <select value={ef.customerState||""} onChange={e=>SEF("customerState",e.target.value)} className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none mb-4 ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+                  <option value="">Select State / UT</option>
+                  {INDIA_STATES.map(s=><option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <Field label="Email" value={ef.customerEmail||""} onChange={v=>SEF("customerEmail",v)}/>
+            </div>
+            <Field label="Address" type="textarea" rows={2} value={ef.customerAddress||""} onChange={v=>SEF("customerAddress",v)}/>
+            <div className="grid grid-cols-2 gap-3 mb-3 mt-3">
+              <div>
+                <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Project Size</label>
+                <div className="flex">
+                  <input type="number" value={ef.projectSize} onChange={e=>SEF("projectSize",e.target.value)} className={`flex-1 border rounded-l-lg px-3 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}/>
+                  <select value={ef.projectUnit||"kW"} onChange={e=>SEF("projectUnit",e.target.value)} className={`border border-l-0 rounded-r-lg px-2 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+                    {PROJECT_UNITS_LOCAL.map(u=><option key={u} value={u}>{u}</option>)}
+                  </select>
+                </div>
+              </div>
+              <Field label="Enquiry Type" type="select" value={ef.enquiryType||"Warm"} onChange={v=>SEF("enquiryType",v)} options={["Hot","Warm","Cold"]}/>
+              <Field label="Lane" type="select" value={ef.laneId||""} onChange={v=>SEF("laneId",v)} options={lanesLocal.map(l=>({value:l.id,label:l.name}))}/>
+              <Field label="Assign To" type="select" value={ef.assignedUserId||""} onChange={v=>SEF("assignedUserId",v)} options={[{value:"",label:"Unassigned"},...devTeamLocal.map(u=>({value:u.id,label:u.name}))]}/>
+            </div>
+            {/* Tags editor */}
+            <div className="mb-4">
+              <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Tags</label>
+              <div className={`flex flex-wrap gap-1.5 p-2.5 border rounded-lg min-h-[42px] ${tc(dark,"bg-slate-800 border-slate-600","bg-white border-slate-300")}`}>
+                {(ef.tags||[]).map(t=>(
+                  <span key={t} className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 ${tc(dark,"bg-amber-500/20 text-amber-300","bg-amber-100 text-amber-700")}`}>
+                    {t}<button type="button" onClick={()=>SEF("tags",(ef.tags||[]).filter(x=>x!==t))} className="ml-0.5 opacity-60 hover:opacity-100">×</button>
+                  </span>
+                ))}
+                <input placeholder="Add tag…" onKeyDown={e=>{if((e.key==="Enter"||e.key===",")&&e.target.value.trim()){e.preventDefault();const tag=e.target.value.trim().replace(/,$/,"");if(tag&&!(ef.tags||[]).includes(tag))SEF("tags",[...(ef.tags||[]),tag]);e.target.value="";}}}
+                  className={`flex-1 min-w-24 bg-transparent text-sm focus:outline-none ${tc(dark,"text-white placeholder-slate-500","text-slate-800 placeholder-slate-400")}`}/>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Btn variant="secondary" onClick={()=>setEditingProject(false)}>Cancel</Btn>
+              <Btn onClick={saveEdit} disabled={!ef.customerName||!ef.projectSize}>Save Changes</Btn>
+            </div>
+          </Modal>
+        );
+      })()}
 
       {/* Quick stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
@@ -3815,24 +4032,44 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
 
       {/* INFO TAB */}
       {tab==="info"&&(
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
-            <h3 className={`font-bold mb-3 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Customer Details</h3>
-            {[["Name",project.customerName],["POC",project.pocName],["Email",project.customerEmail],["Phone",project.customerPhone],["Type",project.customerType||project.projectType],["Enquiry",project.enquiryType],["Pincode",project.customerPincode],["City",project.customerCity],["State",project.customerState],["Address",project.customerAddress]].filter(([,v])=>v).map(([k,v])=>(
-              <div key={k} className={`flex gap-3 text-sm py-1.5 border-b last:border-0 ${tc(dark,"border-slate-700/20","border-slate-100")}`}>
-                <span className={`w-20 flex-shrink-0 ${tc(dark,"text-slate-400","text-slate-500")}`}>{k}</span>
-                <span className={tc(dark,"text-white","text-slate-800")}>{v||"—"}</span>
-              </div>
-            ))}
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+              <h3 className={`font-bold mb-3 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Customer Details</h3>
+              {[["Name",project.customerName],["POC",project.pocName],["Email",project.customerEmail],["Phone",project.customerPhone],["Type",project.customerType||project.projectType],["Enquiry",project.enquiryType],["Pincode",project.customerPincode],["City",project.customerCity],["State",project.customerState],["Address",project.customerAddress]].filter(([,v])=>v).map(([k,v])=>(
+                <div key={k} className={`flex gap-3 text-sm py-1.5 border-b last:border-0 ${tc(dark,"border-slate-700/20","border-slate-100")}`}>
+                  <span className={`w-20 flex-shrink-0 ${tc(dark,"text-slate-400","text-slate-500")}`}>{k}</span>
+                  <span className={tc(dark,"text-white","text-slate-800")}>{v||"—"}</span>
+                </div>
+              ))}
+            </div>
+            <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+              <h3 className={`font-bold mb-3 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Solar Calculations</h3>
+              {[["Total Cost",fmtINR(vars.totalCost)],["Annual Generation",`${vars.annualGeneration.toLocaleString()} kWh`],["Annual Savings",fmtINR(vars.annualSavings)],["Payback Period",`${vars.paybackPeriod} years`],["25-Year ROI",`${vars.roi25}%`]].map(([k,v])=>(
+                <div key={k} className={`flex justify-between text-sm py-1.5 border-b last:border-0 ${tc(dark,"border-slate-700/20","border-slate-100")}`}>
+                  <span className={tc(dark,"text-slate-400","text-slate-500")}>{k}</span>
+                  <span className="text-amber-400 font-bold">{v}</span>
+                </div>
+              ))}
+            </div>
           </div>
+          {/* Tags section */}
           <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
-            <h3 className={`font-bold mb-3 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Solar Calculations</h3>
-            {[["Total Cost",fmtINR(vars.totalCost)],["Annual Generation",`${vars.annualGeneration.toLocaleString()} kWh`],["Annual Savings",fmtINR(vars.annualSavings)],["Payback Period",`${vars.paybackPeriod} years`],["25-Year ROI",`${vars.roi25}%`]].map(([k,v])=>(
-              <div key={k} className={`flex justify-between text-sm py-1.5 border-b last:border-0 ${tc(dark,"border-slate-700/20","border-slate-100")}`}>
-                <span className={tc(dark,"text-slate-400","text-slate-500")}>{k}</span>
-                <span className="text-amber-400 font-bold">{v}</span>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className={`font-bold text-sm ${tc(dark,"text-white","text-slate-800")}`}>Tags</h3>
+              <button onClick={()=>setTab("edit-tags")} className={`text-xs ${tc(dark,"text-amber-400 hover:text-amber-300","text-amber-600 hover:text-amber-700")}`}>+ Edit Tags</button>
+            </div>
+            {(project.tags||[]).length>0 ? (
+              <div className="flex flex-wrap gap-2">
+                {(project.tags||[]).map(t=>(
+                  <span key={t} className={`text-xs px-2.5 py-1 rounded-full font-medium ${tc(dark,"bg-amber-500/20 text-amber-300 border border-amber-500/30","bg-amber-100 text-amber-700 border border-amber-200")}`}>
+                    <span className="mr-1 opacity-60">#</span>{t}
+                  </span>
+                ))}
               </div>
-            ))}
+            ) : (
+              <p className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>No tags yet. <button onClick={()=>setEditingProject(true)} className={`text-amber-400 underline`}>Add tags via Edit Project</button></p>
+            )}
           </div>
         </div>
       )}
