@@ -137,6 +137,89 @@ function laneHex(colorKey) {
   return (LANE_COLORS.find(c=>c.key===colorKey)||LANE_COLORS[0]).hex;
 }
 
+// ── XLSX GENERATOR (pure JS, zero deps) ──────────────────────
+// Creates a real .xlsx Blob with dropdown data validation cells
+function buildUncompressedZip(files) {
+  const crcTbl = new Uint32Array(256);
+  for(let i=0;i<256;i++){let c=i;for(let j=0;j<8;j++)c=(c&1)?(c>>>1)^0xEDB88320:(c>>>1);crcTbl[i]=c>>>0;}
+  const crc32=(d)=>{let c=0xFFFFFFFF;for(let i=0;i<d.length;i++)c=(c>>>8)^crcTbl[(c^d[i])&0xFF];return(c^0xFFFFFFFF)>>>0;};
+  const u16=(n,b,o)=>{b[o]=n&0xFF;b[o+1]=(n>>8)&0xFF;};
+  const u32=(n,b,o)=>{b[o]=n&0xFF;b[o+1]=(n>>8)&0xFF;b[o+2]=(n>>16)&0xFF;b[o+3]=(n>>24)&0xFF;};
+  const enc=new TextEncoder();
+  const parts=[],cds=[];let off=0;
+  for(const {name,data} of files){
+    const nb=enc.encode(name),crc=crc32(data);
+    const lf=new Uint8Array(30+nb.length);
+    u32(0x04034b50,lf,0);u16(20,lf,4);u16(0,lf,6);u16(0,lf,8);u16(0,lf,10);u16(0,lf,12);
+    u32(crc,lf,14);u32(data.length,lf,18);u32(data.length,lf,22);u16(nb.length,lf,26);u16(0,lf,28);
+    lf.set(nb,30);parts.push(lf,data);
+    const cd=new Uint8Array(46+nb.length);
+    u32(0x02014b50,cd,0);u16(20,cd,4);u16(20,cd,6);u16(0,cd,8);u16(0,cd,10);u16(0,cd,12);u16(0,cd,14);
+    u32(crc,cd,16);u32(data.length,cd,20);u32(data.length,cd,24);u16(nb.length,cd,28);u16(0,cd,30);
+    u16(0,cd,32);u16(0,cd,34);u16(0,cd,36);u32(0,cd,38);u32(off,cd,42);cd.set(nb,46);
+    cds.push(cd);off+=lf.length+data.length;
+  }
+  const cdSz=cds.reduce((s,a)=>s+a.length,0);
+  const eo=new Uint8Array(22);
+  u32(0x06054b50,eo,0);u16(0,eo,4);u16(0,eo,6);u16(files.length,eo,8);u16(files.length,eo,10);
+  u32(cdSz,eo,12);u32(off,eo,16);u16(0,eo,20);
+  const all=[...parts,...cds,eo],tot=all.reduce((s,a)=>s+a.length,0);
+  const res=new Uint8Array(tot);let p=0;for(const a of all){res.set(a,p);p+=a.length;}
+  return res;
+}
+
+function createProjectImportXlsx({prefix,nextNum,customerTypes,units,laneNames,teamNames,enquiryTypes}) {
+  const enc=new TextEncoder();
+  const xs=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const col=i=>{let s='',n=i+1;while(n>0){const r=(n-1)%26;s=String.fromCharCode(65+r)+s;n=Math.floor((n-1)/26);}return s;};
+  const ref=(c,r)=>`${col(c)}${r}`;
+  const sc=(c,r,v,s='')=>typeof v==='number'
+    ?`<c r="${ref(c,r)}"${s?` s="${s}"`:''} ><v>${v}</v></c>`
+    :`<c r="${ref(c,r)}" t="inlineStr"${s?` s="${s}"`:''} ><is><t>${xs(v)}</t></is></c>`;
+
+  // Lookups hidden sheet — source for all dropdown validations
+  const lkLists=[customerTypes,units,laneNames,enquiryTypes,teamNames];
+  const lkHdrs=["Customer Type","Unit","Lane","Enquiry","Assigned To"];
+  const maxR=Math.max(...lkLists.map(l=>l.length),1);
+  let lkRows=`<row r="1">${lkHdrs.map((h,i)=>sc(i,1,h,'1')).join('')}</row>`;
+  for(let r=0;r<maxR;r++){
+    const cs=lkLists.map((lst,ci)=>r<lst.length?sc(ci,r+2,lst[r]):'').join('');
+    if(cs)lkRows+=`<row r="${r+2}">${cs}</row>`;
+  }
+
+  // Data validation — list from Lookups sheet columns
+  const dv=(sqref,lc,cnt)=>`<dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="1" errorTitle="Invalid" error="Select from the dropdown list" sqref="${sqref}"><formula1>Lookups!${col(lc)}$2:${col(lc)}${cnt+1}</formula1></dataValidation>`;
+  const dvs=[
+    dv('C2:C5000',0,customerTypes.length),
+    dv('L2:L5000',1,units.length),
+    dv('M2:M5000',2,laneNames.length),
+    dv('N2:N5000',3,enquiryTypes.length),
+    ...(teamNames.length?[dv('O2:O5000',4,teamNames.length)]:[]),
+  ];
+
+  const hdrs=["Project ID (blank=auto)","Customer Name *","Customer Type","POC Name","Customer Email","Phone *","Pincode","City","State","Address","Project Size *","Project Unit","Lane","Enquiry","Assigned To","Tags (comma sep)"];
+  const ex=[`${prefix}-${nextNum}`,"John Doe",customerTypes[0]||"Residential","","john@email.com","9876543210","400001","Mumbai","Maharashtra","123 Solar Street","8.5",units[0]||"kW",laneNames[0]||"New Enquiry",enquiryTypes[1]||"Warm",teamNames[0]||"","Rooftop,Priority"];
+  const cws=[22,25,18,18,25,14,10,14,18,28,12,12,22,10,20,22];
+
+  const sheet1=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView tabSelected="1" workbookViewId="0"><selection activeCell="A2"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols>${cws.map((w,i)=>`<col min="${i+1}" max="${i+1}" width="${w}" customWidth="1"/>`).join('')}</cols><sheetData><row r="1" ht="20" customHeight="1">${hdrs.map((h,i)=>sc(i,1,h,'1')).join('')}</row><row r="2">${ex.map((v,i)=>i===10&&!isNaN(+v)?sc(i,2,+v):sc(i,2,v)).join('')}</row></sheetData><dataValidations count="${dvs.length}">${dvs.join('')}</dataValidations></worksheet>`;
+  const sheet2=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${lkRows}</sheetData></worksheet>`;
+  const styles=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts><font><sz val="10"/><name val="Arial"/></font><font><b/><sz val="10"/><name val="Arial"/><color rgb="FF1E293B"/></font></fonts><fills><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFBBF24"/></patternFill></fill></fills><borders><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf></cellXfs></styleSheet>`;
+  const ct=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`;
+  const rels=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`;
+  const wbRels=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`;
+  const wb=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Projects" sheetId="1" r:id="rId1"/><sheet name="Lookups" sheetId="2" state="hidden" r:id="rId2"/></sheets></workbook>`;
+  const xlFiles=[
+    {name:'[Content_Types].xml',data:enc.encode(ct)},
+    {name:'_rels/.rels',data:enc.encode(rels)},
+    {name:'xl/workbook.xml',data:enc.encode(wb)},
+    {name:'xl/_rels/workbook.xml.rels',data:enc.encode(wbRels)},
+    {name:'xl/worksheets/sheet1.xml',data:enc.encode(sheet1)},
+    {name:'xl/worksheets/sheet2.xml',data:enc.encode(sheet2)},
+    {name:'xl/styles.xml',data:enc.encode(styles)},
+  ];
+  return new Blob([buildUncompressedZip(xlFiles)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+
 // ── INVOICE CONVERT TARGETS ───────────────────────────────────
 const INV_CONVERT_TARGETS = ["Proforma Invoice","Tax Invoice","Sales Order","Purchase Order","Delivery Challan"];
 
@@ -2502,71 +2585,93 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
   };
 
   // Excel import
-  const importExcel = (e) => {
+  // ── IMPORT: shared row→project mapper ─────────────────────────
+  const processImportRows = (rows) => {
+    const prefix = developer?.projectPrefix || "PRJ";
+    const allNums = projects
+      .filter(p=>p.developerId===currentUser.developerId)
+      .map(p=>{ const m=(p.projectId||"").match(/(\d+)$/); return m?parseInt(m[1]):0; });
+    let nextNum = Math.max(developer?.projectNextNum||1001, ...allNums, 0);
+
+    const imported = rows.map((cols,i)=>{
+      const laneByName = lanes.find(l=>l.name.toLowerCase()===(cols[12]||"").toLowerCase());
+      const userByName = devTeam.find(u=>u.name.toLowerCase()===(cols[14]||"").toLowerCase());
+      const providedId = (cols[0]||"").trim()
+        .replace(/^Project ID.*$/i,"") // strip if header leaked in
+        .replace(/\(blank.*\)/i,"").trim();
+      let projectId = providedId || (`${prefix}-${++nextNum}`);
+
+      return {
+        id:`p${Date.now()}${i}`,
+        projectId,
+        customerName: cols[1]||"",
+        customerType: cols[2]||"Residential",
+        pocName: cols[3]||"",
+        customerEmail: cols[4]||"",
+        customerPhone: cols[5]||"",
+        customerPincode: cols[6]||"",
+        customerCity: cols[7]||"",
+        customerState: cols[8]||"",
+        customerAddress: cols[9]||"",
+        projectSize: parseFloat(cols[10])||0,
+        projectUnit: cols[11]||"kW",
+        laneId: laneByName?.id || lanes[0]?.id||"",
+        enquiryType: cols[13]||"Warm",
+        assignedUserId: userByName?.id || currentUser.id,
+        tags: (cols[15]||"").split(",").map(t=>t.trim()).filter(Boolean),
+        developerId: currentUser.developerId,
+        userId: userByName?.id || currentUser.id,
+        createdAt: TODAY,
+        lastActivity: TODAY,
+        activityLog: [{id:`act${Date.now()}`,type:"created",message:"Imported from file",by:currentUser.name,at:new Date().toISOString()}],
+      };
+    }).filter(p=>p.customerName);
+
+    const maxImportedNum = Math.max(
+      ...imported.map(p=>{ const m=(p.projectId||"").match(/(\d+)$/); return m?parseInt(m[1]):0; }), 0
+    );
+    setDevelopers(ds=>ds.map(d=>d.id===developer.id
+      ? {...d,projectNextNum:Math.max((d.projectNextNum||1001),maxImportedNum+1)}
+      : d
+    ));
+    setProjects(ps=>[...ps,...imported]);
+    toast.show({message:`Imported ${imported.length} project(s).`});
+  };
+
+  const importExcel = async (e) => {
     const file = e.target.files[0]; if(!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const text = ev.target.result;
-      const lines = text.split("\n").slice(1);
-
-      // Build a running counter starting above the highest existing project number
-      const prefix = developer?.projectPrefix || "PRJ";
-      const allExistingNums = projects
-        .filter(p=>p.developerId===currentUser.developerId)
-        .map(p=>{ const m=(p.projectId||"").match(/(d+)$/); return m?parseInt(m[1]):0; });
-      let nextNum = Math.max(developer?.projectNextNum||1001, ...allExistingNums) + 0;
-      // We'll bump it as we assign IDs
-
-      const imported = lines.filter(l=>l.trim()).map((line,i)=>{
-        const cols = line.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(x=>x.replace(/^"|"$/g,"").replace(/""/g,'"').trim());
-        const laneByName = lanes.find(l=>l.name.toLowerCase()===(cols[13]||"").toLowerCase());
-        const userByName = devTeam.find(u=>u.name.toLowerCase()===(cols[15]||"").toLowerCase());
-
-        // Use provided project ID if valid & unique, otherwise assign next auto ID
-        const providedId = (cols[0]||"").trim();
-        let projectId;
-        if (providedId) {
-          projectId = providedId;
-        } else {
-          projectId = `${prefix}-${nextNum}`;
-          nextNum++;
-        }
-
-        return {
-          id:`p${Date.now()}${i}`,
-          projectId,
-          customerName: cols[1]||"",
-          customerType: cols[2]||"Residential",
-          pocName: cols[3]||"",
-          customerEmail: cols[4]||"",
-          customerPhone: cols[5]||"",
-          customerPincode: cols[7]||"",
-          customerCity: cols[8]||"",
-          customerState: cols[9]||"",
-          customerAddress: cols[10]||"",
-          projectSize: parseFloat(cols[11])||0,
-          projectUnit: cols[12]||"kW",
-          laneId: laneByName?.id || lanes[0]?.id||"",
-          enquiryType: cols[14]||"Warm",
-          assignedUserId: userByName?.id || currentUser.id,
-          tags: (cols[16]||"").split(",").map(t=>t.trim()).filter(Boolean),
-          developerId: currentUser.developerId,
-          userId: userByName?.id || currentUser.id,
-          createdAt: TODAY,
-          lastActivity: TODAY,
-          activityLog: [{id:`act${Date.now()}`,type:"created",message:"Imported from CSV",by:currentUser.name,at:new Date().toISOString()}],
-        };
-      });
-
-      // Update developer's nextNum to be above all imported IDs
-      const maxImportedNum = Math.max(...imported.map(p=>{ const m=(p.projectId||"").match(/(d+)$/); return m?parseInt(m[1]):0; }), 0);
-      setDevelopers(ds=>ds.map(d=>d.id===developer.id?{...d,projectNextNum:Math.max((d.projectNextNum||1001),maxImportedNum+1)}:d));
-
-      setProjects(ps=>[...ps,...imported]);
-      toast.show({message:`Imported ${imported.length} project(s).`});
-    };
-    reader.readAsText(file);
     e.target.value="";
+    const isXlsx = file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls');
+
+    if (isXlsx) {
+      // Parse xlsx using SheetJS loaded from CDN
+      try {
+        const XLSX = await import('https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs');
+        const ab = await file.arrayBuffer();
+        const wb = XLSX.read(new Uint8Array(ab));
+        // Use the "Projects" sheet if present, otherwise first sheet
+        const wsName = wb.SheetNames.includes('Projects') ? 'Projects' : wb.SheetNames[0];
+        const ws = wb.Sheets[wsName];
+        const all = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+        // Skip header row; map to string arrays
+        const rows = all.slice(1).filter(r=>r.some(v=>String(v).trim())).map(r=>r.map(v=>String(v).trim()));
+        processImportRows(rows);
+      } catch(err) {
+        console.error(err);
+        toast.show({message:"Could not parse Excel file. Please save as CSV and re-upload."});
+      }
+    } else {
+      // CSV parsing (original behaviour)
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const lines = ev.target.result.split("\n").slice(1);
+        const rows = lines
+          .filter(l=>l.trim())
+          .map(line=>line.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(x=>x.replace(/^"|"$/g,"").replace(/""/g,'"').trim()));
+        processImportRows(rows);
+      };
+      reader.readAsText(file);
+    }
   };
 
   const addCustomCity = (city) => setDevelopers(ds=>ds.map(d=>d.id===developer?.id?{...d,customCities:[...(d.customCities||[]),city]}:d));
@@ -2950,120 +3055,101 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
 
       {/* Import Modal */}
       {showImportModal&&(
-        <Modal title="Import Projects from CSV" onClose={()=>setShowImportModal(false)} wide>
-          {/* Step 1 */}
+        <Modal title="Import Projects from Excel / CSV" onClose={()=>setShowImportModal(false)} wide>
+
+          {/* ── Step 1: Download template ── */}
           <div className={`p-4 rounded-xl mb-4 border ${tc(dark,"bg-slate-800/50 border-slate-700","bg-slate-50 border-slate-200")}`}>
-            <div className="flex items-center gap-2 mb-2">
+            <div className="flex items-center gap-2 mb-1.5">
               <span className="w-5 h-5 rounded-full bg-amber-500 text-slate-900 flex items-center justify-center font-bold text-xs flex-shrink-0">1</span>
-              <h4 className={`font-bold text-sm ${tc(dark,"text-white","text-slate-800")}`}>Download the template CSV</h4>
+              <h4 className={`font-bold text-sm ${tc(dark,"text-white","text-slate-800")}`}>Download the Excel template</h4>
             </div>
             <p className={`text-xs mb-3 ${tc(dark,"text-slate-400","text-slate-500")}`}>
-              The template includes correct column headers, an example row, and valid options for each field based on your account settings.
+              The template is a real <strong>.xlsx</strong> file with <strong>dropdown cells</strong> for Customer Type, Unit, Lane, Enquiry, and Assigned To — pre-loaded with your account's valid values.
             </p>
-            {/* Column reference table */}
-            <div className={`rounded-lg overflow-hidden border mb-3 ${tc(dark,"border-slate-700","border-slate-200")}`}>
-              <table className="w-full text-xs">
-                <thead><tr className={`${tc(dark,"bg-slate-700 text-slate-300","bg-slate-100 text-slate-600")}`}>
-                  <th className="px-3 py-1.5 text-left font-medium">Column</th>
-                  <th className="px-3 py-1.5 text-left font-medium">Valid Values</th>
-                  <th className="px-3 py-1.5 text-left font-medium w-16">Required</th>
+
+            {/* Column quick-reference */}
+            <div className={`rounded-lg border overflow-hidden text-xs mb-3 ${tc(dark,"border-slate-700","border-slate-200")}`}>
+              <table className="w-full">
+                <thead><tr className={`${tc(dark,"bg-slate-700/80 text-slate-300","bg-slate-100 text-slate-600")}`}>
+                  <th className="px-2.5 py-1.5 text-left font-medium">Column</th>
+                  <th className="px-2.5 py-1.5 text-left font-medium">Valid Options (dropdown in Excel)</th>
+                  <th className="px-2.5 py-1.5 w-14 font-medium text-center">Req</th>
                 </tr></thead>
                 <tbody>
-                  {[
-                    ["Project ID","Leave blank for auto-assign, or enter custom ID","No"],
-                    ["Customer Name","Any text","Yes"],
-                    ["Customer Type",["Residential","Commercial","Industrial","Government","Other"].join(" / "),"Yes"],
-                    ["POC Name","Any text (for commercial/industrial)","No"],
-                    ["Customer Email","Valid email address","No"],
-                    ["Phone","10-digit number","Yes"],
-                    ["Email","Alternate email","No"],
-                    ["Pincode","6-digit pincode","No"],
-                    ["City","City name","No"],
-                    ["State","State name","No"],
-                    ["Address","Full address","No"],
-                    ["Project Size","Numeric value, e.g. 8.5","Yes"],
-                    ["Project Unit",[...(developer?.customUnits||[]),...PROJECT_UNITS].filter((v,i,a)=>a.indexOf(v)===i).join(" / "),"Yes"],
-                    ["Lane",lanes.map(l=>l.name).join(" / "),"No"],
-                    ["Enquiry","Hot / Warm / Cold","No"],
-                    ["Assigned To",devTeam.map(u=>u.name).join(" / ")||"Your name","No"],
-                    ["Tags","Comma-separated, e.g. Rooftop,Priority","No"],
-                  ].map(([col,vals,req])=>(
-                    <tr key={col} className={`border-t ${tc(dark,"border-slate-700/50 text-slate-300","border-slate-100 text-slate-700")}`}>
-                      <td className="px-3 py-1.5 font-medium whitespace-nowrap">{col}</td>
-                      <td className={`px-3 py-1.5 ${tc(dark,"text-slate-400","text-slate-500")}`}>{vals}</td>
-                      <td className="px-3 py-1.5 text-center">{req==="Yes"?<span className="text-amber-400 font-bold">✓</span>:<span className={`${tc(dark,"text-slate-600","text-slate-400")}`}>—</span>}</td>
-                    </tr>
-                  ))}
+                  {(()=>{
+                    const ctypes=["Residential","Commercial","Industrial","Government","Other"];
+                    const ulist=[...(developer?.customUnits||[]),...PROJECT_UNITS].filter((v,i,a)=>a.indexOf(v)===i);
+                    const llist=lanes.map(l=>l.name);
+                    const tlist=devTeam.map(u=>u.name);
+                    return [
+                      ["Project ID","Leave blank — auto-assigned from your prefix + next number",""],
+                      ["Customer Name","Any text","✓"],
+                      ["Customer Type",ctypes.join(" · "),"✓"],
+                      ["POC Name","For commercial/industrial projects",""],
+                      ["Customer Email","Valid email address",""],
+                      ["Phone","10-digit number","✓"],
+                      ["Pincode","6-digit pincode",""],
+                      ["City","City name",""],
+                      ["State","State / UT name",""],
+                      ["Address","Full address",""],
+                      ["Project Size","Numeric, e.g. 8.5","✓"],
+                      ["Project Unit",ulist.join(" · "),"✓"],
+                      ["Lane",llist.join(" · ")||"(no lanes defined)",""],
+                      ["Enquiry","Hot · Warm · Cold",""],
+                      ["Assigned To",tlist.join(" · ")||"(no team members)",""],
+                      ["Tags","Comma-separated tags, e.g. Rooftop,Priority",""],
+                    ].map(([col,vals,req])=>(
+                      <tr key={col} className={`border-t ${tc(dark,"border-slate-700/40 text-slate-300","border-slate-100 text-slate-700")}`}>
+                        <td className="px-2.5 py-1.5 font-medium whitespace-nowrap">{col}</td>
+                        <td className={`px-2.5 py-1.5 ${tc(dark,"text-slate-400","text-slate-500")}`}>{vals}</td>
+                        <td className="px-2.5 py-1.5 text-center text-amber-400 font-bold">{req}</td>
+                      </tr>
+                    ));
+                  })()}
                 </tbody>
               </table>
             </div>
+
             <Btn size="sm" onClick={()=>{
-              const customerTypes = ["Residential","Commercial","Industrial","Government","Other"];
-              const units = [...(developer?.customUnits||[]),...PROJECT_UNITS].filter((v,i,a)=>a.indexOf(v)===i);
-              const laneNames = lanes.map(l=>l.name);
-              const teamNames = devTeam.map(u=>u.name);
-              const prefix = developer?.projectPrefix||"SP";
-              const nextN = developer?.projectNextNum||1001;
-              // Header row with valid options inline
-              const headers = [
-                "Project ID (blank = auto)",
-                "Customer Name *",
-                `Customer Type (${customerTypes.join("|")})`,
-                "POC Name",
-                "Customer Email",
-                "Phone *",
-                "Email (alt)",
-                "Pincode",
-                "City",
-                "State",
-                "Address",
-                "Project Size *",
-                `Project Unit (${units.join("|")})`,
-                `Lane (${laneNames.join("|")})`,
-                "Enquiry (Hot|Warm|Cold)",
-                `Assigned To (${teamNames.join("|")||"Unassigned"})`,
-                "Tags (comma separated)"
-              ];
-              const example = [
-                `${prefix}-${nextN}`,
-                "John Doe",
-                "Residential",
-                "",
-                "john@email.com",
-                "9876543210",
-                "",
-                "400001",
-                "Mumbai",
-                "Maharashtra",
-                "123 Solar Street",
-                "8.5",
-                units[0]||"kW",
-                laneNames[0]||"New Enquiry",
-                "Warm",
-                teamNames[0]||"",
-                "Rooftop,Priority"
-              ];
-              const rows = [headers, example];
-              const csv = rows.map(r=>r.map(x=>`"${String(x).replace(/"/g,'""')}"`).join(",")).join("\n");
-              const blob = new Blob([csv],{type:"text/csv"});
+              const ctypes=["Residential","Commercial","Industrial","Government","Other"];
+              const ulist=[...(developer?.customUnits||[]),...PROJECT_UNITS].filter((v,i,a)=>a.indexOf(v)===i);
+              const blob = createProjectImportXlsx({
+                prefix: developer?.projectPrefix||"SP",
+                nextNum: developer?.projectNextNum||1001,
+                customerTypes: ctypes,
+                units: ulist,
+                laneNames: lanes.map(l=>l.name),
+                teamNames: devTeam.map(u=>u.name),
+                enquiryTypes: ["Hot","Warm","Cold"],
+              });
               const url = URL.createObjectURL(blob);
-              const a = document.createElement("a"); a.href=url; a.download=`${developer?.companyName||"SolarPro"}_import_template.csv`; a.click();
+              const a = document.createElement("a");
+              a.href=url;
+              a.download=`${(developer?.companyName||"SolarPro").replace(/\s+/g,"_")}_import_template.xlsx`;
+              a.click();
               URL.revokeObjectURL(url);
-            }}><Icon name="download" size={14}/>Download Template CSV</Btn>
+            }}>
+              <Icon name="download" size={14}/>Download Excel Template (.xlsx)
+            </Btn>
           </div>
 
-          {/* Step 2 */}
+          {/* ── Step 2: Upload ── */}
           <div className={`p-4 rounded-xl border ${tc(dark,"bg-slate-800/50 border-slate-700","bg-slate-50 border-slate-200")}`}>
-            <div className="flex items-center gap-2 mb-2">
+            <div className="flex items-center gap-2 mb-1.5">
               <span className="w-5 h-5 rounded-full bg-amber-500 text-slate-900 flex items-center justify-center font-bold text-xs flex-shrink-0">2</span>
-              <h4 className={`font-bold text-sm ${tc(dark,"text-white","text-slate-800")}`}>Upload your filled CSV</h4>
+              <h4 className={`font-bold text-sm ${tc(dark,"text-white","text-slate-800")}`}>Upload your filled file</h4>
             </div>
             <p className={`text-xs mb-3 ${tc(dark,"text-slate-400","text-slate-500")}`}>
-              Keep the header row intact. Each row becomes a new project. Project IDs from the file will be preserved; blank IDs are auto-assigned.
+              Upload the filled <strong>.xlsx</strong> template, or export it as <strong>.csv</strong> — both formats are accepted.
+              Project IDs in the file are preserved; empty Project ID cells are auto-assigned.
             </p>
-            <div className="flex gap-2 flex-wrap">
-              <input ref={importFileRef} type="file" accept=".csv" onChange={e=>{ importExcel(e); setShowImportModal(false); }} className="hidden"/>
-              <Btn onClick={()=>importFileRef.current?.click()}><Icon name="import" size={14}/>Choose CSV File to Upload</Btn>
+            <div className="flex gap-2 flex-wrap items-center">
+              <input ref={importFileRef} type="file" accept=".xlsx,.xls,.csv"
+                onChange={e=>{ importExcel(e); setShowImportModal(false); }} className="hidden"/>
+              <Btn onClick={()=>importFileRef.current?.click()}>
+                <Icon name="import" size={14}/>Choose File (.xlsx or .csv)
+              </Btn>
+              <span className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>Excel &amp; CSV both accepted</span>
             </div>
           </div>
         </Modal>
