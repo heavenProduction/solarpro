@@ -2326,6 +2326,8 @@ const SettingsPage = (props) => {
   const [newLane, setNewLane] = useState({name:"",color:"slate"});
   const [newUnit, setNewUnit] = useState("");
   const [newTag, setNewTag] = useState("");
+  const [newSName, setNewSName] = useState("");
+  const [newSColor, setNewSColor] = useState("sky");
   const [deleteModal, setDeleteModal] = useState(null); // {laneId, transferTo}
   const F = (k,v) => setForm(f=>({...f,[k]:v}));
   const save = () => { setDevelopers(ds=>ds.map(d=>d.id===developer.id?{...d,...form}:d)); toast.show({message:"Settings saved!"}); };
@@ -2563,8 +2565,6 @@ const SettingsPage = (props) => {
 
       {settingsTab==="task-statuses"&&(()=>{
         const taskStatuses = developer?.taskStatuses||[];
-        const [newSName, setNewSName] = useState("");
-        const [newSColor, setNewSColor] = useState("sky");
         const addTaskStatus = () => {
           if (!newSName.trim()||TASK_STATUS_BUILTIN.includes(newSName.trim())) return;
           const ns = {id:`ts${Date.now()}`,name:newSName.trim(),hex:laneHex(newSColor)};
@@ -4137,6 +4137,7 @@ img,svg{display:block;max-width:100%;height:auto}[hidden]{display:none}
 
 const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, proposals, setProposals, templates, developer, currentUser, onBack, setCurrentPage, setProjects, users, tasks, setTasks }) => {
   const { dark } = useTheme();
+  const toast = useToast();
   const [tab, setTab] = useState("info");
   const [newNote, setNewNote] = useState("");
   const [noteFileRef] = [useRef()];
@@ -4164,12 +4165,20 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
   const SEF = (k,v) => setEF(f=>({...f,[k]:v}));
   // Reset ef when editingProject opens to pick up latest project data
   useEffect(()=>{ if(editingProject) setEF({...project, countryCode:"+91", customerPhone:(project.customerPhone||"").replace(/^\+\d+\s*/,""), tags:project.tags||[]}); },[editingProject]);
+  // Reset task tab filters when navigating to a different project
+  useEffect(()=>{ setTaskSearch(""); setTaskStatusF("all"); setTaskPriorityF("all"); setTaskUserF("all"); setShowTaskAdd(false); },[project.id]);
   // Activity log state — hoisted from IIFE
   const [actQ, setActQ] = useState("");
   const [actType, setActType] = useState("all");
   // Note edit/delete state
   const [editingNoteId, setEditingNoteId] = useState(null);
   const [editNoteContent, setEditNoteContent] = useState("");
+  // Task tab states (hoisted from IIFE)
+  const [taskSearch, setTaskSearch]       = useState("");
+  const [taskStatusF, setTaskStatusF]     = useState("all");
+  const [taskPriorityF, setTaskPriorityF] = useState("all");
+  const [taskUserF, setTaskUserF]         = useState("all");
+  const [showTaskAdd, setShowTaskAdd]     = useState(false);
 
   const projNotes     = notes.filter(n=>n.projectId===project.id);
   const projDocs      = documents.filter(d=>d.projectId===project.id);
@@ -4432,13 +4441,6 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
 
       {/* TASKS TAB */}
       {tab==="tasks"&&(()=>{
-        const [taskSearch, setTaskSearch]     = useState("");
-        const [taskStatusF, setTaskStatusF]   = useState("all");
-        const [taskPriorityF, setTaskPriorityF] = useState("all");
-        const [taskUserF, setTaskUserF]       = useState("all");
-        const [showTaskAdd, setShowTaskAdd]   = useState(false);
-        const toast2 = useToast();
-
         const projTasks = (tasks||[])
           .filter(t=>t.projectId===project.id)
           .map(computeTaskStatus)
@@ -4475,7 +4477,7 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
           };
           setTasks(ts=>[...ts,newT]);
           setShowTaskAdd(false);
-          toast2.show({message:`Task "${newT.taskName}" created.`});
+          toast.show({message:`Task "${newT.taskName}" created.`});
         };
 
         return (
@@ -5444,9 +5446,11 @@ const TaskFormModal = ({task, projects, users, currentUser, developer, onSave, o
 };
 
 // ── TASK DETAIL MODAL ─────────────────────────────────────────
-const TaskDetailModal = ({task, tasks, setTasks, users, projects, currentUser, developer, onClose}) => {
+const TaskDetailModal = ({task: taskSnapshot, tasks, setTasks, users, projects, currentUser, developer, onClose}) => {
   const {dark} = useTheme();
   const [editing, setEditing] = useState(false);
+  // Always read live task from tasks array so subtask toggles reflect immediately
+  const task = tasks.find(t=>t.id===taskSnapshot.id) || taskSnapshot;
   const project = projects.find(p=>p.id===task.projectId);
   const assignees = (task.assignedTo||[]).map(id=>users.find(u=>u.id===id)).filter(Boolean);
   const canEdit = canEditTask(task, currentUser);
