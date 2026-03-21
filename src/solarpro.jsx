@@ -438,14 +438,24 @@ const tc = (dark, darkCls, lightCls) => dark ? darkCls : lightCls;
 // ── MODAL ─────────────────────────────────────────────────────
 const Modal = ({ title, onClose, children, wide=false }) => {
   const { dark } = useTheme();
+  // Lock body scroll when modal is open
+  useEffect(()=>{
+    document.body.style.overflow="hidden";
+    return ()=>{document.body.style.overflow="";};
+  },[]);
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className={`${tc(dark,"bg-[#0f172a] border-slate-700","bg-white border-slate-200")} border rounded-2xl shadow-2xl ${wide?"w-full max-w-3xl":"w-full max-w-lg"} max-h-[90vh] overflow-y-auto`} onClick={e=>e.stopPropagation()}>
-        <div className={`flex items-center justify-between p-5 border-b ${tc(dark,"border-slate-700/60 bg-[#0f172a]","border-slate-200 bg-white")} sticky top-0 z-10 rounded-t-2xl`}>
-          <h2 className={`text-base font-bold ${tc(dark,"text-white","text-slate-800")}`}>{title}</h2>
-          <button onClick={onClose} className={`p-1 rounded-lg transition-colors ${tc(dark,"text-slate-400 hover:text-white hover:bg-slate-700","text-slate-400 hover:text-slate-600 hover:bg-slate-100")}`}><Icon name="x" size={18}/></button>
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center sm:p-4" onClick={onClose}>
+      {/* Mobile: slides up from bottom as a sheet. Desktop: centered modal */}
+      <div className={`${tc(dark,"bg-[#0f172a] border-slate-700","bg-white border-slate-200")} border-t sm:border rounded-t-3xl sm:rounded-2xl shadow-2xl w-full ${wide?"sm:max-w-3xl":"sm:max-w-lg"} max-h-[92vh] sm:max-h-[90vh] overflow-y-auto`} onClick={e=>e.stopPropagation()}>
+        {/* Drag handle (mobile) */}
+        <div className="flex justify-center pt-3 pb-1 sm:hidden">
+          <div className={`w-10 h-1 rounded-full ${tc(dark,"bg-slate-600","bg-slate-300")}`}/>
         </div>
-        <div className="p-5">{children}</div>
+        <div className={`flex items-center justify-between px-5 py-4 border-b ${tc(dark,"border-slate-700/60 bg-[#0f172a]","border-slate-200 bg-white")} sticky top-0 z-10 rounded-t-3xl sm:rounded-t-2xl`}>
+          <h2 className={`text-base font-bold ${tc(dark,"text-white","text-slate-800")}`}>{title}</h2>
+          <button onClick={onClose} className={`p-1.5 rounded-lg transition-colors ${tc(dark,"text-slate-400 hover:text-white hover:bg-slate-700","text-slate-400 hover:text-slate-600 hover:bg-slate-100")}`}><Icon name="x" size={18}/></button>
+        </div>
+        <div className="p-4 sm:p-5 pb-8 sm:pb-5">{children}</div>
       </div>
     </div>
   );
@@ -481,8 +491,8 @@ const Btn = ({ children, onClick, variant="primary", size="md", disabled, classN
     outline:  "border border-slate-600 text-slate-300 hover:border-amber-400 hover:text-amber-400",
     success:  "bg-emerald-600 hover:bg-emerald-500 text-white font-bold",
   };
-  const sizes = { sm:"px-2.5 py-1.5 text-xs", md:"px-4 py-2 text-sm", lg:"px-6 py-2.5 text-sm" };
-  return <button type={type} onClick={onClick} disabled={disabled} className={`inline-flex items-center gap-1.5 rounded-lg transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed ${variants[variant]||variants.primary} ${sizes[size]} ${className}`}>{children}</button>;
+  const sizes = { sm:"px-2.5 py-1.5 text-xs min-h-[32px]", md:"px-4 py-2 text-sm min-h-[36px]", lg:"px-6 py-2.5 text-sm min-h-[40px]" };
+  return <button type={type} onClick={onClick} disabled={disabled} className={`inline-flex items-center gap-1.5 rounded-lg transition-all duration-150 touch-manipulation disabled:opacity-50 disabled:cursor-not-allowed ${variants[variant]||variants.primary} ${sizes[size]} ${className}`}>{children}</button>;
 };
 
 // ── CITY FIELD (typeahead with custom cities) ─────────────────
@@ -579,7 +589,7 @@ const SearchBar = ({ value, onChange, placeholder="Search..." }) => {
 };
 
 // ── STAT CARD ─────────────────────────────────────────────────
-const StatCard = ({ label, value, icon, color="amber", sub }) => {
+const StatCard = ({ label, value, icon, color="amber", sub, onClick }) => {
   const { dark } = useTheme();
   return (
     <div className={`border rounded-xl p-5 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
@@ -954,10 +964,10 @@ const InvoiceItemEditor = ({ items, setItems }) => {
           <div key={i} className={`border rounded-xl p-3 ${tc(dark,"bg-slate-800/50 border-slate-700","bg-slate-50 border-slate-200")}`}>
             <div className="grid grid-cols-12 gap-2">
               <div className="col-span-5"><input value={item.name} onChange={e=>updateItem(i,"name",e.target.value)} placeholder="Description" className={`w-full text-sm px-2 py-1.5 rounded-lg border ${tc(dark,"bg-slate-700 border-slate-600 text-white placeholder-slate-400","bg-white border-slate-300 text-slate-800")} focus:outline-none`}/></div>
-              <div className="col-span-2"><input type="number" value={item.qty} onChange={e=>updateItem(i,"qty",parseFloat(e.target.value)||1)} placeholder="Qty" className={`w-full text-sm px-2 py-1.5 rounded-lg border ${tc(dark,"bg-slate-700 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")} focus:outline-none`}/></div>
-              <div className="col-span-2"><input type="number" value={item.price} onChange={e=>updateItem(i,"price",parseFloat(e.target.value)||0)} placeholder="Price" className={`w-full text-sm px-2 py-1.5 rounded-lg border ${tc(dark,"bg-slate-700 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")} focus:outline-none`}/></div>
-              <div className="col-span-2"><select value={item.gst} onChange={e=>updateItem(i,"gst",parseFloat(e.target.value))} className={`w-full text-sm px-2 py-1.5 rounded-lg border ${tc(dark,"bg-slate-700 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")} focus:outline-none`}>{[0,5,8.9,12,13.8,18,28].map(r=><option key={r} value={r}>{r}%</option>)}</select></div>
-              <div className="col-span-1 flex items-center justify-center"><button onClick={()=>removeItem(i)} className="text-red-400 hover:text-red-300 transition-colors"><Icon name="trash" size={14}/></button></div>
+              <div className="col-span-4 sm:col-span-2"><input type="number" value={item.qty} onChange={e=>updateItem(i,"qty",parseFloat(e.target.value)||1)} placeholder="Qty" className={`w-full text-sm px-2 py-1.5 rounded-lg border ${tc(dark,"bg-slate-700 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")} focus:outline-none`}/></div>
+              <div className="col-span-4 sm:col-span-2"><input type="number" value={item.price} onChange={e=>updateItem(i,"price",parseFloat(e.target.value)||0)} placeholder="Price" className={`w-full text-sm px-2 py-1.5 rounded-lg border ${tc(dark,"bg-slate-700 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")} focus:outline-none`}/></div>
+              <div className="col-span-3 sm:col-span-2"><select value={item.gst} onChange={e=>updateItem(i,"gst",parseFloat(e.target.value))} className={`w-full text-sm px-2 py-1.5 rounded-lg border ${tc(dark,"bg-slate-700 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")} focus:outline-none`}>{[0,5,8.9,12,13.8,18,28].map(r=><option key={r} value={r}>{r}%</option>)}</select></div>
+              <div className="col-span-1 flex items-center justify-center sm:justify-center"><button onClick={()=>removeItem(i)} className="text-red-400 hover:text-red-300 transition-colors"><Icon name="trash" size={14}/></button></div>
             </div>
           </div>
         ))}
@@ -1070,8 +1080,8 @@ const InvoiceListView = ({ invoices, developers, projects, users, onView, onPrin
 
       {/* Search + Sort + Filter bar */}
       <div className={`border rounded-xl mb-3 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
-        <div className="flex flex-wrap gap-2 p-3 items-center">
-          <div className={`flex items-center gap-2 flex-1 min-w-48 border rounded-lg px-3 py-1.5 ${tc(dark,"bg-slate-800 border-slate-600","bg-slate-50 border-slate-300")}`}>
+        <div className="flex flex-wrap gap-2 p-3 items-center w-full min-w-0">
+          <div className={`flex items-center gap-2 flex-1 min-w-0 border rounded-lg px-3 py-1.5 ${tc(dark,"bg-slate-800 border-slate-600","bg-slate-50 border-slate-300")}`}>
             <Icon name="search" size={14}/>
             <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by ID, customer, type…" className={`flex-1 bg-transparent text-sm focus:outline-none ${tc(dark,"text-white placeholder-slate-500","text-slate-800 placeholder-slate-400")}`}/>
             {search&&<button onClick={()=>setSearch("")} className={tc(dark,"text-slate-500 hover:text-white","text-slate-400 hover:text-slate-700")}>×</button>}
@@ -1146,7 +1156,7 @@ const InvoiceListView = ({ invoices, developers, projects, users, onView, onPrin
         </div>
       ) : (
         <div className={`border rounded-xl overflow-hidden ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm" style={{minWidth:640}}>
             <thead><tr className={`border-b ${tc(dark,"border-slate-700 bg-slate-800/30","border-slate-200 bg-slate-50")}`}>
               {[["Doc #",""],["Type",""],["Customer","cust"],["Amount","amt"],["Date","date"],["Status",""],["Actions",""]].map(([h,sk])=>(
                 <th key={h} onClick={sk?()=>setSortBy(s=>s===sk+'_desc'?sk+'_asc':sk+'_desc'):undefined}
@@ -1205,7 +1215,7 @@ const InvoiceListView = ({ invoices, developers, projects, users, onView, onPrin
                 );
               })}
             </tbody>
-          </table>
+          </table></div>
         </div>
       )}
     </div>
@@ -1236,7 +1246,7 @@ const LoginPage = ({ onLogin, allUsers }) => {
   const demos = [["Super Admin","admin@solarpro.io","Admin@123"],["Dev Admin","ceo@sunpower.com","Sun@123"],["User","sales@sunpower.com","Sales@123"]];
 
   return (
-    <div className="min-h-screen bg-[#060c18] flex items-center justify-center p-4 relative overflow-hidden">
+    <div className="min-h-screen bg-[#060c18] flex items-center justify-center p-4 sm:p-6 relative overflow-hidden">
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute top-[-10%] left-[5%] w-[500px] h-[500px] bg-amber-500/5 rounded-full blur-3xl"/>
         <div className="absolute bottom-[-10%] right-[5%] w-[400px] h-[400px] bg-orange-500/5 rounded-full blur-3xl"/>
@@ -1281,7 +1291,7 @@ const LoginPage = ({ onLogin, allUsers }) => {
 };
 
 // ── SIDEBAR ────────────────────────────────────────────────────
-const Sidebar = ({ user, currentPage, setPage, onLogout, developer }) => {
+const Sidebar = ({ user, currentPage, setPage, onLogout, developer, mobileOpen, setMobileOpen }) => {
   const { dark, toggle } = useTheme();
   const superNav = [
     {id:"dashboard",label:"Dashboard",icon:"home"},
@@ -1312,26 +1322,32 @@ const Sidebar = ({ user, currentPage, setPage, onLogout, developer }) => {
   const itemActive = tc(dark,"bg-amber-500/15 text-amber-400 border border-amber-500/20","bg-amber-50 text-amber-700 border border-amber-200");
   const itemInactive = tc(dark,"text-slate-400 hover:text-white hover:bg-slate-800/60","text-slate-500 hover:text-slate-800 hover:bg-slate-100");
 
-  return (
-    <div className={`w-56 border-r flex flex-col h-full flex-shrink-0 ${bg}`}>
+  const navigate = (id) => { setPage(id); setMobileOpen(false); };
+
+  // Bottom nav items (max 5 for mobile)
+  const bottomNav = nav.slice(0, 5);
+
+  const sidebarContent = (
+    <>
       <div className={`p-4 border-b ${tc(dark,"border-slate-800","border-slate-200")}`}>
         <div className="flex items-center gap-2.5">
           {developer?.logo ? <img src={developer.logo} alt="logo" className="w-8 h-8 rounded-lg object-cover border border-slate-200"/> : <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-md shadow-amber-500/20"><Icon name="sun" size={16}/></div>}
           <div>
             <div className={`text-sm font-black ${tc(dark,"text-white","text-slate-800")}`} style={{fontFamily:"'Orbitron',monospace"}}>SOLAR<span className="text-amber-400">PRO</span></div>
-            <div className={`text-[10px] truncate max-w-[110px] ${tc(dark,"text-slate-500","text-slate-400")}`}>{user.role===ROLES.SUPER_ADMIN?"Platform Admin":developer?.companyName||"Dashboard"}</div>
+            <div className={`text-[10px] truncate max-w-[140px] ${tc(dark,"text-slate-500","text-slate-400")}`}>{user.role===ROLES.SUPER_ADMIN?"Platform Admin":developer?.companyName||"Dashboard"}</div>
           </div>
+          {/* Close button on mobile */}
+          <button onClick={()=>setMobileOpen(false)} className={`ml-auto sm:hidden p-1.5 rounded-lg ${tc(dark,"text-slate-400 hover:bg-slate-800","text-slate-500 hover:bg-slate-100")}`}><Icon name="x" size={18}/></button>
         </div>
       </div>
       <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
         {nav.map(item=>(
-          <button key={item.id} onClick={()=>setPage(item.id)} className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${currentPage===item.id ? itemActive : itemInactive}`}>
+          <button key={item.id} onClick={()=>navigate(item.id)} className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${currentPage===item.id ? itemActive : itemInactive}`}>
             <Icon name={item.icon} size={16}/>{item.label}
           </button>
         ))}
       </nav>
       <div className={`p-2 border-t ${tc(dark,"border-slate-800","border-slate-200")}`}>
-        {/* Dark / Light toggle */}
         <button onClick={toggle} className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all mb-1 ${tc(dark,"text-slate-400 hover:text-white hover:bg-slate-800/60","text-slate-500 hover:text-slate-800 hover:bg-slate-100")}`}>
           <Icon name={dark?"sun":"moon"} size={16}/>{dark?"Light Mode":"Dark Mode"}
         </button>
@@ -1344,7 +1360,47 @@ const Sidebar = ({ user, currentPage, setPage, onLogout, developer }) => {
           <button onClick={onLogout} className={`transition-colors ${tc(dark,"text-slate-500 hover:text-red-400","text-slate-400 hover:text-red-500")}`} title="Logout"><Icon name="logout" size={15}/></button>
         </div>
       </div>
-    </div>
+    </>
+  );
+
+  return (
+    <>
+      {/* ── DESKTOP sidebar (hidden on mobile) ── */}
+      <div className={`hidden sm:flex w-56 border-r flex-col h-full flex-shrink-0 ${bg}`}>
+        {sidebarContent}
+      </div>
+
+      {/* ── MOBILE drawer backdrop ── */}
+      {mobileOpen&&(
+        <div className="fixed inset-0 z-40 sm:hidden" onClick={()=>setMobileOpen(false)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm"/>
+          <div className={`absolute left-0 top-0 bottom-0 w-72 flex flex-col ${bg} border-r shadow-2xl`} onClick={e=>e.stopPropagation()}>
+            {sidebarContent}
+          </div>
+        </div>
+      )}
+
+      {/* ── MOBILE bottom tab bar ── */}
+      <div className={`fixed bottom-0 left-0 right-0 z-30 sm:hidden border-t ${tc(dark,"bg-[#070e1c] border-slate-800","bg-white border-slate-200")} safe-area-pb`}
+        style={{paddingBottom:"env(safe-area-inset-bottom,0px)"}}>
+        <div className="flex items-center">
+          {bottomNav.map(item=>(
+            <button key={item.id} onClick={()=>navigate(item.id)}
+              className={`flex-1 flex flex-col items-center gap-0.5 py-2.5 transition-colors ${currentPage===item.id?tc(dark,"text-amber-400","text-amber-600"):tc(dark,"text-slate-500","text-slate-400")}`}>
+              <Icon name={item.icon} size={20}/>
+              <span style={{fontSize:10}}>{item.label}</span>
+            </button>
+          ))}
+          {/* "More" button if nav has > 5 items */}
+          {nav.length>5&&(
+            <button onClick={()=>setMobileOpen(true)} className={`flex-1 flex flex-col items-center gap-0.5 py-2.5 transition-colors ${tc(dark,"text-slate-500","text-slate-400")}`}>
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><circle cx="4" cy="10" r="1.8"/><circle cx="10" cy="10" r="1.8"/><circle cx="16" cy="10" r="1.8"/></svg>
+              <span style={{fontSize:10}}>More</span>
+            </button>
+          )}
+        </div>
+      </div>
+    </>
   );
 };
 
@@ -1369,7 +1425,7 @@ const SuperAdminDashboard = ({ developers, users, projects, invoices, proposals 
     <div>
       <h1 className={`text-xl font-bold mb-1 ${tc(dark,"text-white","text-slate-800")}`}>Platform Overview</h1>
       <p className={`text-sm mb-5 ${tc(dark,"text-slate-400","text-slate-500")}`}>Manage all developer accounts and platform settings</p>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
         <StatCard label="Active Developers" value={developers.filter(d=>d.active&&!d.paused).length} icon="building" color="amber"/>
         <StatCard label="Total Users" value={users.filter(u=>u.role!==ROLES.SUPER_ADMIN).length} icon="users" color="sky"/>
         <StatCard label="Total Projects" value={projects.length} icon="folder" color="emerald"/>
@@ -1399,7 +1455,7 @@ const SuperAdminDashboard = ({ developers, users, projects, invoices, proposals 
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
           <h3 className={`font-bold mb-3 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Developer Accounts</h3>
           {developers.map(d=>(
@@ -1453,14 +1509,14 @@ const DevDashboard = ({ developer, projects, users, proposals, invoices }) => {
           <Icon name="calendar" size={14}/>{developer.plan} · {isExpired?"Expired":`Until ${fmtDate(developer.subscriptionEnd)}`}
         </div>
       </div>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
         <StatCard label="Total Projects" value={devProjects.length} icon="folder" color="amber"/>
         <StatCard label="Active Projects" value={devProjects.filter(p=>p.status==="Active").length} icon="zap" color="emerald"/>
         <StatCard label="Team Members" value={devUsers.length} icon="users" color="sky"/>
         <StatCard label="Seats Used" value={`${developer.usedSeats}/${developer.seats}`} icon="key" color="purple"/>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {/* Top Performers */}
         <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
           <h3 className={`font-bold mb-3 text-sm flex items-center gap-2 ${tc(dark,"text-white","text-slate-800")}`}><Icon name="award" size={15}/>Top Performers</h3>
@@ -1558,7 +1614,7 @@ const DevelopersPage = ({ developers, setDevelopers, users, setUsers, invoices, 
       </div>
       <div className="mb-4"><SearchBar value={search} onChange={setSearch} placeholder="Search by company name or email…"/></div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {filtered.map(dev=>{
           const days = daysUntil(dev.subscriptionEnd);
           return (
@@ -1573,7 +1629,7 @@ const DevelopersPage = ({ developers, setDevelopers, users, setUsers, invoices, 
                 <span className={`text-xs px-2 py-0.5 rounded-full ${tc(dark,"bg-slate-700 text-slate-300","bg-slate-100 text-slate-600")}`}>{dev.plan}</span>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-1.5 mb-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mb-3">
               <DevCardRow label="Seats" value={`${dev.usedSeats}/${dev.seats}`}/>
               <DevCardRow label="Duration" value={dev.planDuration}/>
               <DevCardRow label="Start" value={fmtDate(dev.subscriptionStart)}/>
@@ -1648,7 +1704,7 @@ const DevelopersPage = ({ developers, setDevelopers, users, setUsers, invoices, 
             {viewDev.logo?<img src={viewDev.logo} alt="logo" className="w-16 h-16 rounded-xl object-cover"/>:<div className={`w-16 h-16 rounded-xl flex items-center justify-center text-2xl font-black text-white ${tc(dark,"bg-slate-700","bg-amber-500")}`}>{viewDev.companyName.charAt(0)}</div>}
             <div><h2 className={`text-lg font-bold ${tc(dark,"text-white","text-slate-800")}`}>{viewDev.companyName}</h2><p className={`text-sm ${tc(dark,"text-slate-400","text-slate-500")}`}>{viewDev.email} · {viewDev.phone}</p></div>
           </div>
-          <div className="grid grid-cols-2 gap-2 text-sm mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm mb-4">
             {[["Plan",viewDev.plan],["Duration",viewDev.planDuration],["Seats",`${viewDev.usedSeats}/${viewDev.seats}`],["Sub Start",fmtDate(viewDev.subscriptionStart)],["Sub End",fmtDate(viewDev.subscriptionEnd)],["GSTIN",viewDev.gstIn||"—"],["Elec Price",`₹${viewDev.electricityPrice}/kWh`],["Cost/kW",fmtINR(viewDev.costPerKW)]].map(([k,v])=>(
               <div key={k} className={`rounded-lg p-2.5 ${tc(dark,"bg-slate-800/50","bg-slate-50")}`}><div className={`text-xs mb-0.5 ${tc(dark,"text-slate-400","text-slate-500")}`}>{k}</div><div className={`font-medium text-sm ${tc(dark,"text-white","text-slate-800")}`}>{v}</div></div>
             ))}
@@ -1747,7 +1803,7 @@ const MySettingsPage = ({ currentUser, setUsers, developers, setDevelopers }) =>
       <h1 className={`text-xl font-bold mb-1 ${tc(dark,"text-white","text-slate-800")}`}>My Profile & Settings</h1>
       <p className={`text-sm mb-5 ${tc(dark,"text-slate-400","text-slate-500")}`}>Update your personal and company information</p>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
         {/* Personal Details */}
         <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
           <h3 className={`font-bold mb-3 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Personal Details</h3>
@@ -1769,7 +1825,7 @@ const MySettingsPage = ({ currentUser, setUsers, developers, setDevelopers }) =>
               <Field label="Pincode" value={uForm.pincode||""} onChange={v=>UF("pincode",v)} placeholder="400001"/>
             </div>
             <Field label="Bank Details" type="textarea" rows={3} value={uForm.bankDetails||""} onChange={v=>UF("bankDetails",v)}/>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Invoice Prefix" value={uForm.invoicePrefix||"SP"} onChange={v=>UF("invoicePrefix",v)} hint="e.g. SP, INV"/>
               <Field label="Next Invoice #" type="number" value={uForm.invoiceNextNum||1001} onChange={v=>UF("invoiceNextNum",parseInt(v)||1001)}/>
             </div>
@@ -1781,7 +1837,7 @@ const MySettingsPage = ({ currentUser, setUsers, developers, setDevelopers }) =>
       {/* Branding: Logo, Stamp, Signature (SA edits own; Dev edits developer record) */}
       <div className={`border rounded-xl p-4 mb-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
         <h3 className={`font-bold mb-3 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Branding & Signatures</h3>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {isSA ? (
             <>
               <ImgUpload label="Company Logo" value={uForm.logo} onChange={v=>UF("logo",v)}/>
@@ -1923,7 +1979,7 @@ const CreateInvoicePage = ({ developers, setDevelopers, users, setUsers, project
           {docType==="Purchase Order"&&<p className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>🛒 Buyer-issued order document for procurement.</p>}
           {docType==="Delivery Challan"&&<p className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>🚚 Accompanies goods during delivery. Next: Convert to Tax Invoice.</p>}
         </div>
-        <div className="grid grid-cols-2 gap-4 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
           <Field label="Select Developer" type="select" value={selectedDev} onChange={v=>{setSelectedDev(v);setSelectedUser("");}}
             options={[{value:"",label:"— Select Developer —"},...developers.map(d=>({value:d.id,label:d.companyName}))]}/>
           {selectedDev&&(
@@ -1978,7 +2034,7 @@ const InvoicePreviewContent = ({ inv, developer, customer }) => {
         <div className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{customer?.address||inv.customerAddress}</div>
         <div className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{customer?.phone||inv.customerPhone} · {customer?.email||inv.customerEmail}</div>
       </div>
-      <table className="w-full text-xs mb-4">
+      <div className="overflow-x-auto"><table className="w-full text-xs mb-4" style={{minWidth:480}}>
         <thead><tr className={`border-b-2 ${tc(dark,"border-amber-500/50","border-amber-300")}`}>
           {["#","Description","Price","Qty","GST","Subtotal","Total+GST"].map(h=><th key={h} className={`py-2 px-1.5 text-left font-bold ${tc(dark,"text-amber-400","text-amber-600")}`}>{h}</th>)}
         </tr></thead>
@@ -1996,7 +2052,7 @@ const InvoicePreviewContent = ({ inv, developer, customer }) => {
             </tr>;
           })}
         </tbody>
-      </table>
+      </table></div>
       <div className="flex justify-end mb-4">
         <div className={`rounded-xl overflow-hidden min-w-[200px] ${tc(dark,"border border-slate-700","border border-slate-200")}`}>
           <div className={`flex justify-between px-4 py-2 border-b ${tc(dark,"border-slate-700","border-slate-200")}`}><span className={tc(dark,"text-slate-400","text-slate-500")}>Net:</span><span className={`font-medium ${tc(dark,"text-white","text-slate-800")}`}>{fmtINR(net)}</span></div>
@@ -2142,8 +2198,8 @@ const UsersPage = ({ users, setUsers, currentUser, developers, projects, setProj
         </select>
       </div>
 
-      <div className={`border rounded-xl overflow-x-auto ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
-        <table className="w-full text-sm">
+      <div className={`border rounded-xl overflow-hidden ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+        <div className="overflow-x-auto"><table className="w-full text-sm" style={{minWidth:600}}>
           <thead><tr className={`border-b ${tc(dark,"border-slate-700 bg-slate-800/30","border-slate-200 bg-slate-50")}`}>
             {[isSuperAdmin&&"Company","Name","Email","Phone","Role","Status","Actions"].filter(Boolean).map(h=>(
               <th key={h} className={`text-left px-4 py-3 font-medium text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{h}</th>
@@ -2184,7 +2240,7 @@ const UsersPage = ({ users, setUsers, currentUser, developers, projects, setProj
             ))}
             {!filtered.length&&<tr><td colSpan="7" className={`text-center py-10 text-sm ${tc(dark,"text-slate-400","text-slate-500")}`}>No users found.</td></tr>}
           </tbody>
-        </table>
+        </table></div>
       </div>
 
       {showAdd&&(
@@ -2228,7 +2284,7 @@ const TemplatesPage = ({ templates, setTemplates, developers, currentUser }) => 
         <h1 className={`text-xl font-bold ${tc(dark,"text-white","text-slate-800")}`}>Proposal Templates</h1>
         {isSA&&<Btn onClick={()=>setShowAdd(true)}><Icon name="plus" size={15}/>New Template</Btn>}
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {myTemplates.map(t=>{
           const assignedDevs = developers.filter(d=>t.assignedTo.includes(d.id));
           return (
@@ -2353,9 +2409,9 @@ const SettingsPage = (props) => {
       <p className={`text-sm mb-4 ${tc(dark,"text-slate-400","text-slate-500")}`}>Manage your company profile and solar variables</p>
 
       {/* Settings sub-tabs */}
-      <div className={`flex gap-1 rounded-xl p-1 mb-5 w-fit border ${tc(dark,"bg-[#070e1c] border-slate-800","bg-slate-100 border-slate-200")}`}>
+      <div className={`flex gap-1 rounded-xl p-1 mb-5 border overflow-x-auto flex-nowrap ${tc(dark,"bg-[#070e1c] border-slate-800","bg-slate-100 border-slate-200")}`} style={{WebkitOverflowScrolling:"touch"}}>
         {["company","solar","finance","invoices","projects","lanes","deleted"].map(t=>(
-          <button key={t} onClick={()=>setSettingsTab(t)} className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-all ${settingsTab===t?"bg-amber-500 text-slate-900":tc(dark,"text-slate-400 hover:text-white","text-slate-500 hover:text-slate-700")}`}>{t==="deleted"?"🗑 Deleted":t}</button>
+          <button key={t} onClick={()=>setSettingsTab(t)} className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-all whitespace-nowrap ${settingsTab===t?"bg-amber-500 text-slate-900":tc(dark,"text-slate-400 hover:text-white","text-slate-500 hover:text-slate-700")}`}>{t==="deleted"?"🗑 Deleted":t}</button>
         ))}
       </div>
 
@@ -2402,7 +2458,7 @@ const SettingsPage = (props) => {
 
       {settingsTab==="invoices"&&(
         <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Invoice Prefix" value={form.invoicePrefix||"INV"} onChange={v=>F("invoicePrefix",v)} hint="e.g. INV, SP, GW"/>
             <Field label="Invoice Start Number" type="number" value={form.invoiceNextNum||1001} onChange={v=>F("invoiceNextNum",parseInt(v)||1001)} hint="Next invoice number"/>
           </div>
@@ -2418,7 +2474,7 @@ const SettingsPage = (props) => {
 
       {settingsTab==="projects"&&(
         <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Project ID Prefix" value={form.projectPrefix||"PRJ"} onChange={v=>F("projectPrefix",v)} hint="e.g. SP, PRJ, GW"/>
             <Field label="Project Start Number" type="number" value={form.projectNextNum||1001} onChange={v=>F("projectNextNum",parseInt(v)||1001)} hint="Next project number"/>
           </div>
@@ -3053,7 +3109,7 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
                 </svg>
               </button>
               {menuOpen&&(
-                <div className={`absolute right-0 top-8 z-50 rounded-xl shadow-2xl border w-52 overflow-hidden ${tc(dark,"bg-slate-800 border-slate-700","bg-white border-slate-200")}`}
+                <div className={`absolute right-0 sm:right-0 top-8 z-50 rounded-xl shadow-2xl border w-52 overflow-hidden ${tc(dark,"bg-slate-800 border-slate-700","bg-white border-slate-200")}`}
                   onClick={e=>e.stopPropagation()}>
                   <div className={`px-3 py-2 border-b ${tc(dark,"border-slate-700 text-slate-400","border-slate-100 text-slate-500")}`} style={{fontSize:10,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase"}}>Move to Lane</div>
                   {lanes.map(l=>(
@@ -3100,8 +3156,8 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
           )}
         </div>
         <div className="flex gap-1 mt-2">
-          {hasPerm(currentUser,"projects.edit")&&<button onClick={e=>{e.stopPropagation();openEdit(p);}} className={`text-xs px-2 py-1 rounded-lg transition-colors ${tc(dark,"bg-slate-700 text-slate-300 hover:bg-slate-600","bg-slate-100 text-slate-600 hover:bg-slate-200")}`}><Icon name="edit" size={11}/></button>}
-          <button onClick={e=>{e.stopPropagation();if(!dragRef.current.moved){setOpenCardMenuId(null);setCurrentProjectId(p.id);}}} className={`text-xs px-2 py-1 rounded-lg transition-colors ${tc(dark,"bg-slate-700 text-slate-300 hover:bg-slate-600","bg-slate-100 text-slate-600 hover:bg-slate-200")}`}><Icon name="eye" size={11}/></button>
+          {hasPerm(currentUser,"projects.edit")&&<button onClick={e=>{e.stopPropagation();openEdit(p);}} className={`text-xs px-2 py-1.5 rounded-lg transition-colors ${tc(dark,"bg-slate-700 text-slate-300 hover:bg-slate-600","bg-slate-100 text-slate-600 hover:bg-slate-200")}`}><Icon name="edit" size={11}/></button>}
+          <button onClick={e=>{e.stopPropagation();if(!dragRef.current.moved){setOpenCardMenuId(null);setCurrentProjectId(p.id);}}} className={`text-xs px-2 py-1.5 rounded-lg transition-colors ${tc(dark,"bg-slate-700 text-slate-300 hover:bg-slate-600","bg-slate-100 text-slate-600 hover:bg-slate-200")}`}><Icon name="eye" size={11}/></button>
         </div>
       </div>
     );
@@ -3313,13 +3369,13 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <div>
           <h1 className={`text-xl font-bold ${tc(dark,"text-white","text-slate-800")}`}>Projects</h1>
           <p className={`text-sm ${tc(dark,"text-slate-400","text-slate-500")}`}>{filteredProjects.length} of {myProjects.length} projects</p>
         </div>
         <div className="flex gap-2 flex-wrap items-center">
-          <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>setView(v=>v==="kanban"?"list":"kanban")}><Icon name={view==="kanban"?"sort":"kanban"} size={15}/>{view==="kanban"?"List":"Kanban"}</Btn>
+          <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>setView(v=>v==="kanban"?"list":"kanban")}><Icon name={view==="kanban"?"sort":"kanban"} size={15}/><span className="hidden sm:inline">{view==="kanban"?"List":"Kanban"}</span></Btn>
           {hasPerm(currentUser,"projects.create")&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={exportExcel}><Icon name="export" size={14}/>Export</Btn>}
           {hasPerm(currentUser,"projects.create")&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>setShowImportModal(true)}><Icon name="import" size={14}/>Import</Btn>}
           {hasPerm(currentUser,"projects.create")&&<Btn onClick={()=>{setEditProject(null);setForm({...blankForm,laneId:lanes[0]?.id||""});setShowAdd(true);}}><Icon name="plus" size={15}/>New Project</Btn>}
@@ -3329,7 +3385,7 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
 
 
       {/* Select all row — shown in both views */}
-      <div className="flex items-center gap-2 mb-2">
+      <div className="flex flex-wrap items-center gap-2 mb-2">
         <input type="checkbox"
           checked={selected.size===filteredProjects.length&&filteredProjects.length>0}
           onChange={e=>e.target.checked?selectAll():clearSelect()}
@@ -3349,8 +3405,8 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
 
       {/* Search + Filter Bar */}
       <div className={`border rounded-xl mb-3 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
-        <div className="flex flex-wrap gap-2 p-3 items-center">
-          <div className={`flex items-center gap-2 flex-1 min-w-48 border rounded-lg px-3 py-1.5 ${tc(dark,"bg-slate-800 border-slate-600","bg-slate-50 border-slate-300")}`}>
+        <div className="flex flex-wrap gap-2 p-3 items-center w-full min-w-0">
+          <div className={`flex items-center gap-2 flex-1 min-w-0 border rounded-lg px-3 py-1.5 ${tc(dark,"bg-slate-800 border-slate-600","bg-slate-50 border-slate-300")}`}>
             <Icon name="search" size={14}/>
             <input value={filters.q} onChange={e=>FF("q",e.target.value)}
               placeholder="Search name, ID, city, state, pincode, phone, email…"
@@ -3368,7 +3424,7 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
         {showFilters&&(
           <div className={`border-t px-4 pb-4 pt-3 ${tc(dark,"border-slate-700/50","border-slate-200")}`}>
             {/* Row 1: Text searches */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 mb-3">
               <div>
                 <p className={`text-xs font-medium mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>Project ID</p>
                 <input value={filters.projectId} onChange={e=>FF("projectId",e.target.value)} placeholder="SP-1001…" className={`w-full ${selCls}`}/>
@@ -3408,7 +3464,7 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
             </div>
 
             {/* Row 2: Multi-select chips */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
               {/* Customer Type multi-select */}
               <div>
                 <p className={`text-xs font-medium mb-1.5 ${tc(dark,"text-slate-400","text-slate-500")}`}>Customer Type <span className={`font-normal ${tc(dark,"text-slate-600","text-slate-400")}`}>(select multiple)</span></p>
@@ -3507,7 +3563,7 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
             </div>
           )}
 
-          <div ref={kanbanScrollRef} className="flex gap-4 overflow-x-auto pb-4" style={{scrollBehavior:"smooth"}}>
+          <div ref={kanbanScrollRef} className="flex gap-3 sm:gap-4 overflow-x-auto pb-4 sm:pb-4" style={{scrollBehavior:"smooth",scrollSnapType:"x mandatory",WebkitOverflowScrolling:"touch"}}>
             {lanes.map((lane)=>{
               const laneProjects = filteredProjects.filter(p=>p.laneId===lane.id);
               const totalSize = laneProjects.reduce((s,p)=>s+(parseFloat(p.projectSize)||0),0);
@@ -3518,7 +3574,7 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
               const dirColor  = dir==="forward"?"#10b981":dir==="backward"?"#f59e0b":"#6366f1";
               const laneColor = laneHex(lane.color);
               return (
-                <div key={lane.id} className="flex-shrink-0 w-72"
+                <div key={lane.id} className="flex-shrink-0" style={{width:"min(288px, 84vw)",scrollSnapAlign:"start"}}
                   ref={el => laneRefs.current[lane.id] = el}>
 
                   {/* Lane header */}
@@ -3597,7 +3653,7 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
       {view==="list"&&(
         filteredProjects.length ? (
           <div className={`border rounded-xl overflow-hidden ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm" style={{minWidth:640}}>
               <thead><tr className={`border-b ${tc(dark,"border-slate-700 bg-slate-800/30","border-slate-200 bg-slate-50")}`}>
                 <th className="px-3 py-2.5 w-8"><input type="checkbox" checked={selected.size===filteredProjects.length&&filteredProjects.length>0} onChange={e=>e.target.checked?selectAll():clearSelect()} className="w-4 h-4 accent-amber-500"/></th>
                 {["Project ID","Customer","Type","Size","Lane","Enquiry","Assigned","Actions"].map(h=>(
@@ -3628,7 +3684,7 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
                   );
                 })}
               </tbody>
-            </table>
+            </table></div>
           </div>
         ) : (
           <div className={`text-center py-20 border rounded-xl ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200")}`}>
@@ -3642,7 +3698,7 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
       {/* ADD / EDIT Modal */}
       {showAdd&&(
         <Modal title={editProject?"Edit Project":"Add New Project"} onClose={()=>{setShowAdd(false);setEditProject(null);setForm(blankForm);}} wide>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Customer Type" type="select" value={form.customerType} onChange={v=>SF("customerType",v)} options={["Residential","Commercial","Industrial","Government","Other"]} required/>
             <div>
               <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Project ID <span className="text-xs font-normal opacity-60">(auto)</span></label>
@@ -3676,7 +3732,7 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
           </div>
 
           {/* Pincode first → auto-fetch city/state */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Pincode</label>
               <input value={form.customerPincode} onChange={e=>onPincodeChange(e.target.value)} placeholder="400001" maxLength={6} className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none mb-4 ${tc(dark,"bg-slate-800 border-slate-600 text-white placeholder-slate-500 focus:border-amber-400","bg-white border-slate-300 text-slate-800 focus:border-amber-500")}`}/>
@@ -4151,14 +4207,14 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex items-start gap-3 mb-4">
         <button onClick={onBack} className={`p-1.5 rounded-lg transition-colors ${tc(dark,"text-slate-400 hover:text-white hover:bg-slate-700","text-slate-400 hover:text-slate-600 hover:bg-slate-100")}`}><Icon name="back" size={18}/></button>
         <div className="flex-1">
           <h1 className={`text-xl font-bold ${tc(dark,"text-white","text-slate-800")}`}>{project.customerName}</h1>
           <p className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{project.projectId} · {[project.customerCity,project.customerState].filter(Boolean).join(", ")||project.customerAddress}</p>
         </div>
         {/* Quick lane + assign dropdowns — editable only with projects.edit perm */}
-        <div className="flex gap-2 items-center flex-wrap">
+        <div className="flex gap-2 items-center flex-wrap mt-1 sm:mt-0">
           {devLanes.length>0&&(
             <div className="flex items-center gap-1">
               <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{backgroundColor:laneHex(currentLane?.color||"slate")}}/>
@@ -4187,7 +4243,7 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
       {/* Inline edit modal */}
       {editingProject&&(
         <Modal title="Edit Project" onClose={()=>setEditingProject(false)} wide>
-          <div className="grid grid-cols-2 gap-3 mb-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
             <Field label="Customer Name" value={ef.customerName} onChange={v=>SEF("customerName",v)} required/>
             <Field label="Customer Type" type="select" value={ef.customerType} onChange={v=>SEF("customerType",v)} options={["Residential","Commercial","Industrial","Government","Other"]}/>
             <Field label="Pincode" value={ef.customerPincode||""} onChange={v=>SEF("customerPincode",v)} placeholder="400001"/>
@@ -4202,7 +4258,7 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
             <Field label="Email" value={ef.customerEmail||""} onChange={v=>SEF("customerEmail",v)}/>
           </div>
           <Field label="Address" type="textarea" rows={2} value={ef.customerAddress||""} onChange={v=>SEF("customerAddress",v)}/>
-          <div className="grid grid-cols-2 gap-3 mb-3 mt-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3 mt-3">
             <div>
               <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Project Size</label>
               <div className="flex">
@@ -4240,7 +4296,7 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
       )}
 
       {/* Quick stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
         {[["System Size",`${project.projectSize} ${project.projectUnit||"kW"}`],["Total Cost",fmtINR(vars.totalCost)],["Annual Savings",fmtINR(vars.annualSavings)],["Payback",`${vars.paybackPeriod} yrs`]].map(([l,v])=>(
           <div key={l} className={`border rounded-xl p-3 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
             <div className={`text-xs mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>{l}</div>
@@ -4250,16 +4306,16 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
       </div>
 
       {/* Tab bar */}
-      <div className={`flex gap-1 rounded-xl p-1 mb-5 w-fit border ${tc(dark,"bg-[#070e1c] border-slate-800","bg-slate-100 border-slate-200")}`}>
+      <div className={`flex gap-1 rounded-xl p-1 mb-5 border overflow-x-auto flex-nowrap ${tc(dark,"bg-[#070e1c] border-slate-800","bg-slate-100 border-slate-200")}`} style={{WebkitOverflowScrolling:"touch"}}>
         {tabs.map(t=>(
-          <button key={t} onClick={()=>setTab(t)} className={`px-4 py-1.5 rounded-lg text-sm font-medium capitalize transition-all ${tab===t ? "bg-amber-500 text-slate-900" : tc(dark,"text-slate-400 hover:text-white","text-slate-500 hover:text-slate-700")}`}>{t}</button>
+          <button key={t} onClick={()=>setTab(t)} className={`px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-medium capitalize transition-all whitespace-nowrap ${tab===t ? "bg-amber-500 text-slate-900" : tc(dark,"text-slate-400 hover:text-white","text-slate-500 hover:text-slate-700")}`}>{t}</button>
         ))}
       </div>
 
       {/* INFO TAB */}
       {tab==="info"&&(
         <div className="space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
               <h3 className={`font-bold mb-3 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Customer Details</h3>
               {[["Name",project.customerName],["POC",project.pocName],["Email",project.customerEmail],["Phone",project.customerPhone],["Type",project.customerType||project.projectType],["Enquiry",project.enquiryType],["Pincode",project.customerPincode],["City",project.customerCity],["State",project.customerState],["Address",project.customerAddress]].filter(([,v])=>v).map(([k,v])=>(
@@ -4328,7 +4384,7 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
               </div>
               <div>
                 <span className={`text-xs font-medium mr-2 ${tc(dark,"text-slate-400","text-slate-500")}`}>Date:</span>
-                <span className="flex flex-wrap gap-1.5 mt-1.5">
+                <span className="flex flex-wrap gap-1.5 mt-1.5 w-full">
                   {[["all","All"],["7d","7d"],["15d","15d"],["30d","30d"],["week","This Wk"],["month","This Mo"],["lastmonth","Last Mo"],["custom","Custom…"]].map(([v,label])=>(
                     <button key={v} onClick={()=>setNoteDate(v)}
                       className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${noteDate===v?tc(dark,"bg-amber-500/20 border-amber-400/60 text-amber-300","bg-amber-100 border-amber-400 text-amber-700"):tc(dark,"border-slate-700 text-slate-400 hover:border-slate-500","border-slate-200 text-slate-500")}`}>{label}</button>
@@ -4534,7 +4590,7 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
                   <Field label="Solar Gen Factor" type="number" value={pForm.solarGenerationFactor??developer.solarGenerationFactor} onChange={val=>setPForm(f=>({...f,solarGenerationFactor:val}))}/>
                   <Field label="Annual Bill Before Solar (₹)" type="number" value={pForm.annualBillBefore||""} placeholder={fmtINR(v.annualBillBefore)} onChange={val=>setPForm(f=>({...f,annualBillBefore:val}))}/>
                 </div>
-                <div className={`rounded-xl p-4 mb-4 grid grid-cols-2 gap-2 text-sm ${tc(dark,"bg-slate-800/50","bg-slate-50")}`}>
+                <div className={`rounded-xl p-4 mb-4 grid grid-cols-2 sm:grid-cols-2 gap-2 text-sm ${tc(dark,"bg-slate-800/50","bg-slate-50")}`}>
                   {[["Total Cost",fmtINR(v.totalCost)],["Annual Gen",`${v.annualGeneration.toLocaleString()} kWh`],["Annual Savings",fmtINR(v.annualSavings)],["Payback",`${v.paybackPeriod} yrs`],["25yr ROI",`${v.roi25}%`]].map(([k,val])=>(
                     <div key={k} className="flex justify-between">
                       <span className={tc(dark,"text-slate-400","text-slate-500")}>{k}</span>
@@ -4932,30 +4988,52 @@ export default function SolarProApp() {
 
   const bg = dark ? "bg-[#060c18] text-white" : "bg-slate-50 text-slate-800";
 
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const { dark: _dark } = themeCtx;
+
   return (
     <ToastProvider>
     <ThemeCtx.Provider value={themeCtx}>
       <div className={`flex h-screen overflow-hidden ${bg}`} style={{fontFamily:"'Inter','system-ui',sans-serif"}}>
         <style>{`
           @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Inter:wght@400;500;600;700;800;900&display=swap');
-          *{box-sizing:border-box}
+          *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+          html{scroll-behavior:smooth}
           ::-webkit-scrollbar{width:5px;height:5px}
-          ::-webkit-scrollbar-track{background:${dark?"#0f172a":"#f1f5f9"}}
-          ::-webkit-scrollbar-thumb{background:${dark?"#334155":"#cbd5e1"};border-radius:3px}
+          ::-webkit-scrollbar-track{background:${_dark?"#0f172a":"#f1f5f9"}}
+          ::-webkit-scrollbar-thumb{background:${_dark?"#334155":"#cbd5e1"};border-radius:3px}
+          @media(max-width:639px){
+            .hide-mobile{display:none!important}
+          }
+          input,select,textarea{font-size:16px!important}
         `}</style>
 
         <Sidebar user={currentUser} currentPage={currentPage} setPage={setPage}
           onLogout={() => { setCurrentUser(null); setCurrentPage("dashboard"); setCurrentProjectId(null); }}
-          developer={developer}/>
+          developer={developer} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}/>
 
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+          {/* Mobile top header bar */}
+          <div className={`flex sm:hidden items-center gap-3 px-4 py-3 border-b flex-shrink-0 ${tc(_dark,"bg-[#070e1c] border-slate-800","bg-white border-slate-200")}`}>
+            <button onClick={()=>setMobileOpen(true)} className={`p-1.5 rounded-lg ${tc(_dark,"text-slate-400 hover:bg-slate-800","text-slate-500 hover:bg-slate-100")}`}>
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+                <rect x="2" y="4" width="16" height="2" rx="1"/><rect x="2" y="9" width="16" height="2" rx="1"/><rect x="2" y="14" width="16" height="2" rx="1"/>
+              </svg>
+            </button>
+            <div className={`text-sm font-black flex-1 ${tc(_dark,"text-white","text-slate-800")}`} style={{fontFamily:"'Orbitron',monospace"}}>SOLAR<span className="text-amber-400">PRO</span></div>
+            <button onClick={themeCtx.toggle} className={`p-1.5 rounded-lg ${tc(_dark,"text-slate-400 hover:bg-slate-800","text-slate-500 hover:bg-slate-100")}`}>
+              <Icon name={_dark?"sun":"moon"} size={18}/>
+            </button>
+          </div>
+
           {/* Subscription warning banner */}
           {currentUser.role !== ROLES.SUPER_ADMIN && developer && (
             <SubscriptionBanner developer={developer}/>
           )}
 
           <main className="flex-1 overflow-y-auto">
-            <div className="max-w-5xl mx-auto p-5 lg:p-7">
+            {/* Bottom padding on mobile for the tab bar */}
+            <div className="max-w-5xl mx-auto p-3 sm:p-5 lg:p-7 pb-24 sm:pb-7">
               {renderPage()}
             </div>
           </main>
@@ -4989,7 +5067,7 @@ function UserDashboard({ developer, currentUser, projects, proposals, invoices }
         </div>
       )}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
         <StatCard label="My Projects" value={myProjects.length} icon="folder" color="amber"/>
         <StatCard label="Proposals Made" value={myProposals.length} icon="file" color="sky"/>
         <StatCard label="Invoices Created" value={myInvoices.length} icon="invoice" color="emerald"/>
