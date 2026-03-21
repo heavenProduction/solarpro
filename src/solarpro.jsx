@@ -639,18 +639,95 @@ const TemplateAssignDropdown = ({ developers, assignedTo, onChange }) => {
   );
 };
 
+// ── PERMISSION DEFINITIONS ────────────────────────────────────
+// Hierarchical: category → feature permissions
+const PERM_CATEGORIES = [
+  { id:"projects", label:"Projects", icon:"folder", features:[
+    { id:"projects.view",        label:"View Projects" },
+    { id:"projects.create",      label:"Create Projects" },
+    { id:"projects.edit",        label:"Edit Projects" },
+    { id:"projects.delete",      label:"Delete Projects (single)" },
+    { id:"projects.bulk_delete", label:"Bulk Delete Projects" },
+  ]},
+  { id:"notes", label:"Notes", icon:"note", features:[
+    { id:"notes.view",   label:"View Notes" },
+    { id:"notes.create", label:"Add Notes" },
+    { id:"notes.edit",   label:"Edit Notes" },
+    { id:"notes.delete", label:"Delete Notes" },
+  ]},
+  { id:"documents", label:"Documents", icon:"file", features:[
+    { id:"documents.view",   label:"View Documents" },
+    { id:"documents.upload", label:"Upload Documents" },
+    { id:"documents.delete", label:"Delete Documents" },
+  ]},
+  { id:"proposals", label:"Proposals", icon:"template", features:[
+    { id:"proposals.view",   label:"View Proposals" },
+    { id:"proposals.create", label:"Create Proposals" },
+  ]},
+  { id:"activity", label:"Activity Log", icon:"home", features:[
+    { id:"activity.view", label:"View Activity Log" },
+  ]},
+  { id:"invoices", label:"Invoices", icon:"invoice", features:[
+    { id:"invoices.view",   label:"View Invoices" },
+    { id:"invoices.create", label:"Create Invoices" },
+  ]},
+];
+
+// Helper: check if a user has a specific permission
+// Dev Admins always have full access
+const hasPerm = (user, perm) => {
+  if (!user) return false;
+  if (user.role === ROLES.DEV_ADMIN || user.role === ROLES.SUPER_ADMIN) return true;
+  const p = user.permissions || [];
+  // Legacy flat perm (e.g. "projects") grants all sub-perms of that category
+  const cat = perm.split(".")[0];
+  if (p.includes(cat)) return true;
+  return p.includes(perm);
+};
+
 // ── PERMISSIONS PICKER ────────────────────────────────────────
 const PermissionsPicker = ({ value, onChange, label="Permissions" }) => {
   const { dark } = useTheme();
-  const ALL_PERMS = ["projects","proposals","notes","documents","invoices","settings","team"];
   const toggle = p => onChange(value.includes(p) ? value.filter(x=>x!==p) : [...value, p]);
+  const toggleCat = (cat) => {
+    const catPerms = PERM_CATEGORIES.find(c=>c.id===cat)?.features.map(f=>f.id)||[];
+    const allOn = catPerms.every(p=>value.includes(p));
+    if (allOn) onChange(value.filter(p=>!catPerms.includes(p)));
+    else onChange([...new Set([...value, ...catPerms])]);
+  };
   return (
     <div className="mb-4">
       <label className={`block text-sm font-medium mb-2 ${tc(dark,"text-slate-300","text-slate-700")}`}>{label}</label>
-      <div className="flex flex-wrap gap-2">
-        {ALL_PERMS.map(p=>(
-          <button key={p} type="button" onClick={()=>toggle(p)} className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors capitalize ${value.includes(p) ? "bg-amber-500/20 text-amber-400 border-amber-500/30" : tc(dark,"bg-slate-800 text-slate-400 border-slate-600 hover:border-slate-500","bg-slate-100 text-slate-500 border-slate-300 hover:border-slate-400")}`}>{p}</button>
-        ))}
+      <div className="space-y-3">
+        {PERM_CATEGORIES.map(cat=>{
+          const catPerms = cat.features.map(f=>f.id);
+          const allOn = catPerms.every(p=>value.includes(p));
+          const someOn = catPerms.some(p=>value.includes(p));
+          return (
+            <div key={cat.id} className={`border rounded-xl overflow-hidden ${tc(dark,"border-slate-700","border-slate-200")}`}>
+              <button type="button" onClick={()=>toggleCat(cat.id)}
+                className={`w-full flex items-center gap-2 px-3 py-2 text-left transition-colors ${allOn?tc(dark,"bg-amber-500/15","bg-amber-50"):someOn?tc(dark,"bg-slate-700/40","bg-slate-100"):tc(dark,"bg-slate-800/30","bg-slate-50")}`}>
+                <span className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${allOn?"bg-amber-500 border-amber-500":someOn?tc(dark,"border-amber-400","border-amber-500"):tc(dark,"border-slate-600","border-slate-300")}`}>
+                  {allOn&&<span className="text-slate-900 font-bold" style={{fontSize:10}}>✓</span>}
+                  {!allOn&&someOn&&<span className={`w-1.5 h-1.5 rounded-sm ${tc(dark,"bg-amber-400","bg-amber-500")}`}/>}
+                </span>
+                <span className={`text-xs font-semibold flex-1 ${tc(dark,"text-white","text-slate-700")}`}>{cat.label}</span>
+                <span className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>{catPerms.filter(p=>value.includes(p)).length}/{catPerms.length}</span>
+              </button>
+              <div className={`grid grid-cols-2 gap-1 p-2 ${tc(dark,"bg-slate-900/40","bg-white")}`}>
+                {cat.features.map(f=>(
+                  <button key={f.id} type="button" onClick={()=>toggle(f.id)}
+                    className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-left transition-colors ${value.includes(f.id)?tc(dark,"bg-amber-500/15 text-amber-300","bg-amber-100 text-amber-700"):tc(dark,"text-slate-400 hover:bg-slate-700/50","text-slate-500 hover:bg-slate-100")}`}>
+                    <span className={`w-3 h-3 rounded border flex items-center justify-center flex-shrink-0 ${value.includes(f.id)?"bg-amber-500 border-amber-500":tc(dark,"border-slate-600","border-slate-300")}`}>
+                      {value.includes(f.id)&&<span className="text-slate-900" style={{fontSize:8,lineHeight:1}}>✓</span>}
+                    </span>
+                    <span style={{fontSize:11}}>{f.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -1227,8 +1304,8 @@ const Sidebar = ({ user, currentPage, setPage, onLogout, developer }) => {
   ];
   const userNav = [
     {id:"dashboard",label:"Dashboard",icon:"home"},
-    {id:"projects",label:"Projects",icon:"folder"},
-    {id:"invoices",label:"Invoices",icon:"invoice"},
+    ...(hasPerm(user,"projects.view")||user.permissions?.includes("projects")||!user.permissions?.length ? [{id:"projects",label:"Projects",icon:"folder"}] : []),
+    ...(hasPerm(user,"invoices.view")||user.permissions?.includes("invoices") ? [{id:"invoices",label:"Invoices",icon:"invoice"}] : []),
     {id:"my-settings",label:"My Profile",icon:"user"},
   ];
   const nav = user.role===ROLES.SUPER_ADMIN ? superNav : user.role===ROLES.DEV_ADMIN ? devNav : userNav;
@@ -2278,7 +2355,7 @@ const SettingsPage = (props) => {
 
       {/* Settings sub-tabs */}
       <div className={`flex gap-1 rounded-xl p-1 mb-5 w-fit border ${tc(dark,"bg-[#070e1c] border-slate-800","bg-slate-100 border-slate-200")}`}>
-        {["company","solar","finance","invoices","projects","lanes","features","deleted"].map(t=>(
+        {["company","solar","finance","invoices","projects","lanes","deleted"].map(t=>(
           <button key={t} onClick={()=>setSettingsTab(t)} className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-all ${settingsTab===t?"bg-amber-500 text-slate-900":tc(dark,"text-slate-400 hover:text-white","text-slate-500 hover:text-slate-700")}`}>{t==="deleted"?"🗑 Deleted":t}</button>
         ))}
       </div>
@@ -2426,28 +2503,6 @@ const SettingsPage = (props) => {
         </div>
       )}
 
-      {settingsTab==="features"&&(
-        <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
-          <h3 className={`font-bold mb-1 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Feature Flags</h3>
-          <p className={`text-xs mb-4 ${tc(dark,"text-slate-400","text-slate-500")}`}>Enable or disable features for your team users. Admin users always have full access.</p>
-          {[
-            {key:"allowNoteEdit", label:"Allow Users to Edit & Delete Notes", desc:"When enabled, team members can edit and delete notes they or others have added on project pages."},
-            {key:"allowDocDelete", label:"Allow Users to Delete Documents", desc:"When enabled, team members can delete uploaded documents from project pages."},
-            {key:"allowBulkDelete", label:"Allow Users to Bulk Delete Projects", desc:"When enabled, users can use the checkbox multi-select to delete projects in bulk."},
-          ].map(({key,label,desc})=>(
-            <div key={key} className={`flex items-start gap-4 p-3 rounded-xl border mb-3 ${tc(dark,"border-slate-700 bg-slate-800/30","border-slate-200 bg-slate-50")}`}>
-              <div className="flex-1">
-                <p className={`text-sm font-medium ${tc(dark,"text-white","text-slate-800")}`}>{label}</p>
-                <p className={`text-xs mt-0.5 ${tc(dark,"text-slate-400","text-slate-500")}`}>{desc}</p>
-              </div>
-              <button onClick={()=>F(key,!form[key])}
-                className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 mt-0.5 ${form[key]?"bg-amber-500":"bg-slate-600"}`}>
-                <span className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all ${form[key]?"left-6":"left-1"}`}/>
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
 
       {settingsTab==="deleted"&&(()=>{
         const devDeleted = (props.deletedItems||[]).filter(d=>d.developerId===developer.id).sort((a,b)=>new Date(b._deletedAt)-new Date(a._deletedAt));
@@ -3046,7 +3101,7 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
           )}
         </div>
         <div className="flex gap-1 mt-2">
-          <button onClick={e=>{e.stopPropagation();openEdit(p);}} className={`text-xs px-2 py-1 rounded-lg transition-colors ${tc(dark,"bg-slate-700 text-slate-300 hover:bg-slate-600","bg-slate-100 text-slate-600 hover:bg-slate-200")}`}><Icon name="edit" size={11}/></button>
+          {hasPerm(currentUser,"projects.edit")&&<button onClick={e=>{e.stopPropagation();openEdit(p);}} className={`text-xs px-2 py-1 rounded-lg transition-colors ${tc(dark,"bg-slate-700 text-slate-300 hover:bg-slate-600","bg-slate-100 text-slate-600 hover:bg-slate-200")}`}><Icon name="edit" size={11}/></button>}
           <button onClick={e=>{e.stopPropagation();if(!dragRef.current.moved){setOpenCardMenuId(null);setCurrentProjectId(p.id);}}} className={`text-xs px-2 py-1 rounded-lg transition-colors ${tc(dark,"bg-slate-700 text-slate-300 hover:bg-slate-600","bg-slate-100 text-slate-600 hover:bg-slate-200")}`}><Icon name="eye" size={11}/></button>
         </div>
       </div>
@@ -3268,7 +3323,7 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
           <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>setView(v=>v==="kanban"?"list":"kanban")}><Icon name={view==="kanban"?"sort":"kanban"} size={15}/>{view==="kanban"?"List":"Kanban"}</Btn>
           <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={exportExcel}><Icon name="export" size={14}/>Export</Btn>
           <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>setShowImportModal(true)}><Icon name="import" size={14}/>Import</Btn>
-          <Btn onClick={()=>{setEditProject(null);setForm({...blankForm,laneId:lanes[0]?.id||""});setShowAdd(true);}}><Icon name="plus" size={15}/>New Project</Btn>
+          {hasPerm(currentUser,"projects.create")&&<Btn onClick={()=>{setEditProject(null);setForm({...blankForm,laneId:lanes[0]?.id||""});setShowAdd(true);}}><Icon name="plus" size={15}/>New Project</Btn>}
         </div>
       </div>
 
@@ -3287,7 +3342,7 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
           <div className="flex gap-1.5 ml-1">
             <button onClick={()=>{setBulkTarget(lanes[0]?.id||"");setBulkModal("lane");}} className={`text-xs px-2 py-0.5 rounded border ${tc(dark,"border-slate-700 text-slate-400 hover:bg-slate-700","border-slate-300 text-slate-500 hover:bg-slate-100")}`}>Move Lane</button>
             <button onClick={()=>{setBulkTarget(devTeam[0]?.id||"");setBulkModal("assign");}} className={`text-xs px-2 py-0.5 rounded border ${tc(dark,"border-slate-700 text-slate-400 hover:bg-slate-700","border-slate-300 text-slate-500 hover:bg-slate-100")}`}>Assign</button>
-            <button onClick={()=>setBulkModal("delete")} className="text-xs px-2 py-0.5 rounded border border-red-500/40 text-red-400 hover:bg-red-500/10">Delete</button>
+            {hasPerm(currentUser,"projects.bulk_delete")&&<button onClick={()=>setBulkModal("delete")} className="text-xs px-2 py-0.5 rounded border border-red-500/40 text-red-400 hover:bg-red-500/10">Delete</button>}
             <button onClick={clearSelect} className={`text-xs ${tc(dark,"text-slate-500 hover:text-white","text-slate-400 hover:text-slate-700")}`}>✕ Clear</button>
           </div>
         )}
@@ -3568,7 +3623,7 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
                       <td className="px-3 py-2.5"><span className={`text-xs px-2 py-0.5 rounded-full ${tc(dark,enquiryColors[p.enquiryType]||"",enquiryColorsL[p.enquiryType]||"")}`}>{p.enquiryType||"—"}</span></td>
                       <td className={`px-3 py-2.5 text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{user?.name||"—"}</td>
                       <td className="px-3 py-2.5" onClick={e=>e.stopPropagation()}>
-                        <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>openEdit(p)}><Icon name="edit" size={12}/>Edit</Btn>
+                        {hasPerm(currentUser,"projects.edit")&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>openEdit(p)}><Icon name="edit" size={12}/>Edit</Btn>}
                       </td>
                     </tr>
                   );
@@ -4053,7 +4108,7 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
     reader.readAsDataURL(pendingDocFile);
   };
 
-  const vars = calcSolar(project.projectSize, developer);
+  const vars = calcSolar(project?.projectSize||0, developer||{});
 
   const generateProposal = () => {
     const tmpl = templates.find(t=>t.id===selectedTmpl); if(!tmpl) return;
@@ -4073,7 +4128,14 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
     setShowGen(false); setViewProposal(np);
   };
 
-  const tabs = ["info","notes","documents","proposal","activity"];
+  const tabs = ["info","notes","documents","proposal","activity"].filter(t=>{
+    if (t==="info") return true; // always visible
+    if (t==="notes")     return hasPerm(currentUser,"notes.view");
+    if (t==="documents") return hasPerm(currentUser,"documents.view");
+    if (t==="proposal")  return hasPerm(currentUser,"proposals.view");
+    if (t==="activity")  return hasPerm(currentUser,"activity.view");
+    return true;
+  });
   const devTeam = users ? users.filter(u=>u.developerId===project.developerId && u.active) : [];
   const devLanes = developer?.lanes?.filter(l=>!l.disabled).sort((a,b)=>a.order-b.order) || [];
   const currentLane = devLanes.find(l=>l.id===project.laneId);
@@ -4083,6 +4145,9 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
     if (!setProjects) return;
     setProjects(ps=>ps.map(p=>p.id===project.id?{...p,...changes}:p));
   };
+
+  // Safety guard: if project is gone (e.g. deleted), return nothing
+  if (!project) return null;
 
   return (
     <div>
@@ -4112,7 +4177,7 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
             </select>
           )}
           <span className={`text-xs px-2 py-1 rounded-full ${tc(dark,"bg-slate-700 text-slate-300","bg-slate-100 text-slate-600")}`}>{project.customerType||"—"}</span>
-          <Btn size="sm" onClick={()=>setEditingProject(true)}><Icon name="edit" size={13}/>Edit Project</Btn>
+          {hasPerm(currentUser,"projects.edit")&&<Btn size="sm" onClick={()=>setEditingProject(true)}><Icon name="edit" size={13}/>Edit Project</Btn>}
         </div>
       </div>
 
@@ -4215,7 +4280,7 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
           <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
             <div className="flex items-center justify-between mb-3">
               <h3 className={`font-bold text-sm ${tc(dark,"text-white","text-slate-800")}`}>Tags</h3>
-              <button onClick={()=>setTab("edit-tags")} className={`text-xs ${tc(dark,"text-amber-400 hover:text-amber-300","text-amber-600 hover:text-amber-700")}`}>+ Edit Tags</button>
+              {hasPerm(currentUser,"projects.edit")&&<button onClick={()=>setEditingProject(true)} className={`text-xs ${tc(dark,"text-amber-400 hover:text-amber-300","text-amber-600 hover:text-amber-700")}`}>+ Edit Tags</button>}
             </div>
             {(project.tags||[]).length>0 ? (
               <div className="flex flex-wrap gap-2">
@@ -4239,7 +4304,7 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
             <textarea value={newNote} onChange={e=>setNewNote(e.target.value)} placeholder="Add a note…" rows={3} className={`w-full border rounded-lg px-3 py-2.5 focus:outline-none resize-none text-sm mb-3 ${tc(dark,"bg-slate-800/50 border-slate-600 text-white placeholder-slate-500 focus:border-amber-400","bg-slate-50 border-slate-300 text-slate-800 placeholder-slate-400 focus:border-amber-500")}`}/>
             {noteAttachments.length>0&&<div className="flex flex-wrap gap-2 mb-3">{noteAttachments.map((a,i)=><span key={i} className={`text-xs px-2 py-1 rounded-lg flex items-center gap-1.5 ${tc(dark,"bg-slate-700 text-slate-300","bg-slate-100 text-slate-600")}`}><Icon name="file" size={12}/>{a.name}<button onClick={()=>setNoteAttachments(x=>x.filter((_,j)=>j!==i))} className="text-red-400">×</button></span>)}</div>}
             <div className="flex gap-2">
-              <Btn onClick={addNote} disabled={!newNote.trim()&&!noteAttachments.length}><Icon name="plus" size={15}/>Add Note</Btn>
+              {hasPerm(currentUser,"notes.create")&&<Btn onClick={addNote} disabled={!newNote.trim()&&!noteAttachments.length}><Icon name="plus" size={15}/>Add Note</Btn>}
               <input ref={noteFileRef} type="file" onChange={handleNoteFile} className="hidden" accept="image/*,.pdf,.doc,.docx"/>
               <Btn variant="outline" onClick={()=>noteFileRef.current?.click()}><Icon name="upload" size={14}/>Attach</Btn>
             </div>
@@ -4276,7 +4341,8 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
           )}
           <div className="space-y-2">
             {!filteredNotes.length ? <p className={`text-sm text-center py-8 ${tc(dark,"text-slate-400","text-slate-500")}`}>No notes yet.</p> : filteredNotes.map(n=>{
-              const canEdit = developer?.allowNoteEdit || currentUser.role==="dev_admin";
+              const canEdit = hasPerm(currentUser,"notes.edit");
+              const canDelete = hasPerm(currentUser,"notes.delete");
               const isEditing = editingNoteId===n.id;
               return (
               <div key={n.id} className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
@@ -4313,10 +4379,10 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
                     <span>{new Date(n.createdAt).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"})}</span>
                     {n.editedAt&&<span className="italic">edited</span>}
                   </div>
-                  {canEdit&&!isEditing&&(
+                  {(canEdit||canDelete)&&!isEditing&&(
                     <div className="flex gap-1">
-                      <button onClick={()=>{setEditingNoteId(n.id);setEditNoteContent(n.content);}} className={`text-xs px-2 py-0.5 rounded ${tc(dark,"text-slate-400 hover:text-amber-400 hover:bg-slate-700","text-slate-500 hover:text-amber-600 hover:bg-slate-100")}`}>Edit</button>
-                      <button onClick={()=>setNotes(ns=>ns.filter(x=>x.id!==n.id))} className={`text-xs px-2 py-0.5 rounded ${tc(dark,"text-slate-400 hover:text-red-400 hover:bg-slate-700","text-slate-500 hover:text-red-500 hover:bg-red-50")}`}>Delete</button>
+                      {canEdit&&<button onClick={()=>{setEditingNoteId(n.id);setEditNoteContent(n.content);}} className={`text-xs px-2 py-0.5 rounded ${tc(dark,"text-slate-400 hover:text-amber-400 hover:bg-slate-700","text-slate-500 hover:text-amber-600 hover:bg-slate-100")}`}>Edit</button>}
+                      {canDelete&&<button onClick={()=>setNotes(ns=>ns.filter(x=>x.id!==n.id))} className={`text-xs px-2 py-0.5 rounded ${tc(dark,"text-slate-400 hover:text-red-400 hover:bg-slate-700","text-slate-500 hover:text-red-500 hover:bg-red-50")}`}>Delete</button>}
                     </div>
                   )}
                 </div>
@@ -4340,7 +4406,7 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
               {docAuthors.map(u=><option key={u} value={u}>{u}</option>)}
             </select>
             <input ref={docFileRef} type="file" onChange={handleDocFileSelect} className="hidden" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.mp4,.mov"/>
-            <Btn onClick={()=>docFileRef.current?.click()}><Icon name="upload" size={15}/>Upload Doc</Btn>
+            {hasPerm(currentUser,"documents.upload")&&<Btn onClick={()=>docFileRef.current?.click()}><Icon name="upload" size={15}/>Upload Doc</Btn>}
           </div>
           {!filteredDocs.length ? (
             <div className={`text-center py-14 border-2 border-dashed rounded-xl ${tc(dark,"border-slate-700","border-slate-200")}`}>
@@ -4385,7 +4451,7 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
                     }} title="View"><Icon name="eye" size={12}/></Btn>}
                     {doc.dataUrl&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>{ const a=document.createElement("a");a.href=doc.dataUrl;a.download=doc.name||doc.title;a.click(); }} title="Download"><Icon name="download" size={12}/></Btn>}
                     {doc.dataUrl&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>shareWhatsApp(project.customerPhone, `Hi ${project.customerName}, here is your document: ${doc.title||doc.name}. Regards, ${developer?.companyName||""}`)} title="Share WA"><span className="text-emerald-400 text-xs font-bold">WA</span></Btn>}
-                    <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>setDocuments(ds=>ds.filter(d=>d.id!==doc.id))}><Icon name="trash" size={13}/></Btn>
+                    {hasPerm(currentUser,"documents.delete")&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>setDocuments(ds=>ds.filter(d=>d.id!==doc.id))} className="text-red-400"><Icon name="trash" size={13}/></Btn>}
                   </div>
                 </div>
               ))}
