@@ -285,7 +285,7 @@ const SEED_DEVELOPERS = [
 const SEED_USERS = [
   { id:"u1", email:"admin@solarpro.io", password:"Admin@123", name:"Platform Admin", role:ROLES.SUPER_ADMIN, developerId:null, active:true, paused:false, permissions:[], createdAt:"2024-01-01", phone:"", companyName:"SolarPro Platform", address:"", city:"", pincode:"", state:"", logo:null, stamp:null, signature:null, bankDetails:"Bank: ICICI\nAccount: 111222333444\nIFSC: ICIC0001111", invoicePrefix:"SP", invoiceNextNum:1001, customCities:[] },
   { id:"u2", email:"ceo@sunpower.com", password:"Sun@123", name:"James Rivera", role:ROLES.DEV_ADMIN, developerId:"d1", active:true, paused:false, permissions:[], createdAt:"2024-01-15", phone:"+91-98001-11111" },
-  { id:"u3", email:"sales@sunpower.com", password:"Sales@123", name:"Mia Chen", role:ROLES.USER, developerId:"d1", active:true, paused:false, permissions:["projects","proposals","notes","documents","invoices"], createdAt:"2024-02-01", phone:"+91-98001-22222" },
+  { id:"u3", email:"sales@sunpower.com", password:"Sales@123", name:"Mia Chen", role:ROLES.USER, developerId:"d1", active:true, paused:false, permissions:["projects.view","projects.create","projects.edit","projects.delete","projects.bulk_delete","notes.view","notes.create","notes.edit","notes.delete","documents.view","documents.upload","documents.delete","proposals.view","proposals.create","activity.view","invoices.view","invoices.create"], createdAt:"2024-02-01", phone:"+91-98001-22222" },
   { id:"u4", email:"admin@greenwatt.com", password:"Green@123", name:"Tom Okafor", role:ROLES.DEV_ADMIN, developerId:"d2", active:true, paused:false, permissions:[], createdAt:"2024-03-01", phone:"+91-98002-22222" },
 ];
 
@@ -677,12 +677,11 @@ const PERM_CATEGORIES = [
 // Dev Admins always have full access
 const hasPerm = (user, perm) => {
   if (!user) return false;
+  // Admins always have full access
   if (user.role === ROLES.DEV_ADMIN || user.role === ROLES.SUPER_ADMIN) return true;
-  const p = user.permissions || [];
-  // Legacy flat perm (e.g. "projects") grants all sub-perms of that category
-  const cat = perm.split(".")[0];
-  if (p.includes(cat)) return true;
-  return p.includes(perm);
+  const perms = user.permissions || [];
+  // Exact granular match only — no wildcard escalation
+  return perms.includes(perm);
 };
 
 // ── PERMISSIONS PICKER ────────────────────────────────────────
@@ -1304,8 +1303,8 @@ const Sidebar = ({ user, currentPage, setPage, onLogout, developer }) => {
   ];
   const userNav = [
     {id:"dashboard",label:"Dashboard",icon:"home"},
-    ...(hasPerm(user,"projects.view")||user.permissions?.includes("projects")||!user.permissions?.length ? [{id:"projects",label:"Projects",icon:"folder"}] : []),
-    ...(hasPerm(user,"invoices.view")||user.permissions?.includes("invoices") ? [{id:"invoices",label:"Invoices",icon:"invoice"}] : []),
+    ...(hasPerm(user,"projects.view") ? [{id:"projects",label:"Projects",icon:"folder"}] : []),
+    ...(hasPerm(user,"invoices.view") ? [{id:"invoices",label:"Invoices",icon:"invoice"}] : []),
     {id:"my-settings",label:"My Profile",icon:"user"},
   ];
   const nav = user.role===ROLES.SUPER_ADMIN ? superNav : user.role===ROLES.DEV_ADMIN ? devNav : userNav;
@@ -3027,10 +3026,10 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
             onClick={e=>e.stopPropagation()}
             className="w-3.5 h-3.5 accent-amber-500 flex-shrink-0 cursor-pointer"/>
 
-          {/* Drag handle area (also shows project ID + enquiry badge) */}
+          {/* Drag handle — only grabbable if user can edit */}
           <div
-            onPointerDown={e=>onCardPointerDown(e, p.id)}
-            className={`flex items-center justify-between flex-1 cursor-grab active:cursor-grabbing rounded-lg px-1 py-0.5 -mx-1 transition-colors group ${tc(dark,"hover:bg-slate-700/60","hover:bg-slate-100")}`}>
+            onPointerDown={hasPerm(currentUser,"projects.edit") ? e=>onCardPointerDown(e, p.id) : undefined}
+            className={`flex items-center justify-between flex-1 rounded-lg px-1 py-0.5 -mx-1 transition-colors group ${hasPerm(currentUser,"projects.edit") ? "cursor-grab active:cursor-grabbing "+tc(dark,"hover:bg-slate-700/60","hover:bg-slate-100") : "cursor-default"}`}>
             <span className={`text-xs font-mono px-1.5 py-0.5 rounded ${tc(dark,"bg-slate-700 text-slate-400","bg-slate-100 text-slate-500")}`}>{p.projectId||"—"}</span>
             <div className="flex items-center gap-1.5">
               <span className={`text-xs px-2 py-0.5 rounded-full border ${tc(dark,enquiryColors[p.enquiryType]||"bg-slate-500/20 text-slate-300 border-slate-500/30",enquiryColorsL[p.enquiryType]||"bg-slate-100 text-slate-600")}`}>{p.enquiryType||"—"}</span>
@@ -3042,43 +3041,43 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
             </div>
           </div>
 
-          {/* Quick-action menu button */}
-          <div className="relative">
-            <button
-              onClick={e=>{e.stopPropagation();setOpenCardMenuId(menuOpen?null:p.id);}}
-              className={`w-6 h-6 flex items-center justify-center rounded-md transition-colors flex-shrink-0 ${menuOpen?tc(dark,"bg-slate-600 text-white","bg-slate-200 text-slate-700"):tc(dark,"text-slate-500 hover:bg-slate-700 hover:text-white","text-slate-400 hover:bg-slate-100 hover:text-slate-700")}`}
-              title="Quick actions">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-                <circle cx="7" cy="2.5" r="1.4"/><circle cx="7" cy="7" r="1.4"/><circle cx="7" cy="11.5" r="1.4"/>
-              </svg>
-            </button>
-            {menuOpen&&(
-              <div className={`absolute right-0 top-8 z-50 rounded-xl shadow-2xl border w-52 overflow-hidden ${tc(dark,"bg-slate-800 border-slate-700","bg-white border-slate-200")}`}
-                onClick={e=>e.stopPropagation()}>
-                {/* Move to Lane */}
-                <div className={`px-3 py-2 border-b ${tc(dark,"border-slate-700 text-slate-400","border-slate-100 text-slate-500")}`} style={{fontSize:10,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase"}}>Move to Lane</div>
-                {lanes.map(l=>(
-                  <button key={l.id} onClick={()=>quickUpdateLane(l.id)}
-                    className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-left transition-colors ${p.laneId===l.id?tc(dark,"bg-amber-500/10 text-amber-300","bg-amber-50 text-amber-700"):tc(dark,"hover:bg-slate-700 text-white","hover:bg-slate-50 text-slate-700")}`}>
-                    <span style={{width:8,height:8,borderRadius:"50%",background:laneHex(l.color),flexShrink:0,display:"inline-block"}}/>
-                    {l.name}
-                    {p.laneId===l.id&&<span className="ml-auto text-amber-400" style={{fontSize:10}}>current</span>}
-                  </button>
-                ))}
-                {/* Assign To */}
-                <div className={`px-3 py-2 border-t border-b ${tc(dark,"border-slate-700 text-slate-400","border-slate-100 text-slate-500")}`} style={{fontSize:10,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase"}}>Assign To</div>
-                {devTeam.map(u=>(
-                  <button key={u.id} onClick={()=>quickUpdateAssignee(u.id)}
-                    className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-left transition-colors ${(p.assignedUserId||p.userId)===u.id?tc(dark,"bg-amber-500/10 text-amber-300","bg-amber-50 text-amber-700"):tc(dark,"hover:bg-slate-700 text-white","hover:bg-slate-50 text-slate-700")}`}>
-                    <span className={`w-5 h-5 rounded-md flex items-center justify-center text-white font-bold flex-shrink-0 ${tc(dark,"bg-slate-600","bg-amber-400")}`} style={{fontSize:9}}>{u.name.charAt(0)}</span>
-                    {u.name}
-                    {(p.assignedUserId||p.userId)===u.id&&<span className="ml-auto text-amber-400" style={{fontSize:10}}>assigned</span>}
-                  </button>
-                ))}
-                {devTeam.length===0&&<p className={`px-3 py-2 text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>No team members</p>}
-              </div>
-            )}
-          </div>
+          {/* Quick-action menu — only for users with edit permission */}
+          {hasPerm(currentUser,"projects.edit")&&(
+            <div className="relative">
+              <button
+                onClick={e=>{e.stopPropagation();setOpenCardMenuId(menuOpen?null:p.id);}}
+                className={`w-6 h-6 flex items-center justify-center rounded-md transition-colors flex-shrink-0 ${menuOpen?tc(dark,"bg-slate-600 text-white","bg-slate-200 text-slate-700"):tc(dark,"text-slate-500 hover:bg-slate-700 hover:text-white","text-slate-400 hover:bg-slate-100 hover:text-slate-700")}`}
+                title="Quick actions">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+                  <circle cx="7" cy="2.5" r="1.4"/><circle cx="7" cy="7" r="1.4"/><circle cx="7" cy="11.5" r="1.4"/>
+                </svg>
+              </button>
+              {menuOpen&&(
+                <div className={`absolute right-0 top-8 z-50 rounded-xl shadow-2xl border w-52 overflow-hidden ${tc(dark,"bg-slate-800 border-slate-700","bg-white border-slate-200")}`}
+                  onClick={e=>e.stopPropagation()}>
+                  <div className={`px-3 py-2 border-b ${tc(dark,"border-slate-700 text-slate-400","border-slate-100 text-slate-500")}`} style={{fontSize:10,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase"}}>Move to Lane</div>
+                  {lanes.map(l=>(
+                    <button key={l.id} onClick={()=>quickUpdateLane(l.id)}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-left transition-colors ${p.laneId===l.id?tc(dark,"bg-amber-500/10 text-amber-300","bg-amber-50 text-amber-700"):tc(dark,"hover:bg-slate-700 text-white","hover:bg-slate-50 text-slate-700")}`}>
+                      <span style={{width:8,height:8,borderRadius:"50%",background:laneHex(l.color),flexShrink:0,display:"inline-block"}}/>
+                      {l.name}
+                      {p.laneId===l.id&&<span className="ml-auto text-amber-400" style={{fontSize:10}}>current</span>}
+                    </button>
+                  ))}
+                  <div className={`px-3 py-2 border-t border-b ${tc(dark,"border-slate-700 text-slate-400","border-slate-100 text-slate-500")}`} style={{fontSize:10,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase"}}>Assign To</div>
+                  {devTeam.map(u=>(
+                    <button key={u.id} onClick={()=>quickUpdateAssignee(u.id)}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-left transition-colors ${(p.assignedUserId||p.userId)===u.id?tc(dark,"bg-amber-500/10 text-amber-300","bg-amber-50 text-amber-700"):tc(dark,"hover:bg-slate-700 text-white","hover:bg-slate-50 text-slate-700")}`}>
+                      <span className={`w-5 h-5 rounded-md flex items-center justify-center text-white font-bold flex-shrink-0 ${tc(dark,"bg-slate-600","bg-amber-400")}`} style={{fontSize:9}}>{u.name.charAt(0)}</span>
+                      {u.name}
+                      {(p.assignedUserId||p.userId)===u.id&&<span className="ml-auto text-amber-400" style={{fontSize:10}}>assigned</span>}
+                    </button>
+                  ))}
+                  {devTeam.length===0&&<p className={`px-3 py-2 text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>No team members</p>}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Card body */}
@@ -3321,8 +3320,8 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
         </div>
         <div className="flex gap-2 flex-wrap items-center">
           <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>setView(v=>v==="kanban"?"list":"kanban")}><Icon name={view==="kanban"?"sort":"kanban"} size={15}/>{view==="kanban"?"List":"Kanban"}</Btn>
-          <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={exportExcel}><Icon name="export" size={14}/>Export</Btn>
-          <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>setShowImportModal(true)}><Icon name="import" size={14}/>Import</Btn>
+          {hasPerm(currentUser,"projects.create")&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={exportExcel}><Icon name="export" size={14}/>Export</Btn>}
+          {hasPerm(currentUser,"projects.create")&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>setShowImportModal(true)}><Icon name="import" size={14}/>Import</Btn>}
           {hasPerm(currentUser,"projects.create")&&<Btn onClick={()=>{setEditProject(null);setForm({...blankForm,laneId:lanes[0]?.id||""});setShowAdd(true);}}><Icon name="plus" size={15}/>New Project</Btn>}
         </div>
       </div>
@@ -3340,8 +3339,8 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
         </span>
         {selected.size>0&&(
           <div className="flex gap-1.5 ml-1">
-            <button onClick={()=>{setBulkTarget(lanes[0]?.id||"");setBulkModal("lane");}} className={`text-xs px-2 py-0.5 rounded border ${tc(dark,"border-slate-700 text-slate-400 hover:bg-slate-700","border-slate-300 text-slate-500 hover:bg-slate-100")}`}>Move Lane</button>
-            <button onClick={()=>{setBulkTarget(devTeam[0]?.id||"");setBulkModal("assign");}} className={`text-xs px-2 py-0.5 rounded border ${tc(dark,"border-slate-700 text-slate-400 hover:bg-slate-700","border-slate-300 text-slate-500 hover:bg-slate-100")}`}>Assign</button>
+            {hasPerm(currentUser,"projects.edit")&&<button onClick={()=>{setBulkTarget(lanes[0]?.id||"");setBulkModal("lane");}} className={`text-xs px-2 py-0.5 rounded border ${tc(dark,"border-slate-700 text-slate-400 hover:bg-slate-700","border-slate-300 text-slate-500 hover:bg-slate-100")}`}>Move Lane</button>}
+            {hasPerm(currentUser,"projects.edit")&&<button onClick={()=>{setBulkTarget(devTeam[0]?.id||"");setBulkModal("assign");}} className={`text-xs px-2 py-0.5 rounded border ${tc(dark,"border-slate-700 text-slate-400 hover:bg-slate-700","border-slate-300 text-slate-500 hover:bg-slate-100")}`}>Assign</button>}
             {hasPerm(currentUser,"projects.bulk_delete")&&<button onClick={()=>setBulkModal("delete")} className="text-xs px-2 py-0.5 rounded border border-red-500/40 text-red-400 hover:bg-red-500/10">Delete</button>}
             <button onClick={clearSelect} className={`text-xs ${tc(dark,"text-slate-500 hover:text-white","text-slate-400 hover:text-slate-700")}`}>✕ Clear</button>
           </div>
@@ -4158,18 +4157,22 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
           <h1 className={`text-xl font-bold ${tc(dark,"text-white","text-slate-800")}`}>{project.customerName}</h1>
           <p className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{project.projectId} · {[project.customerCity,project.customerState].filter(Boolean).join(", ")||project.customerAddress}</p>
         </div>
-        {/* Quick lane + assign dropdowns */}
+        {/* Quick lane + assign dropdowns — editable only with projects.edit perm */}
         <div className="flex gap-2 items-center flex-wrap">
           {devLanes.length>0&&(
             <div className="flex items-center gap-1">
               <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{backgroundColor:laneHex(currentLane?.color||"slate")}}/>
-              <select value={project.laneId||""} onChange={e=>quickUpdate({laneId:e.target.value})}
-                className={`border rounded-lg px-2 py-1.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
-                {devLanes.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}
-              </select>
+              {hasPerm(currentUser,"projects.edit") ? (
+                <select value={project.laneId||""} onChange={e=>quickUpdate({laneId:e.target.value})}
+                  className={`border rounded-lg px-2 py-1.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+                  {devLanes.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}
+                </select>
+              ) : (
+                <span className={`text-xs px-2 py-1 rounded-full ${tc(dark,"bg-slate-700 text-slate-300","bg-slate-100 text-slate-600")}`}>{currentLane?.name||"—"}</span>
+              )}
             </div>
           )}
-          {devTeam.length>0&&(
+          {devTeam.length>0&&hasPerm(currentUser,"projects.edit")&&(
             <select value={project.assignedUserId||project.userId||""} onChange={e=>quickUpdate({assignedUserId:e.target.value})}
               className={`border rounded-lg px-2 py-1.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
               <option value="">Unassigned</option>
@@ -4300,15 +4303,17 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
       {/* NOTES TAB */}
       {tab==="notes"&&(
         <div>
+          {hasPerm(currentUser,"notes.create")&&(
           <div className={`border rounded-xl p-4 mb-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
             <textarea value={newNote} onChange={e=>setNewNote(e.target.value)} placeholder="Add a note…" rows={3} className={`w-full border rounded-lg px-3 py-2.5 focus:outline-none resize-none text-sm mb-3 ${tc(dark,"bg-slate-800/50 border-slate-600 text-white placeholder-slate-500 focus:border-amber-400","bg-slate-50 border-slate-300 text-slate-800 placeholder-slate-400 focus:border-amber-500")}`}/>
             {noteAttachments.length>0&&<div className="flex flex-wrap gap-2 mb-3">{noteAttachments.map((a,i)=><span key={i} className={`text-xs px-2 py-1 rounded-lg flex items-center gap-1.5 ${tc(dark,"bg-slate-700 text-slate-300","bg-slate-100 text-slate-600")}`}><Icon name="file" size={12}/>{a.name}<button onClick={()=>setNoteAttachments(x=>x.filter((_,j)=>j!==i))} className="text-red-400">×</button></span>)}</div>}
             <div className="flex gap-2">
-              {hasPerm(currentUser,"notes.create")&&<Btn onClick={addNote} disabled={!newNote.trim()&&!noteAttachments.length}><Icon name="plus" size={15}/>Add Note</Btn>}
+              <Btn onClick={addNote} disabled={!newNote.trim()&&!noteAttachments.length}><Icon name="plus" size={15}/>Add Note</Btn>
               <input ref={noteFileRef} type="file" onChange={handleNoteFile} className="hidden" accept="image/*,.pdf,.doc,.docx"/>
               <Btn variant="outline" onClick={()=>noteFileRef.current?.click()}><Icon name="upload" size={14}/>Attach</Btn>
             </div>
           </div>
+          )}
           {/* Filter bar */}
           {projNotes.length>0&&(
             <div className={`border rounded-xl p-3 mb-3 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
