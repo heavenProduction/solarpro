@@ -2328,6 +2328,8 @@ const SettingsPage = (props) => {
   const [newTag, setNewTag] = useState("");
   const [newSName, setNewSName] = useState("");
   const [newSColor, setNewSColor] = useState("sky");
+  const [tsDragId, setTsDragId]     = useState(null);
+  const [tsDragOver, setTsDragOver] = useState(null);
   const [deleteModal, setDeleteModal] = useState(null); // {laneId, transferTo}
   const F = (k,v) => setForm(f=>({...f,[k]:v}));
   const save = () => { setDevelopers(ds=>ds.map(d=>d.id===developer.id?{...d,...form}:d)); toast.show({message:"Settings saved!"}); };
@@ -2597,10 +2599,31 @@ const SettingsPage = (props) => {
             {/* Custom statuses */}
             {taskStatuses.length>0&&(
               <>
-                <p className={`text-xs font-semibold mb-2 ${tc(dark,"text-slate-500","text-slate-400")}`}>Custom</p>
+                <p className={`text-xs font-semibold mb-2 ${tc(dark,"text-slate-500","text-slate-400")}`}>Custom <span className="font-normal opacity-70">— drag ↕ to reorder</span></p>
                 <div className="space-y-2 mb-4">
                   {taskStatuses.map(s=>(
-                    <div key={s.id} className={`flex items-center gap-3 border rounded-xl p-3 ${tc(dark,"border-slate-700 bg-slate-800/40","border-slate-200 bg-slate-50")}`}>
+                    <div key={s.id}
+                      draggable
+                      onDragStart={()=>setTsDragId(s.id)}
+                      onDragOver={e=>{e.preventDefault();setTsDragOver(s.id);}}
+                      onDrop={e=>{
+                        e.preventDefault();
+                        if (!tsDragId||tsDragId===s.id) return;
+                        const arr=[...taskStatuses];
+                        const fromIdx=arr.findIndex(x=>x.id===tsDragId);
+                        const toIdx=arr.findIndex(x=>x.id===s.id);
+                        const moved=arr.splice(fromIdx,1)[0];
+                        arr.splice(toIdx,0,moved);
+                        props.setDevelopers(ds=>ds.map(d=>d.id===developer.id?{...d,taskStatuses:arr}:d));
+                        setTsDragId(null);setTsDragOver(null);
+                      }}
+                      onDragEnd={()=>{setTsDragId(null);setTsDragOver(null);}}
+                      className={`flex items-center gap-3 border rounded-xl p-3 cursor-grab active:cursor-grabbing transition-all ${tsDragOver===s.id?tc(dark,"border-amber-400/60 bg-amber-500/10","border-amber-400 bg-amber-50"):tc(dark,"border-slate-700 bg-slate-800/40","border-slate-200 bg-slate-50")} ${tsDragId===s.id?"opacity-40":""}`}>
+                      <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor" className={`flex-shrink-0 ${tc(dark,"text-slate-600","text-slate-300")}`}>
+                        <circle cx="3" cy="3" r="1.3"/><circle cx="7" cy="3" r="1.3"/>
+                        <circle cx="3" cy="8" r="1.3"/><circle cx="7" cy="8" r="1.3"/>
+                        <circle cx="3" cy="13" r="1.3"/><circle cx="7" cy="13" r="1.3"/>
+                      </svg>
                       <span style={{width:10,height:10,borderRadius:"50%",background:s.hex,flexShrink:0,display:"inline-block"}}/>
                       <span className={`flex-1 text-sm font-medium ${tc(dark,"text-white","text-slate-800")}`}>{s.name}</span>
                       <button onClick={()=>removeTaskStatus(s.id)} className={`p-1 rounded ${tc(dark,"hover:bg-slate-700 text-red-400","hover:bg-red-50 text-red-500")}`}><Icon name="trash" size={12}/></button>
@@ -4135,6 +4158,163 @@ img,svg{display:block;max-width:100%;height:auto}[hidden]{display:none}
 // SOLARPRO v3 - PART 7: PROJECT DETAIL (Notes, Docs, Proposals)
 // ============================================================
 
+// ── PROJECT TASKS TAB COMPONENT ──────────────────────────────
+// Must be a real component (not an IIFE) so hooks work correctly.
+const ProjectTasksTab = ({project, tasks, setTasks, users, currentUser, developer, projects}) => {
+  const {dark} = useTheme();
+  const toast = useToast();
+  const [taskSearch, setTaskSearch]       = useState("");
+  const [taskStatusF, setTaskStatusF]     = useState("all");
+  const [taskPriorityF, setTaskPriorityF] = useState("all");
+  const [taskUserF, setTaskUserF]         = useState("all");
+  const [showTaskAdd, setShowTaskAdd]     = useState(false);
+
+  const devTeamT = users ? users.filter(u=>u.developerId===project.developerId&&u.active) : [];
+  const now2 = new Date();
+
+  const projTasks = (tasks||[])
+    .filter(t=>t.projectId===project.id)
+    .map(computeTaskStatus)
+    .filter(t=>{
+      if (taskStatusF!=="all"&&t.status!==taskStatusF) return false;
+      if (taskPriorityF!=="all"&&t.priority!==taskPriorityF) return false;
+      if (taskUserF!=="all"&&!(t.assignedTo||[]).includes(taskUserF)) return false;
+      if (taskSearch){
+        const q=taskSearch.toLowerCase();
+        if (!t.taskName.toLowerCase().includes(q)&&!t.taskId?.toLowerCase().includes(q)&&!t.description?.toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+
+  const addTaskForProject = (form) => {
+    if (!setTasks) return;
+    const allNums=(tasks||[]).filter(t=>t.developerId===currentUser.developerId).map(t=>{const m=(t.taskId||"").match(/(\d+)$/);return m?parseInt(m[1]):0;});
+    const nextNum=Math.max(1000,...allNums)+1;
+    const newT={
+      ...form,
+      id:`t${Date.now()}`,taskId:`TSK-${nextNum}`,
+      projectId:project.id,createdBy:currentUser.id,
+      isDelayed:false,isDelayedCompleted:false,completedAt:null,attachments:[],
+      activityLog:[{id:`ta${Date.now()}`,action:"created",by:currentUser.name,at:new Date().toISOString()}],
+      developerId:project.developerId,
+    };
+    setTasks(ts=>[...ts,newT]);
+    setShowTaskAdd(false);
+    toast.show({message:`Task "${newT.taskName}" created.`});
+  };
+
+  const inp = `border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`;
+
+  return (
+    <div>
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+        <h3 className={`font-bold text-sm ${tc(dark,"text-white","text-slate-800")}`}>
+          Tasks <span className={`font-normal text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>({projTasks.length})</span>
+        </h3>
+        {hasPerm(currentUser,"projects.create")&&(
+          <Btn size="sm" onClick={()=>setShowTaskAdd(true)}><Icon name="plus" size={14}/>Add Task</Btn>
+        )}
+      </div>
+
+      {/* Filters */}
+      <div className={`border rounded-xl mb-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+        <div className="flex flex-wrap gap-2 p-3 items-center">
+          <div className={`flex items-center gap-2 flex-1 min-w-0 border rounded-lg px-3 py-1.5 ${tc(dark,"bg-slate-800 border-slate-600","bg-slate-50 border-slate-300")}`}>
+            <Icon name="search" size={13}/>
+            <input value={taskSearch} onChange={e=>setTaskSearch(e.target.value)} placeholder="Search tasks…"
+              className={`flex-1 bg-transparent text-xs focus:outline-none ${tc(dark,"text-white placeholder-slate-500","text-slate-800 placeholder-slate-400")}`}/>
+            {taskSearch&&<button onClick={()=>setTaskSearch("")} className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>×</button>}
+          </div>
+          <select value={taskStatusF} onChange={e=>setTaskStatusF(e.target.value)} className={inp}>
+            <option value="all">All Status</option>
+            {TASK_STATUS_BUILTIN.concat((developer?.taskStatuses||[]).map(x=>x.name)).map(s=><option key={s}>{s}</option>)}
+          </select>
+          <select value={taskPriorityF} onChange={e=>setTaskPriorityF(e.target.value)} className={inp}>
+            <option value="all">All Priority</option>
+            {TASK_PRIORITY.map(p=><option key={p}>{p}</option>)}
+          </select>
+          <select value={taskUserF} onChange={e=>setTaskUserF(e.target.value)} className={inp}>
+            <option value="all">All Users</option>
+            {devTeamT.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+          {(taskSearch||taskStatusF!=="all"||taskPriorityF!=="all"||taskUserF!=="all")&&(
+            <button onClick={()=>{setTaskSearch("");setTaskStatusF("all");setTaskPriorityF("all");setTaskUserF("all");}} className="text-xs text-amber-400 underline">Clear</button>
+          )}
+        </div>
+      </div>
+
+      {/* Task cards */}
+      {projTasks.length===0 ? (
+        <div className={`text-center py-14 border-2 border-dashed rounded-xl ${tc(dark,"border-slate-800 text-slate-600","border-slate-200 text-slate-400")}`}>
+          <div className="text-3xl mb-2">✅</div>
+          <p className="text-sm">No tasks yet for this project.</p>
+          {hasPerm(currentUser,"projects.create")&&(
+            <button onClick={()=>setShowTaskAdd(true)} className="text-amber-400 text-sm underline mt-1">Add the first task</button>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {projTasks.map(t=>{
+            const assignees=(t.assignedTo||[]).map(id=>devTeamT.find(u=>u.id===id)).filter(Boolean);
+            const overdue=t.dueDate&&new Date(t.dueDate)<now2&&t.status!=="Completed"&&t.status!=="Cancelled";
+            const hex=getStatusHex(t.status,developer);
+            const done=(t.subtasks||[]).filter(s=>s.status==="Completed").length;
+            const total=(t.subtasks||[]).length;
+            return (
+              <div key={t.id}
+                className={`border rounded-xl p-3 transition-all hover:shadow-md ${overdue?tc(dark,"border-red-500/40 bg-red-500/5","border-red-300 bg-red-50"):tc(dark,"border-slate-700/50 bg-[#0c1929]","border-slate-200 bg-white shadow-sm")}`}>
+                <div className="flex flex-wrap items-start gap-2 mb-1.5">
+                  <span className={`text-xs font-mono ${tc(dark,"text-slate-500","text-slate-400")}`}>{t.taskId}</span>
+                  <PriorityBadge priority={t.priority}/>
+                  <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{background:hex+"20",color:hex,border:`1px solid ${hex}40`}}>{t.status}</span>
+                  {overdue&&<span className={`text-xs px-2 py-0.5 rounded-full ${tc(dark,"bg-red-500/20 text-red-400","bg-red-100 text-red-600")}`}>⚠ Overdue</span>}
+                </div>
+                <p className={`font-semibold text-sm mb-1 ${tc(dark,"text-white","text-slate-800")}`}>{t.taskName}</p>
+                {t.description&&<p className={`text-xs mb-2 line-clamp-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>{t.description}</p>}
+                {total>0&&(
+                  <div className="mb-2">
+                    <div className="flex justify-between mb-0.5">
+                      <span className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>Subtasks</span>
+                      <span className={`text-xs font-medium ${tc(dark,"text-slate-300","text-slate-600")}`}>{done}/{total}</span>
+                    </div>
+                    <div className={`h-1.5 rounded-full ${tc(dark,"bg-slate-700","bg-slate-200")}`}>
+                      <div className="h-full rounded-full bg-amber-500 transition-all" style={{width:`${total?done/total*100:0}%`}}/>
+                    </div>
+                  </div>
+                )}
+                <div className="flex flex-wrap items-center gap-3 mt-1">
+                  <div className="flex -space-x-1">
+                    {assignees.slice(0,4).map(u=>(
+                      <div key={u.id} title={u.name} className={`w-5 h-5 rounded-full text-white flex items-center justify-center font-bold border-2 ${tc(dark,"bg-slate-600 border-[#0c1929]","bg-amber-500 border-white")}`} style={{fontSize:8}}>{u.name.charAt(0)}</div>
+                    ))}
+                  </div>
+                  {t.dueDate&&<span className={`text-xs ${overdue?tc(dark,"text-red-400","text-red-600"):tc(dark,"text-slate-500","text-slate-400")}`}>Due {new Date(t.dueDate).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}</span>}
+                  {total>0&&<span className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>✓ {done}/{total}</span>}
+                  {(t.tags||[]).slice(0,2).map(tag=><span key={tag} className={`text-xs px-1.5 py-0.5 rounded ${tc(dark,"bg-slate-700 text-slate-400","bg-slate-100 text-slate-500")}`}>#{tag}</span>)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Add task modal */}
+      {showTaskAdd&&(
+        <TaskFormModal
+          task={null}
+          projects={[project,...(projects||[])].filter((p,i,a)=>a.findIndex(x=>x.id===p.id)===0)}
+          users={users||[]}
+          currentUser={currentUser}
+          developer={developer}
+          defaultProjectId={project.id}
+          onSave={addTaskForProject}
+          onClose={()=>setShowTaskAdd(false)}/>
+      )}
+    </div>
+  );
+};
+
 const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, proposals, setProposals, templates, developer, currentUser, onBack, setCurrentPage, setProjects, users, tasks, setTasks }) => {
   const { dark } = useTheme();
   const toast = useToast();
@@ -4166,19 +4346,14 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
   // Reset ef when editingProject opens to pick up latest project data
   useEffect(()=>{ if(editingProject) setEF({...project, countryCode:"+91", customerPhone:(project.customerPhone||"").replace(/^\+\d+\s*/,""), tags:project.tags||[]}); },[editingProject]);
   // Reset task tab filters when navigating to a different project
-  useEffect(()=>{ setTaskSearch(""); setTaskStatusF("all"); setTaskPriorityF("all"); setTaskUserF("all"); setShowTaskAdd(false); },[project.id]);
+
   // Activity log state — hoisted from IIFE
   const [actQ, setActQ] = useState("");
   const [actType, setActType] = useState("all");
   // Note edit/delete state
   const [editingNoteId, setEditingNoteId] = useState(null);
   const [editNoteContent, setEditNoteContent] = useState("");
-  // Task tab states (hoisted from IIFE)
-  const [taskSearch, setTaskSearch]       = useState("");
-  const [taskStatusF, setTaskStatusF]     = useState("all");
-  const [taskPriorityF, setTaskPriorityF] = useState("all");
-  const [taskUserF, setTaskUserF]         = useState("all");
-  const [showTaskAdd, setShowTaskAdd]     = useState(false);
+
 
   const projNotes     = notes.filter(n=>n.projectId===project.id);
   const projDocs      = documents.filter(d=>d.projectId===project.id);
@@ -4282,27 +4457,6 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
   const quickUpdate = (changes) => {
     if (!setProjects) return;
     setProjects(ps=>ps.map(p=>p.id===project.id?{...p,...changes}:p));
-  };
-
-  // Add task directly from project detail page
-  const addTaskForProject = (form) => {
-    if (!setTasks) return;
-    const allNums = (tasks||[]).filter(t=>t.developerId===currentUser.developerId).map(t=>{const m=(t.taskId||"").match(/(\d+)$/);return m?parseInt(m[1]):0;});
-    const nextNum = Math.max(1000,...allNums)+1;
-    const newT = {
-      ...form,
-      id:`t${Date.now()}`,
-      taskId:`TSK-${nextNum}`,
-      projectId:project.id,
-      createdBy:currentUser.id,
-      isDelayed:false,isDelayedCompleted:false,completedAt:null,
-      attachments:[],
-      activityLog:[{id:`ta${Date.now()}`,action:"created",by:currentUser.name,at:new Date().toISOString()}],
-      developerId:project.developerId,
-    };
-    setTasks(ts=>[...ts,newT]);
-    setShowTaskAdd(false);
-    toast.show({message:`Task "${newT.taskName}" created.`});
   };
 
   // Safety guard: if project is gone (e.g. deleted), return nothing
@@ -4460,125 +4614,17 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
         </div>
       )}
 
-      {/* TASKS TAB */}
-      {tab==="tasks"&&(()=>{
-        const projTasks = (tasks||[])
-          .filter(t=>t.projectId===project.id)
-          .map(computeTaskStatus)
-          .filter(t=>{
-            if (taskStatusF!=="all"&&t.status!==taskStatusF) return false;
-            if (taskPriorityF!=="all"&&t.priority!==taskPriorityF) return false;
-            if (taskUserF!=="all"&&!(t.assignedTo||[]).includes(taskUserF)) return false;
-            if (taskSearch){
-              const q=taskSearch.toLowerCase();
-              if (!t.taskName.toLowerCase().includes(q)&&!t.taskId?.toLowerCase().includes(q)&&!t.description?.toLowerCase().includes(q)) return false;
-            }
-            return true;
-          });
-
-        const devTeamT = users ? users.filter(u=>u.developerId===project.developerId&&u.active) : [];
-        const now2 = new Date();
-
-        const inp = `border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`;
-
-        return (
-          <div>
-            {/* Header row */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-              <div>
-                <h3 className={`font-bold text-sm ${tc(dark,"text-white","text-slate-800")}`}>Tasks <span className={`font-normal text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>({projTasks.length})</span></h3>
-              </div>
-              {hasPerm(currentUser,"projects.create")&&(
-                <Btn size="sm" onClick={()=>setShowTaskAdd(true)}><Icon name="plus" size={14}/>Add Task</Btn>
-              )}
-            </div>
-
-            {/* Filter bar */}
-            <div className={`border rounded-xl mb-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
-              <div className="flex flex-wrap gap-2 p-3 items-center">
-                <div className={`flex items-center gap-2 flex-1 min-w-0 border rounded-lg px-3 py-1.5 ${tc(dark,"bg-slate-800 border-slate-600","bg-slate-50 border-slate-300")}`}>
-                  <Icon name="search" size={13}/>
-                  <input value={taskSearch} onChange={e=>setTaskSearch(e.target.value)} placeholder="Search tasks…"
-                    className={`flex-1 bg-transparent text-xs focus:outline-none ${tc(dark,"text-white placeholder-slate-500","text-slate-800 placeholder-slate-400")}`}/>
-                  {taskSearch&&<button onClick={()=>setTaskSearch("")} className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>×</button>}
-                </div>
-                <select value={taskStatusF} onChange={e=>setTaskStatusF(e.target.value)} className={inp}>
-                  <option value="all">All Status</option>
-                  {TASK_STATUS_BUILTIN.concat((developer?.taskStatuses||[]).map(x=>x.name)).map(s=><option key={s}>{s}</option>)}
-                </select>
-                <select value={taskPriorityF} onChange={e=>setTaskPriorityF(e.target.value)} className={inp}>
-                  <option value="all">All Priority</option>
-                  {TASK_PRIORITY.map(p=><option key={p}>{p}</option>)}
-                </select>
-                <select value={taskUserF} onChange={e=>setTaskUserF(e.target.value)} className={inp}>
-                  <option value="all">All Users</option>
-                  {devTeamT.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
-                </select>
-                {(taskSearch||taskStatusF!=="all"||taskPriorityF!=="all"||taskUserF!=="all")&&(
-                  <button onClick={()=>{setTaskSearch("");setTaskStatusF("all");setTaskPriorityF("all");setTaskUserF("all");}} className="text-xs text-amber-400 underline">Clear</button>
-                )}
-              </div>
-            </div>
-
-            {/* Task list */}
-            {projTasks.length===0 ? (
-              <div className={`text-center py-14 border-2 border-dashed rounded-xl ${tc(dark,"border-slate-800 text-slate-600","border-slate-200 text-slate-400")}`}>
-                <div className="text-3xl mb-2">✅</div>
-                <p className="text-sm">No tasks yet for this project.</p>
-                {hasPerm(currentUser,"projects.create")&&<button onClick={()=>setShowTaskAdd(true)} className="text-amber-400 text-sm underline mt-1">Add the first task</button>}
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {projTasks.map(t=>{
-                  const assignees=(t.assignedTo||[]).map(id=>devTeamT.find(u=>u.id===id)).filter(Boolean);
-                  const overdue=t.dueDate&&new Date(t.dueDate)<now2&&t.status!=="Completed"&&t.status!=="Cancelled";
-                  const hex = getStatusHex(t.status, developer);
-                  return (
-                    <div key={t.id} onClick={()=>{if(setTasks){/* open detail */}}}
-                      className={`border rounded-xl p-3 transition-all cursor-pointer hover:shadow-md ${overdue?tc(dark,"border-red-500/40 bg-red-500/5","border-red-300 bg-red-50"):tc(dark,"border-slate-700/50 bg-[#0c1929]","border-slate-200 bg-white shadow-sm")}`}>
-                      <div className="flex flex-wrap items-start gap-2 mb-1.5">
-                        <span className={`text-xs font-mono ${tc(dark,"text-slate-500","text-slate-400")}`}>{t.taskId}</span>
-                        <PriorityBadge priority={t.priority}/>
-                        <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{background:hex+"20",color:hex,border:`1px solid ${hex}40`}}>{t.status}</span>
-                        {overdue&&<span className={`text-xs px-2 py-0.5 rounded-full ${tc(dark,"bg-red-500/20 text-red-400","bg-red-100 text-red-600")}`}>⚠ Overdue</span>}
-                      </div>
-                      <p className={`font-semibold text-sm mb-1 ${tc(dark,"text-white","text-slate-800")}`}>{t.taskName}</p>
-                      {t.description&&<p className={`text-xs mb-2 line-clamp-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>{t.description}</p>}
-                      <div className="flex flex-wrap items-center gap-3 mt-1">
-                        <div className="flex -space-x-1">
-                          {assignees.slice(0,4).map(u=>(
-                            <div key={u.id} title={u.name} className={`w-5 h-5 rounded-full text-white flex items-center justify-center font-bold border-2 ${tc(dark,"bg-slate-600 border-[#0c1929]","bg-amber-500 border-white")}`} style={{fontSize:8}}>{u.name.charAt(0)}</div>
-                          ))}
-                        </div>
-                        {t.dueDate&&<span className={`text-xs ${overdue?tc(dark,"text-red-400","text-red-600"):tc(dark,"text-slate-500","text-slate-400")}`}>Due {new Date(t.dueDate).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}</span>}
-                        {(t.subtasks||[]).length>0&&(
-                          <span className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>
-                            ✓ {(t.subtasks||[]).filter(s=>s.status==="Completed").length}/{(t.subtasks||[]).length}
-                          </span>
-                        )}
-                        {(t.tags||[]).slice(0,2).map(tag=><span key={tag} className={`text-xs px-1.5 py-0.5 rounded ${tc(dark,"bg-slate-700 text-slate-400","bg-slate-100 text-slate-500")}`}>#{tag}</span>)}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Add task modal — pre-filled with this project */}
-            {showTaskAdd&&(
-              <TaskFormModal
-                task={null}
-                projects={[project,...(projects||[])].filter((p,i,a)=>a.findIndex(x=>x.id===p.id)===0)}
-                users={users||[]}
-                currentUser={currentUser}
-                developer={developer}
-                defaultProjectId={project.id}
-                onSave={addTaskForProject}
-                onClose={()=>setShowTaskAdd(false)}/>
-            )}
-          </div>
-        );
-      })()}
+      {/* TASKS TAB — rendered as proper component, not IIFE */}
+      {tab==="tasks"&&(
+        <ProjectTasksTab
+          project={project}
+          tasks={tasks}
+          setTasks={setTasks}
+          users={users}
+          currentUser={currentUser}
+          developer={developer}
+          projects={projects}/>
+      )}
 
       {/* NOTES TAB */}
       {tab==="notes"&&(
