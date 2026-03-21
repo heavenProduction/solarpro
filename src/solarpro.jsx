@@ -2183,7 +2183,8 @@ const TemplatesPage = ({ templates, setTemplates, developers, currentUser }) => 
 };
 
 // ── SETTINGS PAGE (Dev Admin) ─────────────────────────────────
-const SettingsPage = ({ developer, setDevelopers, dateFormat, setDateFormat, projects, setProjects }) => {
+const SettingsPage = (props) => {
+  const { developer, setDevelopers, dateFormat, setDateFormat, projects, setProjects } = props;
   const { dark } = useTheme();
   const toast = useToast();
   const [form, setForm] = useState({...developer});
@@ -2277,8 +2278,8 @@ const SettingsPage = ({ developer, setDevelopers, dateFormat, setDateFormat, pro
 
       {/* Settings sub-tabs */}
       <div className={`flex gap-1 rounded-xl p-1 mb-5 w-fit border ${tc(dark,"bg-[#070e1c] border-slate-800","bg-slate-100 border-slate-200")}`}>
-        {["company","solar","finance","invoices","projects","lanes"].map(t=>(
-          <button key={t} onClick={()=>setSettingsTab(t)} className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-all ${settingsTab===t?"bg-amber-500 text-slate-900":tc(dark,"text-slate-400 hover:text-white","text-slate-500 hover:text-slate-700")}`}>{t}</button>
+        {["company","solar","finance","invoices","projects","lanes","features","deleted"].map(t=>(
+          <button key={t} onClick={()=>setSettingsTab(t)} className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-all ${settingsTab===t?"bg-amber-500 text-slate-900":tc(dark,"text-slate-400 hover:text-white","text-slate-500 hover:text-slate-700")}`}>{t==="deleted"?"🗑 Deleted":t}</button>
         ))}
       </div>
 
@@ -2425,13 +2426,79 @@ const SettingsPage = ({ developer, setDevelopers, dateFormat, setDateFormat, pro
         </div>
       )}
 
+      {settingsTab==="features"&&(
+        <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+          <h3 className={`font-bold mb-1 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Feature Flags</h3>
+          <p className={`text-xs mb-4 ${tc(dark,"text-slate-400","text-slate-500")}`}>Enable or disable features for your team users. Admin users always have full access.</p>
+          {[
+            {key:"allowNoteEdit", label:"Allow Users to Edit & Delete Notes", desc:"When enabled, team members can edit and delete notes they or others have added on project pages."},
+            {key:"allowDocDelete", label:"Allow Users to Delete Documents", desc:"When enabled, team members can delete uploaded documents from project pages."},
+            {key:"allowBulkDelete", label:"Allow Users to Bulk Delete Projects", desc:"When enabled, users can use the checkbox multi-select to delete projects in bulk."},
+          ].map(({key,label,desc})=>(
+            <div key={key} className={`flex items-start gap-4 p-3 rounded-xl border mb-3 ${tc(dark,"border-slate-700 bg-slate-800/30","border-slate-200 bg-slate-50")}`}>
+              <div className="flex-1">
+                <p className={`text-sm font-medium ${tc(dark,"text-white","text-slate-800")}`}>{label}</p>
+                <p className={`text-xs mt-0.5 ${tc(dark,"text-slate-400","text-slate-500")}`}>{desc}</p>
+              </div>
+              <button onClick={()=>F(key,!form[key])}
+                className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 mt-0.5 ${form[key]?"bg-amber-500":"bg-slate-600"}`}>
+                <span className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all ${form[key]?"left-6":"left-1"}`}/>
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {settingsTab==="deleted"&&(()=>{
+        const devDeleted = (props.deletedItems||[]).filter(d=>d.developerId===developer.id).sort((a,b)=>new Date(b._deletedAt)-new Date(a._deletedAt));
+        return (
+          <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className={`font-bold text-sm ${tc(dark,"text-white","text-slate-800")}`}>Deleted Items <span className={`text-xs font-normal ${tc(dark,"text-slate-400","text-slate-500")}`}>({devDeleted.length})</span></h3>
+                <p className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>Items deleted by any team member. Admins only.</p>
+              </div>
+              {devDeleted.length>0&&<Btn size="sm" variant="danger" onClick={()=>{if(window.confirm("Permanently delete all items in trash? This cannot be undone."))props.setDeletedItems(di=>di.filter(d=>d.developerId!==developer.id));}}>Empty Trash</Btn>}
+            </div>
+            {devDeleted.length===0 ? (
+              <div className={`text-center py-12 ${tc(dark,"text-slate-500","text-slate-400")}`}>
+                <div className="text-3xl mb-2">🗑️</div>
+                <p className="text-sm">Trash is empty</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {devDeleted.map(item=>(
+                  <div key={item.id} className={`flex items-center gap-3 border rounded-xl p-3 ${tc(dark,"border-slate-700/50 bg-slate-800/20","border-slate-200 bg-slate-50")}`}>
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${tc(dark,"bg-red-500/15 text-red-400","bg-red-100 text-red-500")}`}>
+                      <Icon name="trash" size={14}/>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm font-medium truncate ${tc(dark,"text-white","text-slate-800")}`}>{item.customerName||item.title||item.name||"Unknown"}</p>
+                      <p className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>
+                        {item.projectId&&<span className="mr-2">{item.projectId}</span>}
+                        <span>Deleted {new Date(item._deletedAt).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"})}</span>
+                      </p>
+                    </div>
+                    <Btn size="sm" variant="ghost" onClick={()=>{
+                      if(item._deletedType==="project") props.setProjects(ps=>[...ps,{...item,_deletedAt:undefined,_deletedType:undefined}]);
+                      props.setDeletedItems(di=>di.filter(d=>d.id!==item.id));
+                    }}>↩ Restore</Btn>
+                    <button onClick={()=>props.setDeletedItems(di=>di.filter(d=>d.id!==item.id))} className={`p-1.5 rounded-lg ${tc(dark,"hover:bg-slate-700 text-red-400","hover:bg-red-50 text-red-500")}`}><Icon name="trash" size={13}/></button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       <div className="mt-4"><Btn onClick={save} size="lg"><Icon name="check" size={16}/>Save All Settings</Btn></div>
     </div>
   );
 };
 
 // ── PROJECTS PAGE — Kanban + Advanced Filters + Bulk Upload ──
-const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId, developer, users, setDevelopers }) => {
+const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId, developer, users, setDevelopers, deletedItems, setDeletedItems }) => {
   const { dark } = useTheme();
   const [view, setView] = useState("kanban"); // kanban | list
   const [showAdd, setShowAdd] = useState(false);
@@ -2834,10 +2901,11 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
 
   const bulkDelete = () => {
     const ids = [...selected];
-    const backup = projects.filter(p=>ids.includes(p.id));
+    const toDelete = projects.filter(p=>ids.includes(p.id)).map(p=>({...p,_deletedAt:new Date().toISOString(),_deletedType:"project"}));
+    setDeletedItems(di=>[...di,...toDelete]);
     setProjects(ps=>ps.filter(p=>!ids.includes(p.id)));
     clearSelect(); setBulkModal(null);
-    toast.show({ message: `${ids.length} project(s) deleted.`, undoFn: ()=>setProjects(ps=>[...ps,...backup]) });
+    toast.show({ message: `${ids.length} project(s) moved to Deleted Items.`, undoFn: ()=>{setProjects(ps=>[...ps,...toDelete]);setDeletedItems(di=>di.filter(d=>!ids.includes(d.id)));} });
   };
   const bulkMoveLane = () => {
     if (!bulkTarget) return;
@@ -3277,10 +3345,10 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
               </div>
               <div>
                 <p className={`text-xs font-medium mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>Size Range (kW)</p>
-                <div className="flex gap-1 items-center">
-                  <input type="number" value={filters.minSize} onChange={e=>FF("minSize",e.target.value)} placeholder="Min" className={`flex-1 ${selCls}`}/>
-                  <span className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>–</span>
-                  <input type="number" value={filters.maxSize} onChange={e=>FF("maxSize",e.target.value)} placeholder="Max" className={`flex-1 ${selCls}`}/>
+                <div className="flex gap-1 items-center min-w-0">
+                  <input type="number" value={filters.minSize} onChange={e=>FF("minSize",e.target.value)} placeholder="Min" className={`min-w-0 w-full ${selCls}`}/>
+                  <span className={`text-xs flex-shrink-0 ${tc(dark,"text-slate-500","text-slate-400")}`}>–</span>
+                  <input type="number" value={filters.maxSize} onChange={e=>FF("maxSize",e.target.value)} placeholder="Max" className={`min-w-0 w-full ${selCls}`}/>
                 </div>
               </div>
             </div>
@@ -3906,6 +3974,19 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
   const [docFilterType, setDocFilterType] = useState("all");
   const [docFilterUser, setDocFilterUser] = useState("all");
   const [editingProject, setEditingProject] = useState(false);
+  // Edit form state — hoisted from IIFE to satisfy Rules of Hooks
+  const lanesLocal = developer?.lanes?.filter(l=>!l.disabled).sort((a,b)=>a.order-b.order)||[];
+  const devTeamLocal = users ? users.filter(u=>u.developerId===project.developerId && u.active) : [];
+  const [ef, setEF] = useState({...project, countryCode:"+91", customerPhone:(project.customerPhone||"").replace(/^\+\d+\s*/,""), tags:project.tags||[]});
+  const SEF = (k,v) => setEF(f=>({...f,[k]:v}));
+  // Reset ef when editingProject opens to pick up latest project data
+  useEffect(()=>{ if(editingProject) setEF({...project, countryCode:"+91", customerPhone:(project.customerPhone||"").replace(/^\+\d+\s*/,""), tags:project.tags||[]}); },[editingProject]);
+  // Activity log state — hoisted from IIFE
+  const [actQ, setActQ] = useState("");
+  const [actType, setActType] = useState("all");
+  // Note edit/delete state
+  const [editingNoteId, setEditingNoteId] = useState(null);
+  const [editNoteContent, setEditNoteContent] = useState("");
 
   const projNotes     = notes.filter(n=>n.projectId===project.id);
   const projDocs      = documents.filter(d=>d.projectId===project.id);
@@ -4036,68 +4117,59 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
       </div>
 
       {/* Inline edit modal */}
-      {editingProject&&(()=>{
-        const devTeamLocal = users ? users.filter(u=>u.developerId===project.developerId && u.active) : [];
-        const lanesLocal = developer?.lanes?.filter(l=>!l.disabled).sort((a,b)=>a.order-b.order)||[];
-        const PROJECT_UNITS_LOCAL = ["kW","kWp","MW","MWp","W","Wp"];
-        const [ef, setEF] = useState({...project, countryCode:"+91", customerPhone:(project.customerPhone||"").replace(/^\+\d+\s*/,""), tags:project.tags||[]});
-        const SEF = (k,v) => setEF(f=>({...f,[k]:v}));
-        const saveEdit = () => {
-          const entry={id:`act${Date.now()}`,type:"edited",message:"Project updated",by:currentUser.name,at:new Date().toISOString()};
-          setProjects(ps=>ps.map(p=>p.id===project.id?{...ef,activityLog:[...(p.activityLog||[]),entry]}:p));
-          setEditingProject(false);
-        };
-        return (
-          <Modal title="Edit Project" onClose={()=>setEditingProject(false)} wide>
-            <div className="grid grid-cols-2 gap-3 mb-3">
-              <Field label="Customer Name" value={ef.customerName} onChange={v=>SEF("customerName",v)} required/>
-              <Field label="Customer Type" type="select" value={ef.customerType} onChange={v=>SEF("customerType",v)} options={["Residential","Commercial","Industrial","Government","Other"]}/>
-              <Field label="Pincode" value={ef.customerPincode||""} onChange={v=>SEF("customerPincode",v)} placeholder="400001"/>
-              <Field label="City" value={ef.customerCity||""} onChange={v=>SEF("customerCity",v)}/>
-              <div>
-                <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>State</label>
-                <select value={ef.customerState||""} onChange={e=>SEF("customerState",e.target.value)} className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none mb-4 ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
-                  <option value="">Select State / UT</option>
-                  {INDIA_STATES.map(s=><option key={s} value={s}>{s}</option>)}
+      {editingProject&&(
+        <Modal title="Edit Project" onClose={()=>setEditingProject(false)} wide>
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <Field label="Customer Name" value={ef.customerName} onChange={v=>SEF("customerName",v)} required/>
+            <Field label="Customer Type" type="select" value={ef.customerType} onChange={v=>SEF("customerType",v)} options={["Residential","Commercial","Industrial","Government","Other"]}/>
+            <Field label="Pincode" value={ef.customerPincode||""} onChange={v=>SEF("customerPincode",v)} placeholder="400001"/>
+            <Field label="City" value={ef.customerCity||""} onChange={v=>SEF("customerCity",v)}/>
+            <div>
+              <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>State</label>
+              <select value={ef.customerState||""} onChange={e=>SEF("customerState",e.target.value)} className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none mb-4 ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+                <option value="">Select State / UT</option>
+                {INDIA_STATES.map(s=><option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <Field label="Email" value={ef.customerEmail||""} onChange={v=>SEF("customerEmail",v)}/>
+          </div>
+          <Field label="Address" type="textarea" rows={2} value={ef.customerAddress||""} onChange={v=>SEF("customerAddress",v)}/>
+          <div className="grid grid-cols-2 gap-3 mb-3 mt-3">
+            <div>
+              <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Project Size</label>
+              <div className="flex">
+                <input type="number" value={ef.projectSize} onChange={e=>SEF("projectSize",e.target.value)} className={`flex-1 border rounded-l-lg px-3 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}/>
+                <select value={ef.projectUnit||"kW"} onChange={e=>SEF("projectUnit",e.target.value)} className={`border border-l-0 rounded-r-lg px-2 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+                  {["kW","kWp","MW","MWp","W","Wp"].map(u=><option key={u} value={u}>{u}</option>)}
                 </select>
               </div>
-              <Field label="Email" value={ef.customerEmail||""} onChange={v=>SEF("customerEmail",v)}/>
             </div>
-            <Field label="Address" type="textarea" rows={2} value={ef.customerAddress||""} onChange={v=>SEF("customerAddress",v)}/>
-            <div className="grid grid-cols-2 gap-3 mb-3 mt-3">
-              <div>
-                <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Project Size</label>
-                <div className="flex">
-                  <input type="number" value={ef.projectSize} onChange={e=>SEF("projectSize",e.target.value)} className={`flex-1 border rounded-l-lg px-3 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}/>
-                  <select value={ef.projectUnit||"kW"} onChange={e=>SEF("projectUnit",e.target.value)} className={`border border-l-0 rounded-r-lg px-2 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
-                    {PROJECT_UNITS_LOCAL.map(u=><option key={u} value={u}>{u}</option>)}
-                  </select>
-                </div>
-              </div>
-              <Field label="Enquiry Type" type="select" value={ef.enquiryType||"Warm"} onChange={v=>SEF("enquiryType",v)} options={["Hot","Warm","Cold"]}/>
-              <Field label="Lane" type="select" value={ef.laneId||""} onChange={v=>SEF("laneId",v)} options={lanesLocal.map(l=>({value:l.id,label:l.name}))}/>
-              <Field label="Assign To" type="select" value={ef.assignedUserId||""} onChange={v=>SEF("assignedUserId",v)} options={[{value:"",label:"Unassigned"},...devTeamLocal.map(u=>({value:u.id,label:u.name}))]}/>
+            <Field label="Enquiry Type" type="select" value={ef.enquiryType||"Warm"} onChange={v=>SEF("enquiryType",v)} options={["Hot","Warm","Cold"]}/>
+            <Field label="Lane" type="select" value={ef.laneId||""} onChange={v=>SEF("laneId",v)} options={lanesLocal.map(l=>({value:l.id,label:l.name}))}/>
+            <Field label="Assign To" type="select" value={ef.assignedUserId||""} onChange={v=>SEF("assignedUserId",v)} options={[{value:"",label:"Unassigned"},...devTeamLocal.map(u=>({value:u.id,label:u.name}))]}/>
+          </div>
+          <div className="mb-4">
+            <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Tags</label>
+            <div className={`flex flex-wrap gap-1.5 p-2.5 border rounded-lg min-h-[42px] ${tc(dark,"bg-slate-800 border-slate-600","bg-white border-slate-300")}`}>
+              {(ef.tags||[]).map(t=>(
+                <span key={t} className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 ${tc(dark,"bg-amber-500/20 text-amber-300","bg-amber-100 text-amber-700")}`}>
+                  {t}<button type="button" onClick={()=>SEF("tags",(ef.tags||[]).filter(x=>x!==t))} className="ml-0.5 opacity-60 hover:opacity-100">×</button>
+                </span>
+              ))}
+              <input placeholder="Add tag…" onKeyDown={e=>{if((e.key==="Enter"||e.key===",")&&e.target.value.trim()){e.preventDefault();const tag=e.target.value.trim().replace(/,$/,"");if(tag&&!(ef.tags||[]).includes(tag))SEF("tags",[...(ef.tags||[]),tag]);e.target.value="";}}}
+                className={`flex-1 min-w-24 bg-transparent text-sm focus:outline-none ${tc(dark,"text-white placeholder-slate-500","text-slate-800 placeholder-slate-400")}`}/>
             </div>
-            {/* Tags editor */}
-            <div className="mb-4">
-              <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Tags</label>
-              <div className={`flex flex-wrap gap-1.5 p-2.5 border rounded-lg min-h-[42px] ${tc(dark,"bg-slate-800 border-slate-600","bg-white border-slate-300")}`}>
-                {(ef.tags||[]).map(t=>(
-                  <span key={t} className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 ${tc(dark,"bg-amber-500/20 text-amber-300","bg-amber-100 text-amber-700")}`}>
-                    {t}<button type="button" onClick={()=>SEF("tags",(ef.tags||[]).filter(x=>x!==t))} className="ml-0.5 opacity-60 hover:opacity-100">×</button>
-                  </span>
-                ))}
-                <input placeholder="Add tag…" onKeyDown={e=>{if((e.key==="Enter"||e.key===",")&&e.target.value.trim()){e.preventDefault();const tag=e.target.value.trim().replace(/,$/,"");if(tag&&!(ef.tags||[]).includes(tag))SEF("tags",[...(ef.tags||[]),tag]);e.target.value="";}}}
-                  className={`flex-1 min-w-24 bg-transparent text-sm focus:outline-none ${tc(dark,"text-white placeholder-slate-500","text-slate-800 placeholder-slate-400")}`}/>
-              </div>
-            </div>
-            <div className="flex gap-2 justify-end">
-              <Btn variant="secondary" onClick={()=>setEditingProject(false)}>Cancel</Btn>
-              <Btn onClick={saveEdit} disabled={!ef.customerName||!ef.projectSize}>Save Changes</Btn>
-            </div>
-          </Modal>
-        );
-      })()}
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Btn variant="secondary" onClick={()=>setEditingProject(false)}>Cancel</Btn>
+            <Btn onClick={()=>{
+              const entry={id:`act${Date.now()}`,type:"edited",message:"Project updated",by:currentUser.name,at:new Date().toISOString()};
+              setProjects(ps=>ps.map(p=>p.id===project.id?{...ef,activityLog:[...(p.activityLog||[]),entry]}:p));
+              setEditingProject(false);
+            }} disabled={!ef.customerName||!ef.projectSize}>Save Changes</Btn>
+          </div>
+        </Modal>
+      )}
 
       {/* Quick stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
@@ -4203,9 +4275,26 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
             </div>
           )}
           <div className="space-y-2">
-            {!filteredNotes.length ? <p className={`text-sm text-center py-8 ${tc(dark,"text-slate-400","text-slate-500")}`}>No notes yet.</p> : filteredNotes.map(n=>(
+            {!filteredNotes.length ? <p className={`text-sm text-center py-8 ${tc(dark,"text-slate-400","text-slate-500")}`}>No notes yet.</p> : filteredNotes.map(n=>{
+              const canEdit = developer?.allowNoteEdit || currentUser.role==="dev_admin";
+              const isEditing = editingNoteId===n.id;
+              return (
               <div key={n.id} className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
-                <p className={`text-sm mb-2 ${tc(dark,"text-white","text-slate-800")}`}>{n.content}</p>
+                {isEditing ? (
+                  <div>
+                    <textarea value={editNoteContent} onChange={e=>setEditNoteContent(e.target.value)} rows={3}
+                      className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none resize-none mb-2 ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-slate-50 border-slate-300 text-slate-800")}`}/>
+                    <div className="flex gap-2">
+                      <Btn size="sm" onClick={()=>{
+                        setNotes(ns=>ns.map(x=>x.id===n.id?{...x,content:editNoteContent,editedAt:new Date().toISOString()}:x));
+                        setEditingNoteId(null);
+                      }}>Save</Btn>
+                      <Btn size="sm" variant="secondary" onClick={()=>setEditingNoteId(null)}>Cancel</Btn>
+                    </div>
+                  </div>
+                ) : (
+                  <p className={`text-sm mb-2 ${tc(dark,"text-white","text-slate-800")}`}>{n.content}</p>
+                )}
                 {n.attachments?.length>0&&(
                   <div className="flex flex-wrap gap-1.5 mb-2">
                     {n.attachments.map((a,i)=>(
@@ -4214,17 +4303,25 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
                         <span>{a.name}</span>
                         {a.data&&<button onClick={()=>{ const w=window.open("","_blank"); if(w){w.document.write(`<html><body style="margin:0;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh"><img src="${a.data}" style="max-width:100%;max-height:100vh;object-fit:contain"/></body></html>`);w.document.close();}}} title="Preview" className="text-sky-400 hover:text-sky-300 ml-1"><Icon name="eye" size={11}/></button>}
                         {a.data&&<button onClick={()=>{ const el=document.createElement("a");el.href=a.data;el.download=a.name;el.click(); }} title="Download" className={`ml-0.5 ${tc(dark,"text-slate-400 hover:text-white","text-slate-500 hover:text-slate-700")}`}><Icon name="download" size={11}/></button>}
-                        {a.data&&<button onClick={()=>shareWhatsApp(project.customerPhone, `Hi ${project.customerName}, here is an attachment: ${a.name}. Regards, ${developer?.companyName||""}`)} title="Share WA" className="text-emerald-400 text-xs font-bold ml-0.5">WA</button>}
                       </div>
                     ))}
                   </div>
                 )}
-                <div className={`flex gap-3 text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>
-                  <span>{n.userName||currentUser.name}</span>
-                  <span>{new Date(n.createdAt).toLocaleString("en-IN")}</span>
+                <div className="flex items-center justify-between mt-1">
+                  <div className={`flex gap-3 text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>
+                    <span>{n.userName||currentUser.name}</span>
+                    <span>{new Date(n.createdAt).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"})}</span>
+                    {n.editedAt&&<span className="italic">edited</span>}
+                  </div>
+                  {canEdit&&!isEditing&&(
+                    <div className="flex gap-1">
+                      <button onClick={()=>{setEditingNoteId(n.id);setEditNoteContent(n.content);}} className={`text-xs px-2 py-0.5 rounded ${tc(dark,"text-slate-400 hover:text-amber-400 hover:bg-slate-700","text-slate-500 hover:text-amber-600 hover:bg-slate-100")}`}>Edit</button>
+                      <button onClick={()=>setNotes(ns=>ns.filter(x=>x.id!==n.id))} className={`text-xs px-2 py-0.5 rounded ${tc(dark,"text-slate-400 hover:text-red-400 hover:bg-slate-700","text-slate-500 hover:text-red-500 hover:bg-red-50")}`}>Delete</button>
+                    </div>
+                  )}
                 </div>
               </div>
-            ))}
+            );})}
           </div>
         </div>
       )}
@@ -4259,7 +4356,33 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
                     <div className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{doc.type} · {doc.size} · {fmtDate(doc.uploadDate)} · {doc.uploadedBy}</div>
                   </div>
                   <div className="flex gap-1">
-                    {doc.dataUrl&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>{ const w=window.open("","_blank"); if(w){w.document.write(`<html><body style="margin:0;background:#000"><img src="${doc.dataUrl}" style="max-width:100%;display:block;margin:auto"/></body></html>`);w.document.close();} }} title="Preview"><Icon name="eye" size={12}/></Btn>}
+                    {doc.dataUrl&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>{
+                      const url = doc.dataUrl;
+                      const t = (doc.type||"").toLowerCase();
+                      const name = (doc.name||doc.title||"").toLowerCase();
+                      if (t==="pdf" || name.endsWith(".pdf")) {
+                        // Open PDF in browser's built-in viewer
+                        const w=window.open("","_blank");
+                        if(w){w.document.write(`<html><body style="margin:0;height:100vh"><embed src="${url}" type="application/pdf" width="100%" height="100%"/></body></html>`);w.document.close();}
+                      } else if (t==="excel" || name.endsWith(".xlsx")||name.endsWith(".xls")||name.endsWith(".csv")) {
+                        // Open Excel/CSV in Google Sheets viewer
+                        window.open(`https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`,"_blank");
+                      } else if (t==="word" || name.endsWith(".doc")||name.endsWith(".docx")) {
+                        // Open Word in Google Docs viewer
+                        window.open(`https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`,"_blank");
+                      } else if (t==="video" || name.endsWith(".mp4")||name.endsWith(".mov")||name.endsWith(".webm")) {
+                        // Open video in browser video player
+                        const w=window.open("","_blank");
+                        if(w){w.document.write(`<html><body style="margin:0;background:#000;display:flex;align-items:center;justify-content:center;height:100vh"><video src="${url}" controls autoplay style="max-width:100%;max-height:100vh"></video></body></html>`);w.document.close();}
+                      } else if (t==="image" || /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(name)) {
+                        // Open image
+                        const w=window.open("","_blank");
+                        if(w){w.document.write(`<html><body style="margin:0;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh"><img src="${url}" style="max-width:100%;max-height:100vh;object-fit:contain"/></body></html>`);w.document.close();}
+                      } else {
+                        // Fallback: trigger download
+                        const a=document.createElement("a");a.href=url;a.download=doc.name||doc.title||"file";a.click();
+                      }
+                    }} title="View"><Icon name="eye" size={12}/></Btn>}
                     {doc.dataUrl&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>{ const a=document.createElement("a");a.href=doc.dataUrl;a.download=doc.name||doc.title;a.click(); }} title="Download"><Icon name="download" size={12}/></Btn>}
                     {doc.dataUrl&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>shareWhatsApp(project.customerPhone, `Hi ${project.customerName}, here is your document: ${doc.title||doc.name}. Regards, ${developer?.companyName||""}`)} title="Share WA"><span className="text-emerald-400 text-xs font-bold">WA</span></Btn>}
                     <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>setDocuments(ds=>ds.filter(d=>d.id!==doc.id))}><Icon name="trash" size={13}/></Btn>
@@ -4367,8 +4490,6 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
 
       {/* ACTIVITY TAB */}
       {tab==="activity"&&(()=>{
-        const [actQ, setActQ] = useState("");
-        const [actType, setActType] = useState("all");
         const allLogs = [...(project.activityLog||[])].reverse();
         const actTypes = [...new Set(allLogs.map(e=>e.type).filter(Boolean))];
         const actFiltered = allLogs.filter(e=>{
@@ -4617,12 +4738,33 @@ export default function SolarProApp() {
   const [templates,   setTemplates]   = useLS("sp_templates",   SEED_TEMPLATES);
   const [proposals,   setProposals]   = useLS("sp_proposals",   SEED_PROPOSALS);
   const [invoices,    setInvoices]    = useLS("sp_invoices",     SEED_INVOICES);
+  const [deletedItems, setDeletedItems] = useLS("sp_deleted", []);
 
-  // ── NAV STATE ──
-  const [currentPage,      setCurrentPage]      = useState("dashboard");
-  const [currentProjectId, setCurrentProjectId] = useState(null);
+  // ── NAV STATE with browser history ──
+  const parseHash = () => {
+    const h = window.location.hash.replace("#","");
+    const parts = h.split("/");
+    return {page: parts[0]||"dashboard", projectId: parts[1]||null};
+  };
+  const [currentPage,      setCurrentPage]      = useState(()=>parseHash().page);
+  const [currentProjectId, setCurrentProjectId] = useState(()=>parseHash().projectId);
 
-  const setPage = (p) => { setCurrentPage(p); setCurrentProjectId(null); };
+  const pushNav = (page, projectId=null) => {
+    const hash = projectId ? `#${page}/${projectId}` : `#${page}`;
+    window.history.pushState({page, projectId}, "", hash);
+    setCurrentPage(page); setCurrentProjectId(projectId);
+  };
+  const setPage = (p) => pushNav(p, null);
+
+  // Listen to browser back/forward
+  useEffect(()=>{
+    const onPop = () => {
+      const {page, projectId} = parseHash();
+      setCurrentPage(page); setCurrentProjectId(projectId);
+    };
+    window.addEventListener("popstate", onPop);
+    return ()=>window.removeEventListener("popstate", onPop);
+  },[]);
 
   // ── DERIVED ──
   const developer     = developers.find(d => d.id === currentUser?.developerId);
@@ -4657,7 +4799,7 @@ export default function SolarProApp() {
           documents={documents} setDocuments={setDocuments}
           proposals={proposals} setProposals={setProposals}
           templates={templates} developer={developer}
-          currentUser={currentUser} onBack={() => setCurrentProjectId(null)}
+          currentUser={currentUser} onBack={() => pushNav("projects", null)}
           setProjects={setProjects} users={users}
         />
       );
@@ -4702,11 +4844,11 @@ export default function SolarProApp() {
 
       // ── DEV + USER: PROJECTS ──
       case "projects":
-        return <ProjectsPage projects={projects} setProjects={setProjects} currentUser={currentUser} setCurrentProjectId={setCurrentProjectId} developer={developer} users={users} setDevelopers={setDevelopers}/>;
+        return <ProjectsPage projects={projects} setProjects={setProjects} currentUser={currentUser} setCurrentProjectId={(id)=>pushNav("projects",id)} developer={developer} users={users} setDevelopers={setDevelopers} deletedItems={deletedItems} setDeletedItems={setDeletedItems}/>;
 
       // ── DEV ADMIN: SETTINGS ──
       case "settings":
-        return developer ? <SettingsPage developer={developer} setDevelopers={setDevelopers} dateFormat={dateFormat} setDateFormat={setDateFormat} projects={projects} setProjects={setProjects}/> : null;
+        return developer ? <SettingsPage developer={developer} setDevelopers={setDevelopers} dateFormat={dateFormat} setDateFormat={setDateFormat} projects={projects} setProjects={setProjects} deletedItems={deletedItems} setDeletedItems={setDeletedItems}/> : null;
 
       // ── ALL USERS: MY PROFILE/SETTINGS ──
       case "my-settings":
