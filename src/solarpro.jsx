@@ -4284,6 +4284,27 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
     setProjects(ps=>ps.map(p=>p.id===project.id?{...p,...changes}:p));
   };
 
+  // Add task directly from project detail page
+  const addTaskForProject = (form) => {
+    if (!setTasks) return;
+    const allNums = (tasks||[]).filter(t=>t.developerId===currentUser.developerId).map(t=>{const m=(t.taskId||"").match(/(\d+)$/);return m?parseInt(m[1]):0;});
+    const nextNum = Math.max(1000,...allNums)+1;
+    const newT = {
+      ...form,
+      id:`t${Date.now()}`,
+      taskId:`TSK-${nextNum}`,
+      projectId:project.id,
+      createdBy:currentUser.id,
+      isDelayed:false,isDelayedCompleted:false,completedAt:null,
+      attachments:[],
+      activityLog:[{id:`ta${Date.now()}`,action:"created",by:currentUser.name,at:new Date().toISOString()}],
+      developerId:project.developerId,
+    };
+    setTasks(ts=>[...ts,newT]);
+    setShowTaskAdd(false);
+    toast.show({message:`Task "${newT.taskName}" created.`});
+  };
+
   // Safety guard: if project is gone (e.g. deleted), return nothing
   if (!project) return null;
 
@@ -4459,26 +4480,6 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
         const now2 = new Date();
 
         const inp = `border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`;
-
-        const addTaskForProject = (form) => {
-          if (!setTasks) return;
-          const allNums = (tasks||[]).filter(t=>t.developerId===currentUser.developerId).map(t=>{const m=(t.taskId||"").match(/(\d+)$/);return m?parseInt(m[1]):0;});
-          const nextNum = Math.max(1000,...allNums)+1;
-          const newT = {
-            ...form,
-            id:`t${Date.now()}`,
-            taskId:`TSK-${nextNum}`,
-            projectId:project.id,
-            createdBy:currentUser.id,
-            isDelayed:false,isDelayedCompleted:false,completedAt:null,
-            attachments:[],
-            activityLog:[{id:`ta${Date.now()}`,action:"created",by:currentUser.name,at:new Date().toISOString()}],
-            developerId:project.developerId,
-          };
-          setTasks(ts=>[...ts,newT]);
-          setShowTaskAdd(false);
-          toast.show({message:`Task "${newT.taskName}" created.`});
-        };
 
         return (
           <div>
@@ -5641,12 +5642,26 @@ const TaskCalendarView = ({tasks, users, projects, currentUser, onTaskClick}) =>
     setCursor(d);
   };
 
+  // Convert a Date object to local YYYY-MM-DD without UTC conversion
+  const localDateStr = (d) => {
+    const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,"0"), dd=String(d.getDate()).padStart(2,"0");
+    return `${y}-${m}-${dd}`;
+  };
+
   const getTasksForDay = (day) => {
-    const dayStr = day.toISOString().slice(0,10);
+    const dayStr = localDateStr(day);
     return tasks.filter(t=>{
-      const due = t.dueDate ? t.dueDate.slice(0,10) : null;
+      // Use only the date part (first 10 chars) to avoid time-of-day issues
+      const due   = t.dueDate   ? t.dueDate.slice(0,10)   : null;
       const start = t.startDate ? t.startDate.slice(0,10) : null;
-      return due===dayStr || start===dayStr;
+      if (!due && !start) return false;
+      // If task has both start and due: show on all days in range (inclusive)
+      if (start && due) return dayStr >= start && dayStr <= due;
+      // Only due date: show on that day
+      if (due)   return dayStr === due;
+      // Only start date: show on that day
+      if (start) return dayStr === start;
+      return false;
     });
   };
 
@@ -5668,7 +5683,7 @@ const TaskCalendarView = ({tasks, users, projects, currentUser, onTaskClick}) =>
     for(let d=1;d<=last.getDate();d++) days.push(new Date(year,month,d));
     while(days.length%7!==0) days.push(null);
 
-    const today=new Date(); const todayStr=today.toISOString().slice(0,10);
+    const today=new Date(); const todayStr=localDateStr(today);
     return (
       <div>
         <div className="grid grid-cols-7 mb-1">
@@ -5679,7 +5694,7 @@ const TaskCalendarView = ({tasks, users, projects, currentUser, onTaskClick}) =>
         <div className="grid grid-cols-7 gap-0.5">
           {days.map((day,i)=>{
             if(!day) return <div key={i} className={`min-h-[70px] rounded-lg ${tc(dark,"bg-slate-800/20","bg-slate-50")}`}/>;
-            const dayStr=day.toISOString().slice(0,10);
+            const dayStr=localDateStr(day);
             const dayTasks=getTasksForDay(day);
             const isToday=dayStr===todayStr;
             return (
@@ -5707,11 +5722,11 @@ const TaskCalendarView = ({tasks, users, projects, currentUser, onTaskClick}) =>
   const renderWeek = () => {
     const start=new Date(cursor); start.setDate(cursor.getDate()-cursor.getDay());
     const days=[]; for(let i=0;i<7;i++){const d=new Date(start);d.setDate(start.getDate()+i);days.push(d);}
-    const today=new Date().toISOString().slice(0,10);
+    const today=localDateStr(new Date());
     return (
       <div className="grid grid-cols-7 gap-1">
         {days.map((day,i)=>{
-          const dayStr=day.toISOString().slice(0,10);
+          const dayStr=localDateStr(day);
           const dayTasks=getTasksForDay(day);
           const isToday=dayStr===today;
           return (
@@ -6253,6 +6268,150 @@ const TasksPage = ({tasks, setTasks, projects, users, currentUser, developer}) =
 };
 
 
+// ── REMINDER NOTIFICATION SYSTEM ─────────────────────────────
+// Request browser notification permission once
+const requestNotifPermission = () => {
+  if (typeof Notification !== "undefined" && Notification.permission === "default") {
+    Notification.requestPermission();
+  }
+};
+
+// In-app notification store (module-level so it survives re-renders)
+let _inAppNotifs = [];
+let _inAppSetters = [];
+const notifStore = {
+  add(n) {
+    _inAppNotifs = [{...n, id:`notif${Date.now()}${Math.random()}`, ts:new Date()}, ..._inAppNotifs].slice(0,50);
+    _inAppSetters.forEach(fn=>fn([..._inAppNotifs]));
+  },
+  subscribe(fn) { _inAppSetters.push(fn); return ()=>{ _inAppSetters=_inAppSetters.filter(f=>f!==fn); }; },
+  get() { return [..._inAppNotifs]; },
+};
+
+// In-app notification bell component
+const NotificationBell = ({tasks}) => {
+  const {dark} = useTheme();
+  const [notifs, setNotifs] = useState(()=>notifStore.get());
+  const [open, setOpen] = useState(false);
+  const unread = notifs.filter(n=>!n.read).length;
+
+  useEffect(()=>notifStore.subscribe(setNotifs),[]);
+  // Close on outside click
+  useEffect(()=>{
+    if (!open) return;
+    const h=()=>setOpen(false);
+    setTimeout(()=>window.addEventListener("click",h),0);
+    return ()=>window.removeEventListener("click",h);
+  },[open]);
+
+  const markAll=()=>{ _inAppNotifs=_inAppNotifs.map(n=>({...n,read:true})); setNotifs([..._inAppNotifs]); };
+
+  return (
+    <div className="relative" onClick={e=>e.stopPropagation()}>
+      <button onClick={()=>setOpen(o=>!o)}
+        className={`relative p-1.5 rounded-lg transition-colors ${tc(dark,"text-slate-400 hover:text-white hover:bg-slate-700","text-slate-500 hover:text-slate-700 hover:bg-slate-100")}`}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+        </svg>
+        {unread>0&&(
+          <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center font-bold" style={{fontSize:9}}>{unread>9?"9+":unread}</span>
+        )}
+      </button>
+      {open&&(
+        <div className={`absolute right-0 top-10 z-50 rounded-2xl shadow-2xl border w-80 overflow-hidden ${tc(dark,"bg-slate-800 border-slate-700","bg-white border-slate-200")}`}>
+          <div className={`flex items-center justify-between px-4 py-3 border-b ${tc(dark,"border-slate-700","border-slate-200")}`}>
+            <span className={`font-bold text-sm ${tc(dark,"text-white","text-slate-800")}`}>Notifications {unread>0&&<span className="ml-1 text-xs font-normal text-red-400">({unread} new)</span>}</span>
+            {unread>0&&<button onClick={markAll} className="text-xs text-amber-400 underline">Mark all read</button>}
+          </div>
+          <div style={{maxHeight:320,overflowY:"auto"}}>
+            {notifs.length===0&&<p className={`text-center py-8 text-sm ${tc(dark,"text-slate-500","text-slate-400")}`}>No notifications yet</p>}
+            {notifs.map(n=>(
+              <div key={n.id} className={`px-4 py-3 border-b transition-colors ${n.read?"":tc(dark,"bg-amber-500/5","bg-amber-50/60")} ${tc(dark,"border-slate-700/50 hover:bg-slate-700/30","border-slate-100 hover:bg-slate-50")}`}
+                onClick={()=>{ _inAppNotifs=_inAppNotifs.map(x=>x.id===n.id?{...x,read:true}:x); setNotifs([..._inAppNotifs]); }}>
+                <div className="flex items-start gap-2">
+                  <span className="text-lg flex-shrink-0">{n.emoji||"🔔"}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-medium ${tc(dark,"text-white","text-slate-800")}`}>{n.title}</p>
+                    <p className={`text-xs mt-0.5 ${tc(dark,"text-slate-400","text-slate-500")}`}>{n.body}</p>
+                    <p className={`text-xs mt-1 ${tc(dark,"text-slate-600","text-slate-400")}`}>{n.ts?.toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"})}</p>
+                  </div>
+                  {!n.read&&<span className="w-2 h-2 bg-amber-400 rounded-full flex-shrink-0 mt-1"/>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Reminder checker hook — call once at app root
+const useReminderChecker = (tasks) => {
+  const firedRef = useRef(new Set());
+  useEffect(()=>{
+    requestNotifPermission();
+    const check = () => {
+      const now = new Date();
+      (tasks||[]).forEach(task=>{
+        // Check reminders
+        (task.reminders||[]).forEach((r,i)=>{
+          const key = `${task.id}-reminder-${i}`;
+          if (firedRef.current.has(key)) return;
+          const rDate = new Date(r);
+          const diff = Math.abs(now - rDate);
+          if (diff < 60000 && now >= rDate) { // within current minute
+            firedRef.current.add(key);
+            const title = `🔔 Reminder: ${task.taskName}`;
+            const body  = `Due: ${task.dueDate ? new Date(task.dueDate).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"}) : "No due date"}`;
+            // In-app
+            notifStore.add({title, body, emoji:"🔔", taskId:task.id});
+            // Browser
+            if (typeof Notification!=="undefined" && Notification.permission==="granted") {
+              new Notification(title, {body, icon:"/favicon.ico"});
+            }
+          }
+        });
+        // Due date notification (1 hour before)
+        if (task.dueDate && task.status!=="Completed" && task.status!=="Cancelled") {
+          const key1h = `${task.id}-due-1h`;
+          if (!firedRef.current.has(key1h)) {
+            const due = new Date(task.dueDate);
+            const diff = due - now;
+            if (diff >= 0 && diff < 3600000 && diff >= 3540000) { // 59-60 min window
+              firedRef.current.add(key1h);
+              const title = `⚠️ Due in 1 hour: ${task.taskName}`;
+              const body  = `Task is due at ${due.toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"})}`;
+              notifStore.add({title, body, emoji:"⚠️", taskId:task.id});
+              if (typeof Notification!=="undefined" && Notification.permission==="granted") {
+                new Notification(title, {body, icon:"/favicon.ico"});
+              }
+            }
+          }
+          // At due date
+          const keyAt = `${task.id}-due-at`;
+          if (!firedRef.current.has(keyAt)) {
+            const due = new Date(task.dueDate);
+            const diff = now - due;
+            if (diff >= 0 && diff < 60000) {
+              firedRef.current.add(keyAt);
+              const title = `🚨 Due NOW: ${task.taskName}`;
+              const body  = "This task is due right now!";
+              notifStore.add({title, body, emoji:"🚨", taskId:task.id});
+              if (typeof Notification!=="undefined" && Notification.permission==="granted") {
+                new Notification(title, {body, icon:"/favicon.ico", requireInteraction:true});
+              }
+            }
+          }
+        }
+      });
+    };
+    check(); // immediate check
+    const interval = setInterval(check, 30000); // check every 30 seconds
+    return ()=>clearInterval(interval);
+  }, [tasks]);
+};
+
 export default function SolarProApp() {
   // ── THEME STATE ──
   const [dark, setDark] = useLS("sp_dark", true);
@@ -6274,6 +6433,7 @@ export default function SolarProApp() {
   const [invoices,    setInvoices]    = useLS("sp_invoices",     SEED_INVOICES);
   const [deletedItems, setDeletedItems] = useLS("sp_deleted", []);
   const [tasks, setTasks] = useLS("sp_tasks", SEED_TASKS);
+  useReminderChecker(tasks); // fires browser + in-app notifications
 
   // ── NAV STATE with browser history ──
   const parseHash = () => {
@@ -6434,6 +6594,7 @@ export default function SolarProApp() {
               </svg>
             </button>
             <div className={`text-sm font-black flex-1 ${tc(_dark,"text-white","text-slate-800")}`} style={{fontFamily:"'Orbitron',monospace"}}>SOLAR<span className="text-amber-400">PRO</span></div>
+            <NotificationBell tasks={tasks}/>
             <button onClick={themeCtx.toggle} className={`p-1.5 rounded-lg ${tc(_dark,"text-slate-400 hover:bg-slate-800","text-slate-500 hover:bg-slate-100")}`}>
               <Icon name={_dark?"sun":"moon"} size={18}/>
             </button>
@@ -6444,6 +6605,10 @@ export default function SolarProApp() {
             <SubscriptionBanner developer={developer}/>
           )}
 
+          {/* Desktop notification bell - shown above main content */}
+          <div className={`hidden sm:flex justify-end px-5 pt-3 ${tc(_dark,"","")}`}>
+            <NotificationBell tasks={tasks}/>
+          </div>
           <main className="flex-1 overflow-y-auto">
             {/* Bottom padding on mobile for the tab bar */}
             <div className="max-w-5xl mx-auto p-3 sm:p-5 lg:p-7 pb-24 sm:pb-7">
