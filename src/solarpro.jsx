@@ -1305,6 +1305,7 @@ const Sidebar = ({ user, currentPage, setPage, onLogout, developer, mobileOpen, 
   const devNav = [
     {id:"dashboard",label:"Dashboard",icon:"home"},
     {id:"projects",label:"Projects",icon:"folder"},
+    {id:"tasks",label:"Tasks",icon:"check"},
     {id:"team",label:"My Team",icon:"users"},
     {id:"invoices",label:"Invoices",icon:"invoice"},
     {id:"templates",label:"Templates",icon:"template"},
@@ -1314,6 +1315,7 @@ const Sidebar = ({ user, currentPage, setPage, onLogout, developer, mobileOpen, 
   const userNav = [
     {id:"dashboard",label:"Dashboard",icon:"home"},
     ...(hasPerm(user,"projects.view") ? [{id:"projects",label:"Projects",icon:"folder"}] : []),
+    ...(hasPerm(user,"projects.view") ? [{id:"tasks",label:"Tasks",icon:"check"}] : []),
     ...(hasPerm(user,"invoices.view") ? [{id:"invoices",label:"Invoices",icon:"invoice"}] : []),
     {id:"my-settings",label:"My Profile",icon:"user"},
   ];
@@ -4846,6 +4848,1063 @@ const ProposalPreview = ({ proposal, project, developer, templates }) => {
 // Part 7: Project Detail
 
 // ── MAIN APP ──────────────────────────────────────────────────
+// ============================================================
+// SOLARPRO — TASK MANAGEMENT MODULE
+// ============================================================
+
+// ── TASK CONSTANTS ────────────────────────────────────────────
+const TASK_STATUS = ["To Do","In Progress","On Hold","Completed","Delayed","Cancelled"];
+const TASK_PRIORITY = ["Low","Medium","High","Urgent"];
+const TASK_RECUR = ["none","daily","weekly","monthly"];
+const TASK_DEPEND_TYPES = ["Finish-to-Start","Start-to-Start"];
+
+const TASK_STATUS_COLORS = {
+  "To Do":      {bg:"bg-slate-500/20",text:"text-slate-300",border:"border-slate-500/30",hex:"#64748b"},
+  "In Progress":{bg:"bg-sky-500/20",  text:"text-sky-300",  border:"border-sky-500/30",  hex:"#0ea5e9"},
+  "On Hold":    {bg:"bg-amber-500/20",text:"text-amber-300",border:"border-amber-500/30",hex:"#f59e0b"},
+  "Completed":  {bg:"bg-emerald-500/20",text:"text-emerald-300",border:"border-emerald-500/30",hex:"#10b981"},
+  "Delayed":    {bg:"bg-red-500/20",  text:"text-red-300",  border:"border-red-500/30",  hex:"#ef4444"},
+  "Cancelled":  {bg:"bg-slate-600/20",text:"text-slate-400",border:"border-slate-600/30",hex:"#475569"},
+};
+const TASK_PRIORITY_COLORS = {
+  "Low":    {bg:"bg-slate-500/20",text:"text-slate-300",hex:"#64748b"},
+  "Medium": {bg:"bg-sky-500/20",  text:"text-sky-300",  hex:"#0ea5e9"},
+  "High":   {bg:"bg-orange-500/20",text:"text-orange-300",hex:"#f97316"},
+  "Urgent": {bg:"bg-red-500/20",  text:"text-red-300",  hex:"#ef4444"},
+};
+
+const TASK_STATUS_COLORS_L = {
+  "To Do":      {bg:"bg-slate-100",text:"text-slate-600",hex:"#64748b"},
+  "In Progress":{bg:"bg-sky-100",  text:"text-sky-700",  hex:"#0ea5e9"},
+  "On Hold":    {bg:"bg-amber-100",text:"text-amber-700",hex:"#f59e0b"},
+  "Completed":  {bg:"bg-emerald-100",text:"text-emerald-700",hex:"#10b981"},
+  "Delayed":    {bg:"bg-red-100",  text:"text-red-700",  hex:"#ef4444"},
+  "Cancelled":  {bg:"bg-slate-200",text:"text-slate-500",hex:"#475569"},
+};
+
+const SEED_TASKS = [
+  {
+    id:"t1", taskId:"TSK-1001", projectId:"p1", taskName:"Site Survey & Assessment",
+    description:"Conduct initial site survey, measure rooftop area, assess structural integrity and shading.",
+    assignedTo:["u3"], createdBy:"u2", priority:"High", status:"Completed",
+    startDate:"2025-01-10", dueDate:"2025-01-15", completedAt:"2025-01-14",
+    isDelayed:false, isDelayedCompleted:false, tags:["survey","site"],
+    customFields:{capacity:"10 kW",location:"Mumbai"}, attachments:[],
+    reminders:[], subtasks:[
+      {id:"st1",name:"Measure rooftop dimensions",status:"Completed",assignedTo:"u3"},
+      {id:"st2",name:"Check structural load capacity",status:"Completed",assignedTo:"u3"},
+      {id:"st3",name:"Document shading analysis",status:"Completed",assignedTo:"u3"},
+    ],
+    activityLog:[
+      {id:"ta1",action:"created",by:"James Rivera",at:"2025-01-09T10:00:00Z"},
+      {id:"ta2",action:"status changed to Completed",by:"Mia Chen",at:"2025-01-14T16:30:00Z"},
+    ],
+    recurType:"none", developerId:"d1"
+  },
+  {
+    id:"t2", taskId:"TSK-1002", projectId:"p1", taskName:"Design System Layout",
+    description:"Design the solar panel layout, inverter placement, and electrical schematic.",
+    assignedTo:["u3"], createdBy:"u2", priority:"High", status:"In Progress",
+    startDate:"2025-01-16", dueDate:"2025-01-22", completedAt:null,
+    isDelayed:false, isDelayedCompleted:false, tags:["design","electrical"],
+    customFields:{capacity:"10 kW"}, attachments:[],
+    reminders:["2025-01-21T09:00:00Z"],
+    subtasks:[
+      {id:"st4",name:"Panel layout design",status:"Completed",assignedTo:"u3"},
+      {id:"st5",name:"Inverter placement",status:"In Progress",assignedTo:"u3"},
+      {id:"st6",name:"Electrical schematic",status:"To Do",assignedTo:"u3"},
+    ],
+    activityLog:[
+      {id:"ta3",action:"created",by:"James Rivera",at:"2025-01-15T09:00:00Z"},
+      {id:"ta4",action:"status changed to In Progress",by:"Mia Chen",at:"2025-01-16T08:00:00Z"},
+    ],
+    recurType:"none", developerId:"d1"
+  },
+  {
+    id:"t3", taskId:"TSK-1003", projectId:"p1", taskName:"Obtain NOC from Society",
+    description:"Get No Objection Certificate from housing society for rooftop installation.",
+    assignedTo:["u3"], createdBy:"u2", priority:"Urgent", status:"Delayed",
+    startDate:"2025-01-18", dueDate:"2025-01-25", completedAt:null,
+    isDelayed:true, isDelayedCompleted:false, tags:["permits","noc"],
+    customFields:{}, attachments:[],
+    reminders:[],
+    subtasks:[],
+    activityLog:[
+      {id:"ta5",action:"created",by:"James Rivera",at:"2025-01-17T10:00:00Z"},
+    ],
+    recurType:"none", developerId:"d1"
+  },
+];
+
+// ── AUTO-DELAY CHECKER ────────────────────────────────────────
+const computeTaskStatus = (task) => {
+  if (task.status==="Completed"||task.status==="Cancelled") return task;
+  const now = new Date();
+  const due = task.dueDate ? new Date(task.dueDate) : null;
+  if (due && now > due) {
+    return {...task, isDelayed:true, status:"Delayed"};
+  }
+  return task;
+};
+
+// ── TASK HELPER: check if user can edit ──────────────────────
+const canEditTask = (task, user) => {
+  if (!user) return false;
+  if (user.role===ROLES.DEV_ADMIN||user.role===ROLES.SUPER_ADMIN) return true;
+  return (task.assignedTo||[]).includes(user.id);
+};
+
+// ── TASK STATUS BADGE ─────────────────────────────────────────
+const TaskBadge = ({status, size="xs"}) => {
+  const {dark} = useTheme();
+  const c = dark ? TASK_STATUS_COLORS[status]||TASK_STATUS_COLORS["To Do"]
+                 : TASK_STATUS_COLORS_L[status]||TASK_STATUS_COLORS_L["To Do"];
+  return <span className={`${size==="xs"?"text-xs px-2 py-0.5":"text-sm px-2.5 py-1"} rounded-full font-medium border ${c.bg} ${c.text} ${dark?TASK_STATUS_COLORS[status]?.border:"border-transparent"}`}>{status}</span>;
+};
+
+const PriorityBadge = ({priority}) => {
+  const {dark} = useTheme();
+  const c = dark ? TASK_PRIORITY_COLORS[priority]||TASK_PRIORITY_COLORS["Low"]
+                 : {bg:"bg-slate-100",text:"text-slate-600",hex:"#64748b"};
+  const dot = TASK_PRIORITY_COLORS[priority]?.hex||"#64748b";
+  return (
+    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${c.bg} ${c.text} flex items-center gap-1`}>
+      <span style={{width:5,height:5,borderRadius:"50%",background:dot,display:"inline-block"}}/>
+      {priority}
+    </span>
+  );
+};
+
+// ── TASK CARD (Kanban) ────────────────────────────────────────
+const TaskCard = ({task, users, projects, onClick, onStatusChange, currentUser}) => {
+  const {dark} = useTheme();
+  const assignees = (task.assignedTo||[]).map(id=>users.find(u=>u.id===id)).filter(Boolean);
+  const project = projects.find(p=>p.id===task.projectId);
+  const done = (task.subtasks||[]).filter(s=>s.status==="Completed").length;
+  const total = (task.subtasks||[]).length;
+  const overdue = task.isDelayed || (task.dueDate && new Date()>new Date(task.dueDate) && task.status!=="Completed"&&task.status!=="Cancelled");
+  const statusC = dark ? TASK_STATUS_COLORS[task.status]||TASK_STATUS_COLORS["To Do"]
+                       : TASK_STATUS_COLORS_L[task.status]||TASK_STATUS_COLORS_L["To Do"];
+  return (
+    <div onClick={onClick}
+      className={`border rounded-xl p-3 mb-2 cursor-pointer select-none transition-all hover:shadow-lg ${overdue?tc(dark,"border-red-500/40 bg-red-500/5","border-red-300 bg-red-50"):tc(dark,"border-slate-700/50 bg-[#0c1929]","border-slate-200 bg-white shadow-sm")}`}>
+      {/* Priority strip */}
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <PriorityBadge priority={task.priority}/>
+        <TaskBadge status={task.status}/>
+      </div>
+      <h4 className={`text-sm font-semibold mb-1 leading-tight ${tc(dark,"text-white","text-slate-800")}`}>{task.taskName}</h4>
+      {project&&<p className={`text-xs mb-2 ${tc(dark,"text-amber-400/80","text-amber-600")}`}>{project.customerName}</p>}
+      {task.description&&<p className={`text-xs mb-2 line-clamp-2 ${tc(dark,"text-slate-400","text-slate-500")}`}>{task.description}</p>}
+      {/* Subtask progress */}
+      {total>0&&(
+        <div className="mb-2">
+          <div className="flex justify-between mb-0.5">
+            <span className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>Subtasks</span>
+            <span className={`text-xs font-medium ${tc(dark,"text-slate-300","text-slate-600")}`}>{done}/{total}</span>
+          </div>
+          <div className={`h-1.5 rounded-full ${tc(dark,"bg-slate-700","bg-slate-200")}`}>
+            <div className="h-full rounded-full bg-amber-500 transition-all" style={{width:`${total?done/total*100:0}%`}}/>
+          </div>
+        </div>
+      )}
+      <div className="flex items-center justify-between mt-2">
+        <div className="flex -space-x-1">
+          {assignees.slice(0,3).map(u=>(
+            <div key={u.id} className={`w-5 h-5 rounded-full text-white flex items-center justify-center font-bold border-2 ${tc(dark,"bg-slate-600 border-[#0c1929]","bg-amber-500 border-white")}`} style={{fontSize:8}}>{u.name.charAt(0)}</div>
+          ))}
+          {assignees.length>3&&<div className={`w-5 h-5 rounded-full flex items-center justify-center border-2 ${tc(dark,"bg-slate-700 border-[#0c1929] text-slate-300","bg-slate-200 border-white text-slate-500")}`} style={{fontSize:7}}>+{assignees.length-3}</div>}
+        </div>
+        {task.dueDate&&(
+          <span className={`text-xs ${overdue?tc(dark,"text-red-400","text-red-600"):"font-mono "+tc(dark,"text-slate-400","text-slate-500")}`}>
+            {overdue&&"⚠ "}
+            {new Date(task.dueDate).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}
+          </span>
+        )}
+      </div>
+      {(task.tags||[]).length>0&&(
+        <div className="flex flex-wrap gap-1 mt-1.5">
+          {(task.tags||[]).slice(0,3).map(t=>(
+            <span key={t} className={`text-xs px-1.5 py-0.5 rounded ${tc(dark,"bg-slate-700 text-slate-400","bg-slate-100 text-slate-500")}`}># {t}</span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── TASK FORM MODAL ───────────────────────────────────────────
+const TaskFormModal = ({task, projects, users, currentUser, developer, onSave, onClose}) => {
+  const {dark} = useTheme();
+  const isEdit = !!task;
+  const devProjects = projects.filter(p=>p.developerId===currentUser.developerId);
+  const devTeam = users.filter(u=>u.developerId===currentUser.developerId&&u.active);
+  const [newTag,setNewTag] = useState("");
+  const [newSubtask,setNewSubtask] = useState("");
+  const [newReminder,setNewReminder] = useState("");
+  const [newCustomKey,setNewCustomKey] = useState("");
+  const [newCustomVal,setNewCustomVal] = useState("");
+  const blank = {
+    projectId:devProjects[0]?.id||"", taskName:"", description:"",
+    assignedTo:[currentUser.id], priority:"Medium", status:"To Do",
+    startDate:"", dueDate:"", tags:[], customFields:{},
+    reminders:[], subtasks:[], recurType:"none",
+  };
+  const [form, setForm] = useState(isEdit ? {
+    ...blank, ...task,
+    startDate: task.startDate ? task.startDate.slice(0,16) : "",
+    dueDate: task.dueDate ? task.dueDate.slice(0,16) : "",
+  } : blank);
+  const F = (k,v) => setForm(f=>({...f,[k]:v}));
+  const toggleAssignee = (id) => F("assignedTo", form.assignedTo.includes(id) ? form.assignedTo.filter(x=>x!==id) : [...form.assignedTo,id]);
+
+  const save = () => {
+    if (!form.taskName.trim()||!form.projectId) return;
+    onSave(form);
+  };
+
+  const inp = `w-full border rounded-lg px-3 py-2 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white placeholder-slate-500 focus:border-amber-400","bg-white border-slate-300 text-slate-800 focus:border-amber-500")}`;
+
+  return (
+    <Modal title={isEdit?"Edit Task":"New Task"} onClose={onClose} wide>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+        <div className="sm:col-span-2">
+          <label className={`block text-xs font-medium mb-1 ${tc(dark,"text-slate-400","text-slate-600")}`}>Task Name *</label>
+          <input value={form.taskName} onChange={e=>F("taskName",e.target.value)} placeholder="e.g. Complete site survey" className={inp}/>
+        </div>
+        <div>
+          <label className={`block text-xs font-medium mb-1 ${tc(dark,"text-slate-400","text-slate-600")}`}>Project *</label>
+          <select value={form.projectId} onChange={e=>F("projectId",e.target.value)} className={inp}>
+            <option value="">Select project</option>
+            {devProjects.map(p=><option key={p.id} value={p.id}>{p.customerName} ({p.projectId})</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={`block text-xs font-medium mb-1 ${tc(dark,"text-slate-400","text-slate-600")}`}>Priority</label>
+          <select value={form.priority} onChange={e=>F("priority",e.target.value)} className={inp}>
+            {TASK_PRIORITY.map(p=><option key={p}>{p}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={`block text-xs font-medium mb-1 ${tc(dark,"text-slate-400","text-slate-600")}`}>Status</label>
+          <select value={form.status} onChange={e=>F("status",e.target.value)} className={inp}>
+            {TASK_STATUS.map(s=><option key={s}>{s}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={`block text-xs font-medium mb-1 ${tc(dark,"text-slate-400","text-slate-600")}`}>Recurring</label>
+          <select value={form.recurType} onChange={e=>F("recurType",e.target.value)} className={inp}>
+            {TASK_RECUR.map(r=><option key={r} value={r}>{r==="none"?"No recurrence":r.charAt(0).toUpperCase()+r.slice(1)}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={`block text-xs font-medium mb-1 ${tc(dark,"text-slate-400","text-slate-600")}`}>Start Date</label>
+          <input type="datetime-local" value={form.startDate} onChange={e=>F("startDate",e.target.value)} className={inp}/>
+        </div>
+        <div>
+          <label className={`block text-xs font-medium mb-1 ${tc(dark,"text-slate-400","text-slate-600")}`}>Due Date</label>
+          <input type="datetime-local" value={form.dueDate} onChange={e=>F("dueDate",e.target.value)} className={inp}/>
+        </div>
+      </div>
+
+      <div className="mb-3">
+        <label className={`block text-xs font-medium mb-1 ${tc(dark,"text-slate-400","text-slate-600")}`}>Description</label>
+        <textarea value={form.description} onChange={e=>F("description",e.target.value)} rows={3} placeholder="Task details…" className={`${inp} resize-none`}/>
+      </div>
+
+      {/* Assignees */}
+      <div className="mb-3">
+        <label className={`block text-xs font-medium mb-1.5 ${tc(dark,"text-slate-400","text-slate-600")}`}>Assign To</label>
+        <div className="flex flex-wrap gap-1.5">
+          {devTeam.map(u=>(
+            <button key={u.id} type="button" onClick={()=>toggleAssignee(u.id)}
+              className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs border transition-colors ${form.assignedTo.includes(u.id)?tc(dark,"bg-amber-500/20 border-amber-400/60 text-amber-300","bg-amber-100 border-amber-400 text-amber-700"):tc(dark,"border-slate-700 text-slate-400","border-slate-200 text-slate-500")}`}>
+              <span className={`w-4 h-4 rounded flex items-center justify-center text-white font-bold ${form.assignedTo.includes(u.id)?"bg-amber-500":tc(dark,"bg-slate-600","bg-slate-300")}`} style={{fontSize:8}}>{u.name.charAt(0)}</span>
+              {u.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Tags */}
+      <div className="mb-3">
+        <label className={`block text-xs font-medium mb-1 ${tc(dark,"text-slate-400","text-slate-600")}`}>Tags</label>
+        <div className={`flex flex-wrap gap-1.5 p-2 border rounded-lg min-h-[38px] ${tc(dark,"bg-slate-800 border-slate-600","bg-white border-slate-300")}`}>
+          {(form.tags||[]).map(t=>(
+            <span key={t} className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 ${tc(dark,"bg-amber-500/20 text-amber-300","bg-amber-100 text-amber-700")}`}>
+              #{t}<button type="button" onClick={()=>F("tags",(form.tags||[]).filter(x=>x!==t))} className="ml-0.5 opacity-60">×</button>
+            </span>
+          ))}
+          <input placeholder="Add tag…" value={newTag} onChange={e=>setNewTag(e.target.value)}
+            onKeyDown={e=>{if(e.key==="Enter"&&newTag.trim()){e.preventDefault();F("tags",[...(form.tags||[]),newTag.trim()]);setNewTag("");}}}
+            className={`flex-1 min-w-20 bg-transparent text-xs focus:outline-none ${tc(dark,"text-white placeholder-slate-500","text-slate-800 placeholder-slate-400")}`}/>
+        </div>
+      </div>
+
+      {/* Subtasks */}
+      <div className="mb-3">
+        <label className={`block text-xs font-medium mb-1 ${tc(dark,"text-slate-400","text-slate-600")}`}>Subtasks / Checklist</label>
+        <div className="space-y-1 mb-1.5">
+          {(form.subtasks||[]).map((s,i)=>(
+            <div key={s.id||i} className={`flex items-center gap-2 p-2 rounded-lg border ${tc(dark,"border-slate-700 bg-slate-800/50","border-slate-200 bg-slate-50")}`}>
+              <input type="checkbox" checked={s.status==="Completed"} onChange={()=>{const upd=[...form.subtasks];upd[i]={...s,status:s.status==="Completed"?"To Do":"Completed"};F("subtasks",upd);}} className="w-3.5 h-3.5 accent-amber-500"/>
+              <span className={`flex-1 text-xs ${s.status==="Completed"?tc(dark,"text-slate-500 line-through","text-slate-400 line-through"):tc(dark,"text-slate-300","text-slate-700")}`}>{s.name}</span>
+              <button type="button" onClick={()=>F("subtasks",(form.subtasks||[]).filter((_,j)=>j!==i))} className="text-red-400 text-xs">×</button>
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <input value={newSubtask} onChange={e=>setNewSubtask(e.target.value)} placeholder="Add subtask…"
+            onKeyDown={e=>{if(e.key==="Enter"&&newSubtask.trim()){e.preventDefault();F("subtasks",[...(form.subtasks||[]),{id:`st${Date.now()}`,name:newSubtask.trim(),status:"To Do",assignedTo:form.assignedTo[0]||""}]);setNewSubtask("");}}}
+            className={`flex-1 ${inp}`}/>
+          <Btn size="sm" onClick={()=>{if(newSubtask.trim()){F("subtasks",[...(form.subtasks||[]),{id:`st${Date.now()}`,name:newSubtask.trim(),status:"To Do",assignedTo:form.assignedTo[0]||""}]);setNewSubtask("");}}}><Icon name="plus" size={13}/></Btn>
+        </div>
+      </div>
+
+      {/* Custom Fields */}
+      <div className="mb-3">
+        <label className={`block text-xs font-medium mb-1 ${tc(dark,"text-slate-400","text-slate-600")}`}>Custom Fields</label>
+        <div className="space-y-1 mb-1.5">
+          {Object.entries(form.customFields||{}).map(([k,v])=>(
+            <div key={k} className={`flex items-center gap-2 p-2 rounded-lg border ${tc(dark,"border-slate-700 bg-slate-800/50","border-slate-200 bg-slate-50")}`}>
+              <span className={`text-xs font-medium w-24 flex-shrink-0 ${tc(dark,"text-slate-400","text-slate-500")}`}>{k}</span>
+              <span className={`flex-1 text-xs ${tc(dark,"text-white","text-slate-800")}`}>{v}</span>
+              <button type="button" onClick={()=>{const cf={...form.customFields};delete cf[k];F("customFields",cf);}} className="text-red-400 text-xs">×</button>
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-1.5">
+          <input value={newCustomKey} onChange={e=>setNewCustomKey(e.target.value)} placeholder="Key (e.g. capacity)" className={`flex-1 ${inp}`}/>
+          <input value={newCustomVal} onChange={e=>setNewCustomVal(e.target.value)} placeholder="Value" className={`flex-1 ${inp}`}/>
+          <Btn size="sm" onClick={()=>{if(newCustomKey.trim()&&newCustomVal.trim()){F("customFields",{...form.customFields,[newCustomKey.trim()]:newCustomVal.trim()});setNewCustomKey("");setNewCustomVal("");}}}><Icon name="plus" size={13}/></Btn>
+        </div>
+      </div>
+
+      {/* Reminders */}
+      <div className="mb-4">
+        <label className={`block text-xs font-medium mb-1 ${tc(dark,"text-slate-400","text-slate-600")}`}>Reminders</label>
+        <div className="flex flex-wrap gap-1.5 mb-1.5">
+          {(form.reminders||[]).map((r,i)=>(
+            <span key={i} className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 ${tc(dark,"bg-sky-500/20 text-sky-300","bg-sky-100 text-sky-700")}`}>
+              🔔 {new Date(r).toLocaleString("en-IN",{dateStyle:"short",timeStyle:"short"})}
+              <button type="button" onClick={()=>F("reminders",(form.reminders||[]).filter((_,j)=>j!==i))} className="ml-0.5 opacity-60">×</button>
+            </span>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <input type="datetime-local" value={newReminder} onChange={e=>setNewReminder(e.target.value)} className={`flex-1 ${inp}`}/>
+          <Btn size="sm" onClick={()=>{if(newReminder){F("reminders",[...(form.reminders||[]),newReminder]);setNewReminder("");}}}><Icon name="plus" size={13}/>Add</Btn>
+        </div>
+      </div>
+
+      <div className="flex gap-2 pt-2 border-t border-slate-700/40">
+        <Btn onClick={save} className="flex-1" disabled={!form.taskName.trim()||!form.projectId}>{isEdit?"Save Changes":"Create Task"}</Btn>
+        <Btn variant="secondary" onClick={onClose}>Cancel</Btn>
+      </div>
+    </Modal>
+  );
+};
+
+// ── TASK DETAIL MODAL ─────────────────────────────────────────
+const TaskDetailModal = ({task, tasks, setTasks, users, projects, currentUser, developer, onClose}) => {
+  const {dark} = useTheme();
+  const [editing, setEditing] = useState(false);
+  const project = projects.find(p=>p.id===task.projectId);
+  const assignees = (task.assignedTo||[]).map(id=>users.find(u=>u.id===id)).filter(Boolean);
+  const canEdit = canEditTask(task, currentUser);
+  const overdue = task.dueDate && new Date()>new Date(task.dueDate) && task.status!=="Completed"&&task.status!=="Cancelled";
+
+  if (editing) {
+    return <TaskFormModal task={task} projects={projects} users={users} currentUser={currentUser} developer={developer}
+      onSave={(form)=>{
+        const entry={id:`ta${Date.now()}`,action:"updated",by:currentUser.name,at:new Date().toISOString()};
+        setTasks(ts=>ts.map(t=>t.id===task.id?{...t,...form,activityLog:[...(t.activityLog||[]),entry]}:t));
+        setEditing(false); onClose();
+      }} onClose={()=>setEditing(false)}/>;
+  }
+
+  const changeStatus = (s) => {
+    if (!canEdit) return;
+    const wasCompleted = s==="Completed";
+    const wasDelayed = task.dueDate && new Date()>new Date(task.dueDate);
+    const entry={id:`ta${Date.now()}`,action:`status changed to ${s}`,by:currentUser.name,at:new Date().toISOString()};
+    setTasks(ts=>ts.map(t=>t.id===task.id?{...t,status:s,
+      completedAt:wasCompleted?new Date().toISOString():t.completedAt,
+      isDelayed:!wasCompleted&&wasDelayed,
+      isDelayedCompleted:wasCompleted&&wasDelayed,
+      activityLog:[...(t.activityLog||[]),entry]}:t));
+    onClose();
+  };
+
+  const toggleSubtask = (idx) => {
+    if (!canEdit) return;
+    const upd = (task.subtasks||[]).map((s,i)=>i===idx?{...s,status:s.status==="Completed"?"To Do":"Completed"}:s);
+    const entry={id:`ta${Date.now()}`,action:`subtask "${(task.subtasks||[])[idx]?.name}" toggled`,by:currentUser.name,at:new Date().toISOString()};
+    setTasks(ts=>ts.map(t=>t.id===task.id?{...t,subtasks:upd,activityLog:[...(t.activityLog||[]),entry]}:t));
+  };
+
+  return (
+    <Modal title={task.taskId} onClose={onClose} wide>
+      <div className="space-y-4">
+        {/* Header */}
+        <div>
+          <div className="flex flex-wrap items-start gap-2 mb-2">
+            <h2 className={`text-lg font-bold flex-1 ${tc(dark,"text-white","text-slate-800")}`}>{task.taskName}</h2>
+            {canEdit&&<Btn size="sm" onClick={()=>setEditing(true)}><Icon name="edit" size={13}/>Edit</Btn>}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <TaskBadge status={task.status}/>
+            <PriorityBadge priority={task.priority}/>
+            {overdue&&<span className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/30">⚠ Overdue</span>}
+            {task.isDelayedCompleted&&<span className="text-xs px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30">Delayed Completion</span>}
+          </div>
+        </div>
+
+        {/* Status quick-change */}
+        {canEdit&&(
+          <div>
+            <p className={`text-xs font-medium mb-1.5 ${tc(dark,"text-slate-400","text-slate-500")}`}>Change Status</p>
+            <div className="flex flex-wrap gap-1.5">
+              {TASK_STATUS.map(s=>(
+                <button key={s} onClick={()=>changeStatus(s)}
+                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${task.status===s?`${(dark?TASK_STATUS_COLORS:TASK_STATUS_COLORS_L)[s]?.bg} ${(dark?TASK_STATUS_COLORS:TASK_STATUS_COLORS_L)[s]?.text} border-current`:`${tc(dark,"border-slate-700 text-slate-400","border-slate-200 text-slate-500")} hover:border-amber-400`}`}>
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Details grid */}
+        <div className={`grid grid-cols-2 gap-3 p-3 rounded-xl border ${tc(dark,"bg-slate-800/30 border-slate-700/50","bg-slate-50 border-slate-200")}`}>
+          {[
+            ["Project", project?.customerName||"—"],
+            ["Assigned To", assignees.map(u=>u.name).join(", ")||"Unassigned"],
+            ["Start Date", task.startDate?new Date(task.startDate).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"}):"—"],
+            ["Due Date", task.dueDate?new Date(task.dueDate).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"}):"—"],
+            ["Created By", users.find(u=>u.id===task.createdBy)?.name||"—"],
+            ["Completed", task.completedAt?new Date(task.completedAt).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"}):"—"],
+            ["Recurring", task.recurType==="none"?"No":"Every "+task.recurType],
+          ].map(([k,v])=>(
+            <div key={k}>
+              <p className={`text-xs mb-0.5 ${tc(dark,"text-slate-500","text-slate-400")}`}>{k}</p>
+              <p className={`text-sm font-medium ${tc(dark,"text-white","text-slate-800")}`}>{v}</p>
+            </div>
+          ))}
+        </div>
+
+        {task.description&&(
+          <div>
+            <p className={`text-xs font-medium mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>Description</p>
+            <p className={`text-sm ${tc(dark,"text-slate-300","text-slate-700")}`}>{task.description}</p>
+          </div>
+        )}
+
+        {/* Subtasks */}
+        {(task.subtasks||[]).length>0&&(
+          <div>
+            <p className={`text-xs font-medium mb-1.5 ${tc(dark,"text-slate-400","text-slate-500")}`}>
+              Subtasks — {(task.subtasks||[]).filter(s=>s.status==="Completed").length}/{(task.subtasks||[]).length} done
+            </p>
+            <div className="space-y-1">
+              {(task.subtasks||[]).map((s,i)=>(
+                <div key={s.id||i} className={`flex items-center gap-2 p-2 rounded-lg border ${tc(dark,"border-slate-700/50 bg-slate-800/30","border-slate-200 bg-white")}`}>
+                  <input type="checkbox" checked={s.status==="Completed"} onChange={()=>toggleSubtask(i)} className="w-3.5 h-3.5 accent-amber-500" disabled={!canEdit}/>
+                  <span className={`flex-1 text-sm ${s.status==="Completed"?tc(dark,"line-through text-slate-500","line-through text-slate-400"):tc(dark,"text-slate-300","text-slate-700")}`}>{s.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Custom Fields */}
+        {Object.keys(task.customFields||{}).length>0&&(
+          <div>
+            <p className={`text-xs font-medium mb-1.5 ${tc(dark,"text-slate-400","text-slate-500")}`}>Custom Fields</p>
+            <div className="grid grid-cols-2 gap-2">
+              {Object.entries(task.customFields||{}).map(([k,v])=>(
+                <div key={k} className={`p-2 rounded-lg border ${tc(dark,"border-slate-700/50 bg-slate-800/30","border-slate-200 bg-slate-50")}`}>
+                  <p className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>{k}</p>
+                  <p className={`text-sm font-medium ${tc(dark,"text-white","text-slate-800")}`}>{v}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Reminders */}
+        {(task.reminders||[]).length>0&&(
+          <div>
+            <p className={`text-xs font-medium mb-1.5 ${tc(dark,"text-slate-400","text-slate-500")}`}>Reminders</p>
+            <div className="flex flex-wrap gap-1.5">
+              {(task.reminders||[]).map((r,i)=>(
+                <span key={i} className={`text-xs px-2 py-0.5 rounded-full ${tc(dark,"bg-sky-500/20 text-sky-300","bg-sky-100 text-sky-700")}`}>
+                  🔔 {new Date(r).toLocaleString("en-IN",{dateStyle:"short",timeStyle:"short"})}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Tags */}
+        {(task.tags||[]).length>0&&(
+          <div className="flex flex-wrap gap-1.5">
+            {(task.tags||[]).map(t=>(
+              <span key={t} className={`text-xs px-2 py-0.5 rounded-full ${tc(dark,"bg-amber-500/15 text-amber-400","bg-amber-100 text-amber-700")}`}># {t}</span>
+            ))}
+          </div>
+        )}
+
+        {/* Activity Log */}
+        {(task.activityLog||[]).length>0&&(
+          <div>
+            <p className={`text-xs font-medium mb-2 ${tc(dark,"text-slate-400","text-slate-500")}`}>Activity Log</p>
+            <div className={`space-y-1.5 max-h-40 overflow-y-auto rounded-xl p-3 border ${tc(dark,"bg-slate-800/30 border-slate-700/50","bg-slate-50 border-slate-200")}`}>
+              {[...(task.activityLog||[])].reverse().map(entry=>(
+                <div key={entry.id} className="flex items-start gap-2">
+                  <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${tc(dark,"bg-amber-400","bg-amber-500")}`}/>
+                  <div className="flex-1 min-w-0">
+                    <span className={`text-xs ${tc(dark,"text-slate-300","text-slate-700")}`}>{entry.action}</span>
+                    <span className={`text-xs ml-2 ${tc(dark,"text-slate-500","text-slate-400")}`}>by {entry.by} · {new Date(entry.at).toLocaleString("en-IN",{dateStyle:"short",timeStyle:"short"})}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+};
+
+// ── TASKS CALENDAR VIEW ───────────────────────────────────────
+const TaskCalendarView = ({tasks, users, projects, currentUser, onTaskClick}) => {
+  const {dark} = useTheme();
+  const [view, setView] = useState("month"); // month | week | day
+  const [cursor, setCursor] = useState(new Date());
+
+  const fmtMonth = d => d.toLocaleDateString("en-IN",{month:"long",year:"numeric"});
+  const fmtWeek  = d => {
+    const s=new Date(d); s.setDate(d.getDate()-d.getDay());
+    const e=new Date(s); e.setDate(s.getDate()+6);
+    return `${s.toLocaleDateString("en-IN",{day:"numeric",month:"short"})} – ${e.toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}`;
+  };
+  const fmtDay = d => d.toLocaleDateString("en-IN",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+
+  const navigate = (dir) => {
+    const d = new Date(cursor);
+    if (view==="month")  { d.setMonth(d.getMonth()+dir); }
+    else if (view==="week"){ d.setDate(d.getDate()+dir*7); }
+    else { d.setDate(d.getDate()+dir); }
+    setCursor(d);
+  };
+
+  const getTasksForDay = (day) => {
+    const dayStr = day.toISOString().slice(0,10);
+    return tasks.filter(t=>{
+      const due = t.dueDate ? t.dueDate.slice(0,10) : null;
+      const start = t.startDate ? t.startDate.slice(0,10) : null;
+      return due===dayStr || start===dayStr;
+    });
+  };
+
+  const taskDot = (t) => {
+    if (t.status==="Completed") return "#10b981";
+    if (t.isDelayed||(t.dueDate&&new Date()>new Date(t.dueDate)&&t.status!=="Completed")) return "#ef4444";
+    if (t.status==="In Progress") return "#f59e0b";
+    return "#64748b";
+  };
+
+  // Monthly grid
+  const renderMonth = () => {
+    const year=cursor.getFullYear(), month=cursor.getMonth();
+    const first=new Date(year,month,1);
+    const last=new Date(year,month+1,0);
+    const startPad=first.getDay();
+    const days=[];
+    for(let i=0;i<startPad;i++) days.push(null);
+    for(let d=1;d<=last.getDate();d++) days.push(new Date(year,month,d));
+    while(days.length%7!==0) days.push(null);
+
+    const today=new Date(); const todayStr=today.toISOString().slice(0,10);
+    return (
+      <div>
+        <div className="grid grid-cols-7 mb-1">
+          {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>(
+            <div key={d} className={`text-center text-xs font-semibold py-1.5 ${tc(dark,"text-slate-500","text-slate-400")}`}>{d}</div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-0.5">
+          {days.map((day,i)=>{
+            if(!day) return <div key={i} className={`min-h-[70px] rounded-lg ${tc(dark,"bg-slate-800/20","bg-slate-50")}`}/>;
+            const dayStr=day.toISOString().slice(0,10);
+            const dayTasks=getTasksForDay(day);
+            const isToday=dayStr===todayStr;
+            return (
+              <div key={i} className={`min-h-[70px] rounded-lg p-1 border ${isToday?tc(dark,"border-amber-400 bg-amber-500/10","border-amber-400 bg-amber-50"):tc(dark,"border-slate-700/30 bg-[#0c1929]","border-slate-200 bg-white")}`}>
+                <div className={`text-xs font-bold mb-1 w-5 h-5 flex items-center justify-center rounded-full ${isToday?"bg-amber-500 text-slate-900":tc(dark,"text-slate-400","text-slate-500")}`}>{day.getDate()}</div>
+                <div className="space-y-0.5">
+                  {dayTasks.slice(0,3).map(t=>(
+                    <div key={t.id} onClick={()=>onTaskClick(t)}
+                      className="text-xs px-1 py-0.5 rounded truncate cursor-pointer hover:opacity-80 transition-opacity"
+                      style={{background:taskDot(t)+"22",color:taskDot(t),fontSize:9}}>
+                      {t.taskName}
+                    </div>
+                  ))}
+                  {dayTasks.length>3&&<div className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`} style={{fontSize:9}}>+{dayTasks.length-3} more</div>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  // Weekly grid
+  const renderWeek = () => {
+    const start=new Date(cursor); start.setDate(cursor.getDate()-cursor.getDay());
+    const days=[]; for(let i=0;i<7;i++){const d=new Date(start);d.setDate(start.getDate()+i);days.push(d);}
+    const today=new Date().toISOString().slice(0,10);
+    return (
+      <div className="grid grid-cols-7 gap-1">
+        {days.map((day,i)=>{
+          const dayStr=day.toISOString().slice(0,10);
+          const dayTasks=getTasksForDay(day);
+          const isToday=dayStr===today;
+          return (
+            <div key={i} className={`rounded-xl p-2 min-h-[160px] border ${isToday?tc(dark,"border-amber-400 bg-amber-500/10","border-amber-400 bg-amber-50"):tc(dark,"border-slate-700/30 bg-[#0c1929]","border-slate-200 bg-white")}`}>
+              <div className={`text-center mb-2 ${tc(dark,"text-slate-400","text-slate-500")}`}>
+                <div style={{fontSize:9}} className="font-medium">{day.toLocaleDateString("en-IN",{weekday:"short"})}</div>
+                <div className={`text-sm font-bold w-6 h-6 rounded-full flex items-center justify-center mx-auto ${isToday?"bg-amber-500 text-slate-900":"inherit"}`}>{day.getDate()}</div>
+              </div>
+              {dayTasks.map(t=>(
+                <div key={t.id} onClick={()=>onTaskClick(t)}
+                  className="text-xs p-1 rounded mb-1 cursor-pointer truncate hover:opacity-80"
+                  style={{background:taskDot(t)+"20",borderLeft:`3px solid ${taskDot(t)}`,color:taskDot(t),fontSize:10}}>
+                  {t.taskName}
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  // Daily view
+  const renderDay = () => {
+    const dayTasks=getTasksForDay(cursor);
+    const hours=Array.from({length:24},(_,i)=>i);
+    return (
+      <div>
+        <div className={`rounded-xl border overflow-hidden ${tc(dark,"border-slate-700","border-slate-200")}`}>
+          {hours.map(h=>{
+            const hTasks=dayTasks.filter(t=>{
+              const d=t.dueDate||t.startDate;
+              return d && new Date(d).getHours()===h;
+            });
+            return (
+              <div key={h} className={`flex gap-3 border-b min-h-[52px] ${tc(dark,"border-slate-700/30","border-slate-100")}`}>
+                <div className={`w-12 flex-shrink-0 flex items-start justify-end pt-1.5 pr-2 text-xs ${tc(dark,"text-slate-600","text-slate-400")}`}>{String(h).padStart(2,"0")}:00</div>
+                <div className="flex-1 py-1 flex flex-wrap gap-1">
+                  {hTasks.map(t=>(
+                    <div key={t.id} onClick={()=>onTaskClick(t)}
+                      className="text-xs px-2 py-0.5 rounded-lg cursor-pointer hover:opacity-80 flex items-center gap-1"
+                      style={{background:taskDot(t)+"20",borderLeft:`3px solid ${taskDot(t)}`,color:taskDot(t)}}>
+                      {t.taskName}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <div className={`flex gap-1 rounded-lg p-0.5 border ${tc(dark,"bg-slate-800 border-slate-700","bg-slate-100 border-slate-200")}`}>
+          {["month","week","day"].map(v=>(
+            <button key={v} onClick={()=>setView(v)} className={`px-3 py-1 rounded text-xs font-medium capitalize transition-all ${view===v?"bg-amber-500 text-slate-900":tc(dark,"text-slate-400","text-slate-500")}`}>{v}</button>
+          ))}
+        </div>
+        <button onClick={()=>navigate(-1)} className={`p-1.5 rounded-lg ${tc(dark,"hover:bg-slate-700 text-slate-400","hover:bg-slate-100 text-slate-500")}`}>‹</button>
+        <button onClick={()=>setCursor(new Date())} className={`text-xs px-2.5 py-1 rounded-lg border ${tc(dark,"border-slate-700 text-slate-400 hover:bg-slate-700","border-slate-300 text-slate-500 hover:bg-slate-100")}`}>Today</button>
+        <button onClick={()=>navigate(1)} className={`p-1.5 rounded-lg ${tc(dark,"hover:bg-slate-700 text-slate-400","hover:bg-slate-100 text-slate-500")}`}>›</button>
+        <span className={`font-semibold text-sm ${tc(dark,"text-white","text-slate-800")}`}>
+          {view==="month"?fmtMonth(cursor):view==="week"?fmtWeek(cursor):fmtDay(cursor)}
+        </span>
+      </div>
+      {view==="month"?renderMonth():view==="week"?renderWeek():renderDay()}
+    </div>
+  );
+};
+
+// ── TASKS REPORTS VIEW ────────────────────────────────────────
+const TaskReportsView = ({tasks, users, projects, currentUser}) => {
+  const {dark} = useTheme();
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo]   = useState("");
+  const [filterProject, setFilterProject] = useState("all");
+  const [filterUser, setFilterUser]       = useState("all");
+  const [filterStatus, setFilterStatus]   = useState("all");
+  const devProjects = projects.filter(p=>p.developerId===currentUser.developerId);
+  const devTeam     = users.filter(u=>u.developerId===currentUser.developerId);
+
+  const filtered = tasks.filter(t=>{
+    if (t.developerId!==currentUser.developerId) return false;
+    if (filterProject!=="all"&&t.projectId!==filterProject) return false;
+    if (filterUser!=="all"&&!(t.assignedTo||[]).includes(filterUser)) return false;
+    if (filterStatus!=="all"&&t.status!==filterStatus) return false;
+    if (dateFrom&&t.dueDate&&t.dueDate<dateFrom) return false;
+    if (dateTo  &&t.dueDate&&t.dueDate>dateTo)   return false;
+    return true;
+  });
+
+  const now = new Date();
+  const total    = filtered.length;
+  const completed= filtered.filter(t=>t.status==="Completed").length;
+  const delayed  = filtered.filter(t=>t.isDelayed||t.status==="Delayed").length;
+  const overdue  = filtered.filter(t=>t.dueDate&&new Date(t.dueDate)<now&&t.status!=="Completed"&&t.status!=="Cancelled").length;
+  const inProg   = filtered.filter(t=>t.status==="In Progress").length;
+  const delComp  = filtered.filter(t=>t.isDelayedCompleted).length;
+
+  // Average completion time (days)
+  const completedWithDates = filtered.filter(t=>t.status==="Completed"&&t.completedAt&&t.startDate);
+  const avgDays = completedWithDates.length
+    ? (completedWithDates.reduce((s,t)=>{
+        return s+(new Date(t.completedAt)-new Date(t.startDate))/86400000;
+      },0)/completedWithDates.length).toFixed(1)
+    : "—";
+
+  // User performance
+  const perfByUser = devTeam.map(u=>{
+    const myTasks = filtered.filter(t=>(t.assignedTo||[]).includes(u.id));
+    const myDone  = myTasks.filter(t=>t.status==="Completed").length;
+    const myDel   = myTasks.filter(t=>t.isDelayed||t.status==="Delayed").length;
+    return {user:u, total:myTasks.length, done:myDone, delayed:myDel, rate:myTasks.length?Math.round(myDone/myTasks.length*100):0};
+  }).filter(r=>r.total>0).sort((a,b)=>b.rate-a.rate);
+
+  const inp = `border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`;
+
+  const downloadCSV = () => {
+    const rows=[["Task ID","Task Name","Project","Status","Priority","Assigned To","Due Date","Completed","Delayed","Delayed Completed"]];
+    filtered.forEach(t=>{
+      const proj=projects.find(p=>p.id===t.projectId);
+      const asn=(t.assignedTo||[]).map(id=>users.find(u=>u.id===id)?.name||id).join(";");
+      rows.push([t.taskId||"",t.taskName,proj?.customerName||"",t.status,t.priority,asn,t.dueDate||"",t.completedAt||"",t.isDelayed?"Yes":"No",t.isDelayedCompleted?"Yes":"No"]);
+    });
+    const csv=rows.map(r=>r.map(x=>`"${String(x).replace(/"/g,'""')}"`).join(",")).join("\n");
+    const blob=new Blob([csv],{type:"text/csv"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a"); a.href=url; a.download="task_report.csv"; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <h2 className={`text-lg font-bold ${tc(dark,"text-white","text-slate-800")}`}>Task Reports</h2>
+        <Btn size="sm" onClick={downloadCSV}><Icon name="download" size={14}/>Export CSV</Btn>
+      </div>
+
+      {/* Filters */}
+      <div className={`border rounded-xl p-4 mb-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+        <div>
+          <p className={`text-xs font-medium mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>Project</p>
+          <select value={filterProject} onChange={e=>setFilterProject(e.target.value)} className={`w-full ${inp}`}>
+            <option value="all">All Projects</option>
+            {devProjects.map(p=><option key={p.id} value={p.id}>{p.customerName}</option>)}
+          </select>
+        </div>
+        <div>
+          <p className={`text-xs font-medium mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>User</p>
+          <select value={filterUser} onChange={e=>setFilterUser(e.target.value)} className={`w-full ${inp}`}>
+            <option value="all">All Users</option>
+            {devTeam.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <p className={`text-xs font-medium mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>Status</p>
+          <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} className={`w-full ${inp}`}>
+            <option value="all">All</option>
+            {TASK_STATUS.map(s=><option key={s}>{s}</option>)}
+          </select>
+        </div>
+        <div>
+          <p className={`text-xs font-medium mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>Date Range</p>
+          <div className="flex gap-1">
+            <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} className={`flex-1 ${inp}`}/>
+            <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)} className={`flex-1 ${inp}`}/>
+          </div>
+        </div>
+      </div>
+
+      {/* Metric cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+        {[
+          ["Total Tasks",total,"slate"],["Completed",completed,"emerald"],
+          ["In Progress",inProg,"sky"],["Delayed",delayed,"red"],
+          ["Overdue",overdue,"orange"],["Delayed Completed",delComp,"amber"],
+          ["Avg Completion",avgDays+" days","purple"],["Completion Rate",total?Math.round(completed/total*100)+"%":"0%","teal"],
+        ].map(([label,val,color])=>(
+          <div key={label} className={`border rounded-xl p-3 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+            <p className={`text-xs mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>{label}</p>
+            <p className={`text-2xl font-black text-${color}-${dark?"400":"600"}`}>{val}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* User performance */}
+      {perfByUser.length>0&&(
+        <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+          <h3 className={`font-bold text-sm mb-3 ${tc(dark,"text-white","text-slate-800")}`}>User Performance</h3>
+          <div className="space-y-3">
+            {perfByUser.map(r=>(
+              <div key={r.user.id} className="flex items-center gap-3">
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold text-white flex-shrink-0 ${tc(dark,"bg-slate-700","bg-amber-500")}`}>{r.user.name.charAt(0)}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex justify-between items-center mb-0.5">
+                    <span className={`text-sm font-medium truncate ${tc(dark,"text-white","text-slate-800")}`}>{r.user.name}</span>
+                    <span className={`text-xs ml-2 ${tc(dark,"text-slate-400","text-slate-500")}`}>{r.done}/{r.total} · {r.rate}%</span>
+                  </div>
+                  <div className={`h-2 rounded-full ${tc(dark,"bg-slate-700","bg-slate-200")}`}>
+                    <div className="h-full rounded-full transition-all" style={{width:`${r.rate}%`,background:r.rate>=80?"#10b981":r.rate>=50?"#f59e0b":"#ef4444"}}/>
+                  </div>
+                </div>
+                {r.delayed>0&&<span className="text-xs text-red-400 flex-shrink-0">{r.delayed} delayed</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── TASKS PAGE ────────────────────────────────────────────────
+const TasksPage = ({tasks, setTasks, projects, users, currentUser, developer}) => {
+  const {dark} = useTheme();
+  const toast = useToast();
+  const [view, setView]         = useState("kanban"); // kanban | list | calendar | reports
+  const [showAdd, setShowAdd]   = useState(false);
+  const [selectedTask, setSelectedTask] = useState(null);
+  const [filterProject, setFilterProject]   = useState("all");
+  const [filterUser, setFilterUser]         = useState("all");
+  const [filterStatus, setFilterStatus]     = useState("all");
+  const [filterPriority, setFilterPriority] = useState("all");
+  const [searchQ, setSearchQ]   = useState("");
+
+  const devProjects = projects.filter(p=>p.developerId===currentUser.developerId);
+  const devTeam     = users.filter(u=>u.developerId===currentUser.developerId&&u.active);
+
+  // Apply auto-delay on render
+  const myTasks = tasks
+    .filter(t=>t.developerId===currentUser.developerId)
+    .map(computeTaskStatus)
+    .filter(t=>{
+      if (currentUser.role===ROLES.USER) return (t.assignedTo||[]).includes(currentUser.id);
+      return true;
+    });
+
+  const filtered = myTasks.filter(t=>{
+    if (filterProject!=="all"&&t.projectId!==filterProject) return false;
+    if (filterUser!=="all"&&!(t.assignedTo||[]).includes(filterUser)) return false;
+    if (filterStatus!=="all"&&t.status!==filterStatus) return false;
+    if (filterPriority!=="all"&&t.priority!==filterPriority) return false;
+    if (searchQ){
+      const q=searchQ.toLowerCase();
+      const proj=projects.find(p=>p.id===t.projectId);
+      if (!t.taskName.toLowerCase().includes(q)&&!t.description?.toLowerCase().includes(q)&&!t.taskId?.toLowerCase().includes(q)&&!proj?.customerName?.toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+
+  const now = new Date();
+  const today = now.toISOString().slice(0,10);
+  const stats = {
+    total:    myTasks.length,
+    completed:myTasks.filter(t=>t.status==="Completed").length,
+    inProg:   myTasks.filter(t=>t.status==="In Progress").length,
+    delayed:  myTasks.filter(t=>t.isDelayed||t.status==="Delayed").length,
+    overdue:  myTasks.filter(t=>t.dueDate&&new Date(t.dueDate)<now&&t.status!=="Completed"&&t.status!=="Cancelled").length,
+    today:    myTasks.filter(t=>t.dueDate?.slice(0,10)===today).length,
+  };
+
+  const createTask = (form) => {
+    const devProj = projects.find(p=>p.id===form.projectId);
+    const allTaskNums = tasks.filter(t=>t.developerId===currentUser.developerId).map(t=>{const m=(t.taskId||"").match(/(\d+)$/);return m?parseInt(m[1]):0;});
+    const nextNum = Math.max(1000,...allTaskNums)+1;
+    const newTask = {
+      ...form,
+      id:`t${Date.now()}`,
+      taskId:`TSK-${nextNum}`,
+      createdBy: currentUser.id,
+      isDelayed: false, isDelayedCompleted: false,
+      completedAt: null,
+      attachments: [],
+      activityLog:[{id:`ta${Date.now()}`,action:"created",by:currentUser.name,at:new Date().toISOString()}],
+      developerId: currentUser.developerId,
+    };
+    setTasks(ts=>[...ts, newTask]);
+    setShowAdd(false);
+    toast.show({message:`Task "${newTask.taskName}" created.`});
+  };
+
+  const inp = `border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`;
+
+  // ── List view ──
+  const renderList = () => (
+    <div className={`border rounded-xl overflow-hidden ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm" style={{minWidth:700}}>
+          <thead>
+            <tr className={`border-b ${tc(dark,"border-slate-700 bg-slate-800/30","border-slate-200 bg-slate-50")}`}>
+              {["Task","Project","Priority","Status","Assigned To","Due Date","Actions"].map(h=>(
+                <th key={h} className={`text-left px-4 py-3 text-xs font-medium ${tc(dark,"text-slate-400","text-slate-500")}`}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length===0&&<tr><td colSpan={7} className={`text-center py-10 text-sm ${tc(dark,"text-slate-400","text-slate-500")}`}>No tasks found.</td></tr>}
+            {filtered.map(t=>{
+              const proj=projects.find(p=>p.id===t.projectId);
+              const assignees=(t.assignedTo||[]).map(id=>users.find(u=>u.id===id)?.name||id);
+              const overdue=t.dueDate&&new Date(t.dueDate)<now&&t.status!=="Completed"&&t.status!=="Cancelled";
+              return (
+                <tr key={t.id} onClick={()=>setSelectedTask(t)}
+                  className={`border-b cursor-pointer transition-colors ${tc(dark,"border-slate-700/30 hover:bg-slate-800/40","border-slate-100 hover:bg-slate-50")}`}>
+                  <td className="px-4 py-3">
+                    <div className={`font-medium text-sm ${tc(dark,"text-white","text-slate-800")}`}>{t.taskName}</div>
+                    <div className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>{t.taskId}</div>
+                  </td>
+                  <td className={`px-4 py-3 text-xs ${tc(dark,"text-amber-400","text-amber-600")}`}>{proj?.customerName||"—"}</td>
+                  <td className="px-4 py-3"><PriorityBadge priority={t.priority}/></td>
+                  <td className="px-4 py-3"><TaskBadge status={t.status}/></td>
+                  <td className={`px-4 py-3 text-xs ${tc(dark,"text-slate-300","text-slate-600")}`}>{assignees.slice(0,2).join(", ")}{assignees.length>2&&` +${assignees.length-2}`}</td>
+                  <td className={`px-4 py-3 text-xs ${overdue?tc(dark,"text-red-400","text-red-600"):tc(dark,"text-slate-400","text-slate-500")}`}>
+                    {t.dueDate?new Date(t.dueDate).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"2-digit"}):"—"}
+                    {overdue&&" ⚠"}
+                  </td>
+                  <td className="px-4 py-3" onClick={e=>e.stopPropagation()}>
+                    <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>setSelectedTask(t)}><Icon name="eye" size={12}/></Btn>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  // ── Kanban view ──
+  const renderKanban = () => (
+    <div className="flex gap-3 overflow-x-auto pb-4" style={{scrollSnapType:"x mandatory"}}>
+      {TASK_STATUS.map(status=>{
+        const col=filtered.filter(t=>t.status===status);
+        const sc=dark?TASK_STATUS_COLORS[status]:TASK_STATUS_COLORS_L[status];
+        return (
+          <div key={status} className="flex-shrink-0" style={{width:"min(280px,82vw)",scrollSnapAlign:"start"}}>
+            <div className={`rounded-xl p-3 mb-2 flex items-center justify-between`} style={{borderTop:`3px solid ${sc?.hex}`,background:dark?sc?.hex+"14":sc?.hex+"0e"}}>
+              <span className={`font-bold text-xs ${sc?.text}`}>{status}</span>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${tc(dark,"bg-slate-700/60 text-slate-300","bg-white text-slate-600 border border-slate-200")}`}>{col.length}</span>
+            </div>
+            <div style={{maxHeight:600,overflowY:"auto",scrollbarWidth:"thin"}}>
+              {col.map(t=><TaskCard key={t.id} task={t} users={users} projects={projects} currentUser={currentUser} onClick={()=>setSelectedTask(t)}/>)}
+              {col.length===0&&<div className={`rounded-xl p-5 text-center text-xs border-2 border-dashed ${tc(dark,"border-slate-800 text-slate-700","border-slate-200 text-slate-400")}`}>No tasks</div>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  return (
+    <div>
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
+        <div>
+          <h1 className={`text-xl font-bold ${tc(dark,"text-white","text-slate-800")}`}>Tasks</h1>
+          <p className={`text-sm ${tc(dark,"text-slate-400","text-slate-500")}`}>{filtered.length} of {myTasks.length} tasks</p>
+        </div>
+        <Btn onClick={()=>setShowAdd(true)}><Icon name="plus" size={15}/>New Task</Btn>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-5">
+        {[
+          {label:"Total",val:stats.total,color:"slate"},
+          {label:"Completed",val:stats.completed,color:"emerald"},
+          {label:"In Progress",val:stats.inProg,color:"sky"},
+          {label:"Delayed",val:stats.delayed,color:"red"},
+          {label:"Overdue",val:stats.overdue,color:"orange"},
+          {label:"Due Today",val:stats.today,color:"amber"},
+        ].map(s=>(
+          <button key={s.label} onClick={()=>s.label==="In Progress"?setFilterStatus("In Progress"):s.label==="Delayed"?setFilterStatus("Delayed"):s.label==="Completed"?setFilterStatus("Completed"):setFilterStatus("all")}
+            className={`border rounded-xl p-3 text-left transition-all hover:shadow-md ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+            <p className={`text-xs mb-0.5 ${tc(dark,"text-slate-400","text-slate-500")}`}>{s.label}</p>
+            <p className={`text-xl font-black text-${s.color}-${dark?"400":"600"}`}>{s.val}</p>
+          </button>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div className={`border rounded-xl mb-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+        <div className="flex flex-wrap gap-2 p-3 items-center">
+          <div className={`flex items-center gap-2 flex-1 min-w-0 border rounded-lg px-3 py-1.5 ${tc(dark,"bg-slate-800 border-slate-600","bg-slate-50 border-slate-300")}`}>
+            <Icon name="search" size={14}/>
+            <input value={searchQ} onChange={e=>setSearchQ(e.target.value)} placeholder="Search tasks…"
+              className={`flex-1 bg-transparent text-sm focus:outline-none ${tc(dark,"text-white placeholder-slate-500","text-slate-800 placeholder-slate-400")}`}/>
+            {searchQ&&<button onClick={()=>setSearchQ("")} className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>×</button>}
+          </div>
+          <select value={filterProject} onChange={e=>setFilterProject(e.target.value)} className={inp}>
+            <option value="all">All Projects</option>
+            {devProjects.map(p=><option key={p.id} value={p.id}>{p.customerName}</option>)}
+          </select>
+          <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} className={inp}>
+            <option value="all">All Status</option>
+            {TASK_STATUS.map(s=><option key={s}>{s}</option>)}
+          </select>
+          <select value={filterPriority} onChange={e=>setFilterPriority(e.target.value)} className={inp}>
+            <option value="all">All Priority</option>
+            {TASK_PRIORITY.map(p=><option key={p}>{p}</option>)}
+          </select>
+          <select value={filterUser} onChange={e=>setFilterUser(e.target.value)} className={inp}>
+            <option value="all">All Users</option>
+            {devTeam.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+          {(filterProject!=="all"||filterStatus!=="all"||filterPriority!=="all"||filterUser!=="all"||searchQ)&&(
+            <button onClick={()=>{setFilterProject("all");setFilterStatus("all");setFilterPriority("all");setFilterUser("all");setSearchQ("");}} className="text-xs text-amber-400 underline">Clear</button>
+          )}
+        </div>
+      </div>
+
+      {/* View switcher */}
+      <div className={`flex gap-1 rounded-xl p-1 mb-4 border overflow-x-auto flex-nowrap w-fit ${tc(dark,"bg-[#070e1c] border-slate-800","bg-slate-100 border-slate-200")}`}>
+        {[["kanban","Kanban"],["list","List"],["calendar","Calendar"],["reports","Reports"]].map(([v,label])=>(
+          <button key={v} onClick={()=>setView(v)} className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${view===v?"bg-amber-500 text-slate-900":tc(dark,"text-slate-400 hover:text-white","text-slate-500 hover:text-slate-700")}`}>{label}</button>
+        ))}
+      </div>
+
+      {/* Views */}
+      {view==="kanban"   && renderKanban()}
+      {view==="list"     && renderList()}
+      {view==="calendar" && <TaskCalendarView tasks={filtered} users={users} projects={projects} currentUser={currentUser} onTaskClick={setSelectedTask}/>}
+      {view==="reports"  && <TaskReportsView tasks={tasks} users={users} projects={projects} currentUser={currentUser}/>}
+
+      {/* Modals */}
+      {showAdd&&<TaskFormModal projects={projects} users={users} currentUser={currentUser} developer={developer} onSave={createTask} onClose={()=>setShowAdd(false)}/>}
+      {selectedTask&&<TaskDetailModal task={selectedTask} tasks={tasks} setTasks={setTasks} users={users} projects={projects} currentUser={currentUser} developer={developer} onClose={()=>setSelectedTask(null)}/>}
+    </div>
+  );
+};
+
+
 export default function SolarProApp() {
   // ── THEME STATE ──
   const [dark, setDark] = useLS("sp_dark", true);
@@ -4866,6 +5925,7 @@ export default function SolarProApp() {
   const [proposals,   setProposals]   = useLS("sp_proposals",   SEED_PROPOSALS);
   const [invoices,    setInvoices]    = useLS("sp_invoices",     SEED_INVOICES);
   const [deletedItems, setDeletedItems] = useLS("sp_deleted", []);
+  const [tasks, setTasks] = useLS("sp_tasks", SEED_TASKS);
 
   // ── NAV STATE with browser history ──
   const parseHash = () => {
@@ -4976,6 +6036,10 @@ export default function SolarProApp() {
       // ── DEV ADMIN: SETTINGS ──
       case "settings":
         return developer ? <SettingsPage developer={developer} setDevelopers={setDevelopers} dateFormat={dateFormat} setDateFormat={setDateFormat} projects={projects} setProjects={setProjects} deletedItems={deletedItems} setDeletedItems={setDeletedItems}/> : null;
+
+      // ── TASKS ──
+      case "tasks":
+        return <TasksPage tasks={tasks} setTasks={setTasks} projects={projects} users={users} currentUser={currentUser} developer={developer}/>;
 
       // ── ALL USERS: MY PROFILE/SETTINGS ──
       case "my-settings":
