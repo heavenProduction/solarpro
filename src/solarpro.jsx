@@ -2412,8 +2412,8 @@ const SettingsPage = (props) => {
 
       {/* Settings sub-tabs */}
       <div className={`flex gap-1 rounded-xl p-1 mb-5 border overflow-x-auto flex-nowrap ${tc(dark,"bg-[#070e1c] border-slate-800","bg-slate-100 border-slate-200")}`} style={{WebkitOverflowScrolling:"touch"}}>
-        {["company","solar","finance","invoices","projects","lanes","deleted"].map(t=>(
-          <button key={t} onClick={()=>setSettingsTab(t)} className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-all whitespace-nowrap ${settingsTab===t?"bg-amber-500 text-slate-900":tc(dark,"text-slate-400 hover:text-white","text-slate-500 hover:text-slate-700")}`}>{t==="deleted"?"🗑 Deleted":t}</button>
+        {["company","solar","finance","invoices","projects","lanes","task-statuses","deleted"].map(t=>(
+          <button key={t} onClick={()=>setSettingsTab(t)} className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${settingsTab===t?"bg-amber-500 text-slate-900":tc(dark,"text-slate-400 hover:text-white","text-slate-500 hover:text-slate-700")}`}>{t==="deleted"?"🗑 Deleted":t==="task-statuses"?"Task Statuses":t.charAt(0).toUpperCase()+t.slice(1)}</button>
         ))}
       </div>
 
@@ -2560,6 +2560,77 @@ const SettingsPage = (props) => {
         </div>
       )}
 
+
+      {settingsTab==="task-statuses"&&(()=>{
+        const taskStatuses = developer?.taskStatuses||[];
+        const [newSName, setNewSName] = useState("");
+        const [newSColor, setNewSColor] = useState("sky");
+        const addTaskStatus = () => {
+          if (!newSName.trim()||TASK_STATUS_BUILTIN.includes(newSName.trim())) return;
+          const ns = {id:`ts${Date.now()}`,name:newSName.trim(),hex:laneHex(newSColor)};
+          props.setDevelopers(ds=>ds.map(d=>d.id===developer.id?{...d,taskStatuses:[...(d.taskStatuses||[]),ns]}:d));
+          setNewSName("");
+        };
+        const removeTaskStatus = (id) => {
+          props.setDevelopers(ds=>ds.map(d=>d.id===developer.id?{...d,taskStatuses:(d.taskStatuses||[]).filter(s=>s.id!==id)}:d));
+        };
+        return (
+          <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+            <h3 className={`font-bold mb-1 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Custom Task Statuses</h3>
+            <p className={`text-xs mb-4 ${tc(dark,"text-slate-400","text-slate-500")}`}>Add custom statuses beyond the built-in ones. Built-in statuses cannot be removed.</p>
+
+            {/* Built-in statuses (read-only) */}
+            <p className={`text-xs font-semibold mb-2 ${tc(dark,"text-slate-500","text-slate-400")}`}>Built-in (system)</p>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {TASK_STATUS_BUILTIN.map(s=>{
+                const hex = TASK_STATUS_COLORS[s]?.hex||"#64748b";
+                return (
+                  <div key={s} className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs ${tc(dark,"border-slate-700 bg-slate-800/40 text-slate-300","border-slate-200 bg-slate-50 text-slate-600")}`}>
+                    <span style={{width:8,height:8,borderRadius:"50%",background:hex,flexShrink:0,display:"inline-block"}}/>
+                    {s}
+                    <span className={`text-xs px-1.5 py-0.5 rounded ${tc(dark,"bg-slate-700 text-slate-500","bg-slate-200 text-slate-400")}`}>system</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Custom statuses */}
+            {taskStatuses.length>0&&(
+              <>
+                <p className={`text-xs font-semibold mb-2 ${tc(dark,"text-slate-500","text-slate-400")}`}>Custom</p>
+                <div className="space-y-2 mb-4">
+                  {taskStatuses.map(s=>(
+                    <div key={s.id} className={`flex items-center gap-3 border rounded-xl p-3 ${tc(dark,"border-slate-700 bg-slate-800/40","border-slate-200 bg-slate-50")}`}>
+                      <span style={{width:10,height:10,borderRadius:"50%",background:s.hex,flexShrink:0,display:"inline-block"}}/>
+                      <span className={`flex-1 text-sm font-medium ${tc(dark,"text-white","text-slate-800")}`}>{s.name}</span>
+                      <button onClick={()=>removeTaskStatus(s.id)} className={`p-1 rounded ${tc(dark,"hover:bg-slate-700 text-red-400","hover:bg-red-50 text-red-500")}`}><Icon name="trash" size={12}/></button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* Add new */}
+            <div className={`border rounded-xl p-3 ${tc(dark,"bg-slate-800/30 border-slate-700","bg-slate-50 border-slate-200")}`}>
+              <h4 className={`text-xs font-bold mb-2 ${tc(dark,"text-slate-400","text-slate-500")}`}>Add New Status</h4>
+              <div className="flex gap-2 mb-3">
+                <input value={newSName} onChange={e=>setNewSName(e.target.value)}
+                  placeholder="e.g. Under Review, Pending Approval…"
+                  className={`flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none ${tc(dark,"bg-slate-700 border-slate-600 text-white placeholder-slate-500","bg-white border-slate-300 text-slate-800")}`}/>
+                <Btn size="sm" onClick={addTaskStatus} disabled={!newSName.trim()||TASK_STATUS_BUILTIN.includes(newSName.trim())}><Icon name="plus" size={13}/>Add</Btn>
+              </div>
+              {TASK_STATUS_BUILTIN.includes(newSName.trim())&&<p className="text-xs text-red-400 mb-2">"{newSName.trim()}" is a built-in status and cannot be duplicated.</p>}
+              <p className={`text-xs mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>Color:</p>
+              <div className="flex flex-wrap gap-1.5">
+                {LANE_COLORS.map(c=>(
+                  <button key={c.key} onClick={()=>setNewSColor(c.key)} title={c.label}
+                    style={{backgroundColor:c.hex,width:20,height:20,borderRadius:"50%",border:newSColor===c.key?"3px solid white":"2px solid transparent",outline:newSColor===c.key?"2px solid #f59e0b":"none"}}/>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {settingsTab==="deleted"&&(()=>{
         const devDeleted = (props.deletedItems||[]).filter(d=>d.developerId===developer.id).sort((a,b)=>new Date(b._deletedAt)-new Date(a._deletedAt));
@@ -4064,7 +4135,7 @@ img,svg{display:block;max-width:100%;height:auto}[hidden]{display:none}
 // SOLARPRO v3 - PART 7: PROJECT DETAIL (Notes, Docs, Proposals)
 // ============================================================
 
-const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, proposals, setProposals, templates, developer, currentUser, onBack, setCurrentPage, setProjects, users }) => {
+const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, proposals, setProposals, templates, developer, currentUser, onBack, setCurrentPage, setProjects, users, tasks, setTasks }) => {
   const { dark } = useTheme();
   const [tab, setTab] = useState("info");
   const [newNote, setNewNote] = useState("");
@@ -4185,8 +4256,9 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
     setShowGen(false); setViewProposal(np);
   };
 
-  const tabs = ["info","notes","documents","proposal","activity"].filter(t=>{
+  const tabs = ["info","tasks","notes","documents","proposal","activity"].filter(t=>{
     if (t==="info") return true; // always visible
+    if (t==="tasks")     return hasPerm(currentUser,"projects.view");
     if (t==="notes")     return hasPerm(currentUser,"notes.view");
     if (t==="documents") return hasPerm(currentUser,"documents.view");
     if (t==="proposal")  return hasPerm(currentUser,"proposals.view");
@@ -4357,6 +4429,153 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
           </div>
         </div>
       )}
+
+      {/* TASKS TAB */}
+      {tab==="tasks"&&(()=>{
+        const [taskSearch, setTaskSearch]     = useState("");
+        const [taskStatusF, setTaskStatusF]   = useState("all");
+        const [taskPriorityF, setTaskPriorityF] = useState("all");
+        const [taskUserF, setTaskUserF]       = useState("all");
+        const [showTaskAdd, setShowTaskAdd]   = useState(false);
+        const toast2 = useToast();
+
+        const projTasks = (tasks||[])
+          .filter(t=>t.projectId===project.id)
+          .map(computeTaskStatus)
+          .filter(t=>{
+            if (taskStatusF!=="all"&&t.status!==taskStatusF) return false;
+            if (taskPriorityF!=="all"&&t.priority!==taskPriorityF) return false;
+            if (taskUserF!=="all"&&!(t.assignedTo||[]).includes(taskUserF)) return false;
+            if (taskSearch){
+              const q=taskSearch.toLowerCase();
+              if (!t.taskName.toLowerCase().includes(q)&&!t.taskId?.toLowerCase().includes(q)&&!t.description?.toLowerCase().includes(q)) return false;
+            }
+            return true;
+          });
+
+        const devTeamT = users ? users.filter(u=>u.developerId===project.developerId&&u.active) : [];
+        const now2 = new Date();
+
+        const inp = `border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`;
+
+        const addTaskForProject = (form) => {
+          if (!setTasks) return;
+          const allNums = (tasks||[]).filter(t=>t.developerId===currentUser.developerId).map(t=>{const m=(t.taskId||"").match(/(\d+)$/);return m?parseInt(m[1]):0;});
+          const nextNum = Math.max(1000,...allNums)+1;
+          const newT = {
+            ...form,
+            id:`t${Date.now()}`,
+            taskId:`TSK-${nextNum}`,
+            projectId:project.id,
+            createdBy:currentUser.id,
+            isDelayed:false,isDelayedCompleted:false,completedAt:null,
+            attachments:[],
+            activityLog:[{id:`ta${Date.now()}`,action:"created",by:currentUser.name,at:new Date().toISOString()}],
+            developerId:project.developerId,
+          };
+          setTasks(ts=>[...ts,newT]);
+          setShowTaskAdd(false);
+          toast2.show({message:`Task "${newT.taskName}" created.`});
+        };
+
+        return (
+          <div>
+            {/* Header row */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+              <div>
+                <h3 className={`font-bold text-sm ${tc(dark,"text-white","text-slate-800")}`}>Tasks <span className={`font-normal text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>({projTasks.length})</span></h3>
+              </div>
+              {hasPerm(currentUser,"projects.create")&&(
+                <Btn size="sm" onClick={()=>setShowTaskAdd(true)}><Icon name="plus" size={14}/>Add Task</Btn>
+              )}
+            </div>
+
+            {/* Filter bar */}
+            <div className={`border rounded-xl mb-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+              <div className="flex flex-wrap gap-2 p-3 items-center">
+                <div className={`flex items-center gap-2 flex-1 min-w-0 border rounded-lg px-3 py-1.5 ${tc(dark,"bg-slate-800 border-slate-600","bg-slate-50 border-slate-300")}`}>
+                  <Icon name="search" size={13}/>
+                  <input value={taskSearch} onChange={e=>setTaskSearch(e.target.value)} placeholder="Search tasks…"
+                    className={`flex-1 bg-transparent text-xs focus:outline-none ${tc(dark,"text-white placeholder-slate-500","text-slate-800 placeholder-slate-400")}`}/>
+                  {taskSearch&&<button onClick={()=>setTaskSearch("")} className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>×</button>}
+                </div>
+                <select value={taskStatusF} onChange={e=>setTaskStatusF(e.target.value)} className={inp}>
+                  <option value="all">All Status</option>
+                  {TASK_STATUS_BUILTIN.concat((developer?.taskStatuses||[]).map(x=>x.name)).map(s=><option key={s}>{s}</option>)}
+                </select>
+                <select value={taskPriorityF} onChange={e=>setTaskPriorityF(e.target.value)} className={inp}>
+                  <option value="all">All Priority</option>
+                  {TASK_PRIORITY.map(p=><option key={p}>{p}</option>)}
+                </select>
+                <select value={taskUserF} onChange={e=>setTaskUserF(e.target.value)} className={inp}>
+                  <option value="all">All Users</option>
+                  {devTeamT.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+                {(taskSearch||taskStatusF!=="all"||taskPriorityF!=="all"||taskUserF!=="all")&&(
+                  <button onClick={()=>{setTaskSearch("");setTaskStatusF("all");setTaskPriorityF("all");setTaskUserF("all");}} className="text-xs text-amber-400 underline">Clear</button>
+                )}
+              </div>
+            </div>
+
+            {/* Task list */}
+            {projTasks.length===0 ? (
+              <div className={`text-center py-14 border-2 border-dashed rounded-xl ${tc(dark,"border-slate-800 text-slate-600","border-slate-200 text-slate-400")}`}>
+                <div className="text-3xl mb-2">✅</div>
+                <p className="text-sm">No tasks yet for this project.</p>
+                {hasPerm(currentUser,"projects.create")&&<button onClick={()=>setShowTaskAdd(true)} className="text-amber-400 text-sm underline mt-1">Add the first task</button>}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {projTasks.map(t=>{
+                  const assignees=(t.assignedTo||[]).map(id=>devTeamT.find(u=>u.id===id)).filter(Boolean);
+                  const overdue=t.dueDate&&new Date(t.dueDate)<now2&&t.status!=="Completed"&&t.status!=="Cancelled";
+                  const hex = getStatusHex(t.status, developer);
+                  return (
+                    <div key={t.id} onClick={()=>{if(setTasks){/* open detail */}}}
+                      className={`border rounded-xl p-3 transition-all cursor-pointer hover:shadow-md ${overdue?tc(dark,"border-red-500/40 bg-red-500/5","border-red-300 bg-red-50"):tc(dark,"border-slate-700/50 bg-[#0c1929]","border-slate-200 bg-white shadow-sm")}`}>
+                      <div className="flex flex-wrap items-start gap-2 mb-1.5">
+                        <span className={`text-xs font-mono ${tc(dark,"text-slate-500","text-slate-400")}`}>{t.taskId}</span>
+                        <PriorityBadge priority={t.priority}/>
+                        <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{background:hex+"20",color:hex,border:`1px solid ${hex}40`}}>{t.status}</span>
+                        {overdue&&<span className={`text-xs px-2 py-0.5 rounded-full ${tc(dark,"bg-red-500/20 text-red-400","bg-red-100 text-red-600")}`}>⚠ Overdue</span>}
+                      </div>
+                      <p className={`font-semibold text-sm mb-1 ${tc(dark,"text-white","text-slate-800")}`}>{t.taskName}</p>
+                      {t.description&&<p className={`text-xs mb-2 line-clamp-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>{t.description}</p>}
+                      <div className="flex flex-wrap items-center gap-3 mt-1">
+                        <div className="flex -space-x-1">
+                          {assignees.slice(0,4).map(u=>(
+                            <div key={u.id} title={u.name} className={`w-5 h-5 rounded-full text-white flex items-center justify-center font-bold border-2 ${tc(dark,"bg-slate-600 border-[#0c1929]","bg-amber-500 border-white")}`} style={{fontSize:8}}>{u.name.charAt(0)}</div>
+                          ))}
+                        </div>
+                        {t.dueDate&&<span className={`text-xs ${overdue?tc(dark,"text-red-400","text-red-600"):tc(dark,"text-slate-500","text-slate-400")}`}>Due {new Date(t.dueDate).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}</span>}
+                        {(t.subtasks||[]).length>0&&(
+                          <span className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>
+                            ✓ {(t.subtasks||[]).filter(s=>s.status==="Completed").length}/{(t.subtasks||[]).length}
+                          </span>
+                        )}
+                        {(t.tags||[]).slice(0,2).map(tag=><span key={tag} className={`text-xs px-1.5 py-0.5 rounded ${tc(dark,"bg-slate-700 text-slate-400","bg-slate-100 text-slate-500")}`}>#{tag}</span>)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Add task modal — pre-filled with this project */}
+            {showTaskAdd&&(
+              <TaskFormModal
+                task={null}
+                projects={[project,...(projects||[])].filter((p,i,a)=>a.findIndex(x=>x.id===p.id)===0)}
+                users={users||[]}
+                currentUser={currentUser}
+                developer={developer}
+                defaultProjectId={project.id}
+                onSave={addTaskForProject}
+                onClose={()=>setShowTaskAdd(false)}/>
+            )}
+          </div>
+        );
+      })()}
 
       {/* NOTES TAB */}
       {tab==="notes"&&(
@@ -4853,7 +5072,26 @@ const ProposalPreview = ({ proposal, project, developer, templates }) => {
 // ============================================================
 
 // ── TASK CONSTANTS ────────────────────────────────────────────
-const TASK_STATUS = ["To Do","In Progress","On Hold","Completed","Delayed","Cancelled"];
+const TASK_STATUS_BUILTIN = ["To Do","In Progress","On Hold","Completed","Delayed","Cancelled"];
+const TASK_STATUS = TASK_STATUS_BUILTIN; // kept for legacy refs
+// Returns merged list: built-in + developer custom statuses
+const getTaskStatuses = (developer) => {
+  const custom = (developer?.taskStatuses||[]).filter(s=>s.name&&!TASK_STATUS_BUILTIN.includes(s.name));
+  return [
+    ...TASK_STATUS_BUILTIN.map(s=>{
+      const c = TASK_STATUS_COLORS[s]||{hex:"#64748b"};
+      return {name:s, hex:c.hex, isBuiltin:true};
+    }),
+    ...custom.map(s=>({name:s.name, hex:s.hex||"#64748b", isBuiltin:false, id:s.id})),
+  ];
+};
+// Get color hex for any status (built-in or custom)
+const getStatusHex = (statusName, developer) => {
+  const built = TASK_STATUS_COLORS[statusName];
+  if (built) return built.hex;
+  const custom = (developer?.taskStatuses||[]).find(s=>s.name===statusName);
+  return custom?.hex || "#64748b";
+};
 const TASK_PRIORITY = ["Low","Medium","High","Urgent"];
 const TASK_RECUR = ["none","daily","weekly","monthly"];
 const TASK_DEPEND_TYPES = ["Finish-to-Start","Start-to-Start"];
@@ -5034,7 +5272,7 @@ const TaskCard = ({task, users, projects, onClick, onStatusChange, currentUser})
 };
 
 // ── TASK FORM MODAL ───────────────────────────────────────────
-const TaskFormModal = ({task, projects, users, currentUser, developer, onSave, onClose}) => {
+const TaskFormModal = ({task, projects, users, currentUser, developer, onSave, onClose, defaultProjectId}) => {
   const {dark} = useTheme();
   const isEdit = !!task;
   const devProjects = projects.filter(p=>p.developerId===currentUser.developerId);
@@ -5045,7 +5283,7 @@ const TaskFormModal = ({task, projects, users, currentUser, developer, onSave, o
   const [newCustomKey,setNewCustomKey] = useState("");
   const [newCustomVal,setNewCustomVal] = useState("");
   const blank = {
-    projectId:devProjects[0]?.id||"", taskName:"", description:"",
+    projectId:defaultProjectId||devProjects[0]?.id||"", taskName:"", description:"",
     assignedTo:[currentUser.id], priority:"Medium", status:"To Do",
     startDate:"", dueDate:"", tags:[], customFields:{},
     reminders:[], subtasks:[], recurType:"none",
@@ -5088,7 +5326,7 @@ const TaskFormModal = ({task, projects, users, currentUser, developer, onSave, o
         <div>
           <label className={`block text-xs font-medium mb-1 ${tc(dark,"text-slate-400","text-slate-600")}`}>Status</label>
           <select value={form.status} onChange={e=>F("status",e.target.value)} className={inp}>
-            {TASK_STATUS.map(s=><option key={s}>{s}</option>)}
+            {TASK_STATUS_BUILTIN.concat((developer?.taskStatuses||[]).map(x=>x.name)).map(s=><option key={s}>{s}</option>)}
           </select>
         </div>
         <div>
@@ -5265,7 +5503,7 @@ const TaskDetailModal = ({task, tasks, setTasks, users, projects, currentUser, d
           <div>
             <p className={`text-xs font-medium mb-1.5 ${tc(dark,"text-slate-400","text-slate-500")}`}>Change Status</p>
             <div className="flex flex-wrap gap-1.5">
-              {TASK_STATUS.map(s=>(
+              {[...TASK_STATUS_BUILTIN,...(developer?.taskStatuses||[]).map(x=>x.name)].map(s=>(
                 <button key={s} onClick={()=>changeStatus(s)}
                   className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${task.status===s?`${(dark?TASK_STATUS_COLORS:TASK_STATUS_COLORS_L)[s]?.bg} ${(dark?TASK_STATUS_COLORS:TASK_STATUS_COLORS_L)[s]?.text} border-current`:`${tc(dark,"border-slate-700 text-slate-400","border-slate-200 text-slate-500")} hover:border-amber-400`}`}>
                   {s}
@@ -5690,7 +5928,7 @@ const TaskReportsView = ({tasks, users, projects, currentUser}) => {
 const TasksPage = ({tasks, setTasks, projects, users, currentUser, developer}) => {
   const {dark} = useTheme();
   const toast = useToast();
-  const [view, setView]         = useState("kanban"); // kanban | list | calendar | reports
+  const [view, setView]         = useState("kanban");
   const [showAdd, setShowAdd]   = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
   const [filterProject, setFilterProject]   = useState("all");
@@ -5698,6 +5936,73 @@ const TasksPage = ({tasks, setTasks, projects, users, currentUser, developer}) =
   const [filterStatus, setFilterStatus]     = useState("all");
   const [filterPriority, setFilterPriority] = useState("all");
   const [searchQ, setSearchQ]   = useState("");
+
+  // ── DRAG STATE ──────────────────────────────────────────────
+  const [dragTaskId, setDragTaskId]     = useState(null);
+  const [dragOverStatus, setDragOverStatus] = useState(null);
+  const [isDragging, setIsDragging]     = useState(false);
+  const [ghostPos, setGhostPos]         = useState({x:0,y:0});
+  const taskDragRef = useRef({id:null,startX:0,startY:0,moved:false});
+  const colRefs     = useRef({});
+
+  const onTaskPointerDown = (e, taskId) => {
+    if (e.button!==0) return;
+    e.preventDefault();
+    taskDragRef.current = {id:taskId, startX:e.clientX, startY:e.clientY, moved:false};
+    setGhostPos({x:e.clientX, y:e.clientY});
+
+    const onMove = (ev) => {
+      const dx=ev.clientX-taskDragRef.current.startX, dy=ev.clientY-taskDragRef.current.startY;
+      if (!taskDragRef.current.moved && Math.sqrt(dx*dx+dy*dy)>6) {
+        taskDragRef.current.moved=true;
+        setDragTaskId(taskDragRef.current.id);
+        setIsDragging(true);
+      }
+      if (!taskDragRef.current.moved) return;
+      setGhostPos({x:ev.clientX, y:ev.clientY});
+      let found=null;
+      Object.entries(colRefs.current).forEach(([status,el])=>{
+        if (!el) return;
+        const r=el.getBoundingClientRect();
+        if (ev.clientX>=r.left&&ev.clientX<=r.right&&ev.clientY>=r.top&&ev.clientY<=r.bottom) found=status;
+      });
+      setDragOverStatus(found);
+    };
+
+    const onUp = (ev) => {
+      window.removeEventListener("pointermove",onMove);
+      window.removeEventListener("pointerup",onUp);
+      if (taskDragRef.current.moved && taskDragRef.current.id) {
+        let dropStatus=null;
+        Object.entries(colRefs.current).forEach(([status,el])=>{
+          if (!el) return;
+          const r=el.getBoundingClientRect();
+          if (ev.clientX>=r.left&&ev.clientX<=r.right&&ev.clientY>=r.top&&ev.clientY<=r.bottom) dropStatus=status;
+        });
+        if (dropStatus) {
+          const t=tasks.find(x=>x.id===taskDragRef.current.id);
+          if (t && dropStatus!==t.status) {
+            const now=new Date();
+            const isDue=t.dueDate&&new Date(t.dueDate)<now;
+            const entry={id:`ta${Date.now()}`,action:`status changed to ${dropStatus}`,by:currentUser.name,at:now.toISOString()};
+            setTasks(ts=>ts.map(x=>x.id===taskDragRef.current.id?{...x,
+              status:dropStatus,
+              completedAt:dropStatus==="Completed"?now.toISOString():x.completedAt,
+              isDelayed:dropStatus!=="Completed"&&isDue,
+              isDelayedCompleted:dropStatus==="Completed"&&isDue,
+              activityLog:[...(x.activityLog||[]),entry]
+            }:x));
+            toast.show({message:`Moved to ${dropStatus}`});
+          }
+        }
+      }
+      taskDragRef.current.id=null; taskDragRef.current.moved=false;
+      setDragTaskId(null); setDragOverStatus(null); setIsDragging(false);
+    };
+
+    window.addEventListener("pointermove",onMove);
+    window.addEventListener("pointerup",onUp);
+  };
 
   const devProjects = projects.filter(p=>p.developerId===currentUser.developerId);
   const devTeam     = users.filter(u=>u.developerId===currentUser.developerId&&u.active);
@@ -5803,26 +6108,65 @@ const TasksPage = ({tasks, setTasks, projects, users, currentUser, developer}) =
   );
 
   // ── Kanban view ──
-  const renderKanban = () => (
-    <div className="flex gap-3 overflow-x-auto pb-4" style={{scrollSnapType:"x mandatory"}}>
-      {TASK_STATUS.map(status=>{
-        const col=filtered.filter(t=>t.status===status);
-        const sc=dark?TASK_STATUS_COLORS[status]:TASK_STATUS_COLORS_L[status];
-        return (
-          <div key={status} className="flex-shrink-0" style={{width:"min(280px,82vw)",scrollSnapAlign:"start"}}>
-            <div className={`rounded-xl p-3 mb-2 flex items-center justify-between`} style={{borderTop:`3px solid ${sc?.hex}`,background:dark?sc?.hex+"14":sc?.hex+"0e"}}>
-              <span className={`font-bold text-xs ${sc?.text}`}>{status}</span>
-              <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${tc(dark,"bg-slate-700/60 text-slate-300","bg-white text-slate-600 border border-slate-200")}`}>{col.length}</span>
-            </div>
-            <div style={{maxHeight:600,overflowY:"auto",scrollbarWidth:"thin"}}>
-              {col.map(t=><TaskCard key={t.id} task={t} users={users} projects={projects} currentUser={currentUser} onClick={()=>setSelectedTask(t)}/>)}
-              {col.length===0&&<div className={`rounded-xl p-5 text-center text-xs border-2 border-dashed ${tc(dark,"border-slate-800 text-slate-700","border-slate-200 text-slate-400")}`}>No tasks</div>}
+  const taskStatuses = getTaskStatuses(developer);
+
+  const renderKanban = () => {
+    // Find ghost task for floating card
+    const ghostTask = isDragging && dragTaskId ? tasks.find(t=>t.id===dragTaskId) : null;
+    return (
+      <div style={isDragging?{userSelect:"none",cursor:"grabbing"}:{}} className="relative">
+        {/* Floating ghost card */}
+        {ghostTask&&(
+          <div style={{position:"fixed",left:ghostPos.x+14,top:ghostPos.y+14,width:220,zIndex:9999,pointerEvents:"none",transform:"rotate(2deg) scale(1.03)",filter:"drop-shadow(0 20px 40px rgba(0,0,0,0.5))"}}>
+            <div className={`border-2 rounded-xl p-3 border-amber-400 ${tc(dark,"bg-[#0c1929]","bg-white")}`}>
+              <div className="flex gap-1.5 mb-1.5"><PriorityBadge priority={ghostTask.priority}/></div>
+              <p className={`text-sm font-bold truncate ${tc(dark,"text-white","text-slate-800")}`}>{ghostTask.taskName}</p>
+              {dragOverStatus&&<p className="text-xs text-amber-400 mt-1.5 font-medium">→ {dragOverStatus}</p>}
             </div>
           </div>
-        );
-      })}
-    </div>
-  );
+        )}
+        <div className="flex gap-3 overflow-x-auto pb-4" style={{scrollSnapType:"x mandatory"}}>
+          {taskStatuses.map(({name:status,hex})=>{
+            const col=filtered.filter(t=>t.status===status);
+            const isOver=dragOverStatus===status;
+            return (
+              <div key={status} className="flex-shrink-0" style={{width:"min(280px,82vw)",scrollSnapAlign:"start"}}
+                ref={el=>colRefs.current[status]=el}>
+                <div className="rounded-xl p-3 mb-2 flex items-center justify-between transition-all"
+                  style={{borderTop:`3px solid ${isOver?"#f59e0b":hex}`,background:isOver?dark?"rgba(245,158,11,0.12)":"rgba(245,158,11,0.08)":dark?hex+"14":hex+"0e",boxShadow:isOver?`0 0 0 2px #f59e0b44`:"none"}}>
+                  <div className="flex items-center gap-1.5">
+                    <span style={{width:8,height:8,borderRadius:"50%",background:isOver?"#f59e0b":hex,flexShrink:0,display:"inline-block"}}/>
+                    <span className={`font-bold text-xs ${tc(dark,"text-white","text-slate-700")}`}>{status}</span>
+                    {isOver&&isDragging&&<span className="text-xs text-amber-400 font-medium">↓ drop</span>}
+                  </div>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${tc(dark,"bg-slate-700/60 text-slate-300","bg-white text-slate-600 border border-slate-200")}`}>{col.length}</span>
+                </div>
+                <div style={{maxHeight:600,overflowY:"auto",scrollbarWidth:"thin",
+                  outline:isOver?"2px dashed #f59e0b88":"2px dashed transparent",outlineOffset:3,borderRadius:12,
+                  background:isOver?dark?"rgba(245,158,11,0.04)":"rgba(245,158,11,0.03)":"transparent",transition:"all 150ms"}}>
+                  {col.map(t=>(
+                    <div key={t.id} style={{opacity:isDragging&&dragTaskId===t.id?0.2:1,transition:"opacity 120ms"}}
+                      onPointerDown={e=>onTaskPointerDown(e,t.id)}>
+                      <TaskCard task={t} users={users} projects={projects} currentUser={currentUser}
+                        onClick={()=>{ if(!taskDragRef.current.moved) setSelectedTask(t); }}/>
+                    </div>
+                  ))}
+                  {isOver&&isDragging&&(
+                    <div style={{borderRadius:10,padding:"14px 8px",textAlign:"center",border:"2px dashed #f59e0b80",background:"#f59e0b10",margin:"4px 0",color:"#f59e0b",fontSize:12,fontWeight:700,animation:"dnd-pulse 700ms ease infinite"}}>
+                      Drop to move here
+                    </div>
+                  )}
+                  {col.length===0&&!isOver&&(
+                    <div className={`rounded-xl p-5 text-center text-xs border-2 border-dashed ${tc(dark,"border-slate-800 text-slate-700","border-slate-200 text-slate-400")}`}>No tasks</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div>
@@ -5868,7 +6212,7 @@ const TasksPage = ({tasks, setTasks, projects, users, currentUser, developer}) =
           </select>
           <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} className={inp}>
             <option value="all">All Status</option>
-            {TASK_STATUS.map(s=><option key={s}>{s}</option>)}
+            {getTaskStatuses(developer).map(s=><option key={s.name}>{s.name}</option>)}
           </select>
           <select value={filterPriority} onChange={e=>setFilterPriority(e.target.value)} className={inp}>
             <option value="all">All Priority</option>
@@ -5988,6 +6332,7 @@ export default function SolarProApp() {
           templates={templates} developer={developer}
           currentUser={currentUser} onBack={() => pushNav("projects", null)}
           setProjects={setProjects} users={users}
+          tasks={tasks} setTasks={setTasks}
         />
       );
     }
