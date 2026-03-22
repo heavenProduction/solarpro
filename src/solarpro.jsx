@@ -2590,16 +2590,16 @@ const SettingsPage = (props) => {
           props.setDevelopers(ds=>ds.map(d=>d.id===developer.id?{...d,taskStatuses:(d.taskStatuses||[]).filter(s=>s.id!==id)}:d));
         };
         const handleDrop = (targetId) => {
-          if (!tsDragId||tsDragId===targetId) return;
-          const arr=[...allStatuses];
-          const fromIdx=arr.findIndex(x=>x.id===targetId===tsDragId?x.id===tsDragId:x.id===tsDragId);
-          const fromI=arr.findIndex(x=>x.id===tsDragId);
-          const toI=arr.findIndex(x=>x.id===targetId);
-          if (fromI<0||toI<0) return;
-          const moved=arr.splice(fromI,1)[0];
-          arr.splice(toI,0,moved);
+          if (!tsDragId || tsDragId===targetId) return;
+          const arr = [...allStatuses];
+          const fromI = arr.findIndex(x=>x.id===tsDragId);
+          const toI   = arr.findIndex(x=>x.id===targetId);
+          if (fromI<0 || toI<0) return;
+          const [moved] = arr.splice(fromI, 1);
+          arr.splice(toI, 0, moved);
           saveOrder(arr);
-          setTsDragId(null); setTsDragOver(null);
+          setTsDragId(null);
+          setTsDragOver(null);
         };
 
         const nameDuplicate = newSName.trim() && allStatuses.some(s=>s.name.toLowerCase()===newSName.trim().toLowerCase());
@@ -4361,27 +4361,25 @@ const ProjectTasksTab = ({project, tasks, setTasks, users, currentUser, develope
         </Modal>
       )}
       {bulkModal==="assign"&&(
-        <Modal title="Assign To" onClose={()=>setBulkModal(null)}>
-          <p className={`text-sm mb-3 ${tc(dark,"text-slate-300","text-slate-600")}`}>Assign {selectedTaskIds.size} task(s) to:</p>
-          <div className="flex flex-wrap gap-2 mb-4">
-            {devTeamT.map(u=>(
-              <button key={u.id} onClick={()=>setBulkTarget(u.id)}
-                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border transition-colors ${bulkTarget===u.id?tc(dark,"bg-amber-500/20 border-amber-400 text-amber-300","bg-amber-100 border-amber-400 text-amber-700"):tc(dark,"border-slate-700 text-slate-400","border-slate-200 text-slate-500")}`}>
-                <span className={`w-4 h-4 rounded flex items-center justify-center text-white font-bold ${bulkTarget===u.id?"bg-amber-500":tc(dark,"bg-slate-600","bg-slate-300")}`} style={{fontSize:8}}>{u.name.charAt(0)}</span>
-                {u.name}
-              </button>
-            ))}
-          </div>
-          <div className="flex gap-2 justify-end">
-            <Btn variant="secondary" size="sm" onClick={()=>setBulkModal(null)}>Cancel</Btn>
-            <Btn size="sm" disabled={!bulkTarget} onClick={()=>{
-              const now=new Date().toISOString();
-              setTasks(ts=>ts.map(t=>selectedTaskIds.has(t.id)?{...t,assignedTo:[...new Set([...(t.assignedTo||[]),bulkTarget])],activityLog:[...(t.activityLog||[]),{id:`ta${Date.now()}`,action:`bulk assigned to ${devTeamT.find(u=>u.id===bulkTarget)?.name}`,by:currentUser.name,at:now}]}:t));
-              setSelectedTaskIds(new Set()); setBulkModal(null); setBulkTarget("");
-              toast.show({message:`Assigned ${selectedTaskIds.size} task(s).`});
-            }}>Assign</Btn>
-          </div>
-        </Modal>
+        <BulkAssignModal
+          count={selectedTaskIds.size}
+          team={devTeamT}
+          bulkTarget={bulkTarget}
+          setBulkTarget={setBulkTarget}
+          dark={dark}
+          onClose={()=>setBulkModal(null)}
+          onApply={(uid, mode)=>{
+            const now=new Date().toISOString();
+            const uname=devTeamT.find(u=>u.id===uid)?.name||"";
+            if (mode==="add") {
+              setTasks(ts=>ts.map(t=>selectedTaskIds.has(t.id)?{...t,assignedTo:[...new Set([...(t.assignedTo||[]),uid])],activityLog:[...(t.activityLog||[]),{id:`ta${Date.now()}`,action:`bulk assigned to ${uname}`,by:currentUser.name,at:now}]}:t));
+              toast.show({message:`Assigned ${selectedTaskIds.size} task(s) to ${uname}.`});
+            } else {
+              setTasks(ts=>ts.map(t=>selectedTaskIds.has(t.id)?{...t,assignedTo:(t.assignedTo||[]).filter(id=>id!==uid),activityLog:[...(t.activityLog||[]),{id:`ta${Date.now()}`,action:`bulk removed ${uname}`,by:currentUser.name,at:now}]}:t));
+              toast.show({message:`Removed ${uname} from ${selectedTaskIds.size} task(s).`});
+            }
+            setSelectedTaskIds(new Set()); setBulkModal(null); setBulkTarget("");
+          }}/>
       )}
       {bulkModal==="duedate"&&(
         <Modal title="Set Due Date" onClose={()=>setBulkModal(null)}>
@@ -5654,7 +5652,7 @@ const TaskDetailModal = ({task: taskSnapshot, tasks, setTasks, users, projects, 
       onSave={(form)=>{
         const entry={id:`ta${Date.now()}`,action:"updated",by:currentUser.name,at:new Date().toISOString()};
         setTasks(ts=>ts.map(t=>t.id===task.id?{...t,...form,activityLog:[...(t.activityLog||[]),entry]}:t));
-        setEditing(false); onClose();
+        setEditing(false); // Return to detail view, NOT close
       }} onClose={()=>setEditing(false)}/>;
   }
 
@@ -5668,7 +5666,7 @@ const TaskDetailModal = ({task: taskSnapshot, tasks, setTasks, users, projects, 
       isDelayed:!wasCompleted&&wasDelayed,
       isDelayedCompleted:wasCompleted&&wasDelayed,
       activityLog:[...(t.activityLog||[]),entry]}:t));
-    onClose();
+    // Do NOT close — let user see updated status immediately
   };
 
   const toggleSubtask = (idx) => {
@@ -6094,11 +6092,11 @@ const TaskReportsView = ({tasks, users, projects, currentUser}) => {
             {TASK_STATUS.map(s=><option key={s}>{s}</option>)}
           </select>
         </div>
-        <div>
+        <div className="sm:col-span-2">
           <p className={`text-xs font-medium mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>Date Range</p>
-          <div className="flex gap-1">
-            <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} className={`flex-1 ${inp}`}/>
-            <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)} className={`flex-1 ${inp}`}/>
+          <div className="flex flex-wrap gap-1.5">
+            <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} className={`flex-1 min-w-[130px] ${inp}`} placeholder="From"/>
+            <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)} className={`flex-1 min-w-[130px] ${inp}`} placeholder="To"/>
           </div>
         </div>
       </div>
@@ -6146,6 +6144,45 @@ const TaskReportsView = ({tasks, users, projects, currentUser}) => {
 };
 
 // ── TASKS PAGE ────────────────────────────────────────────────
+// ── BULK ASSIGN / REMOVE MODAL ───────────────────────────────
+const BulkAssignModal = ({count, team, bulkTarget, setBulkTarget, dark, onClose, onApply}) => {
+  const [mode, setMode] = useState("add"); // "add" | "remove"
+  return (
+    <Modal title="Assign / Remove User" onClose={onClose}>
+      <div className={`flex gap-1 rounded-lg p-0.5 mb-3 w-fit border ${tc(dark,"bg-slate-800 border-slate-700","bg-slate-100 border-slate-200")}`}>
+        {[["add","➕ Add User"],["remove","➖ Remove User"]].map(([m,label])=>(
+          <button key={m} onClick={()=>setMode(m)}
+            className={`px-3 py-1 rounded text-xs font-medium transition-all ${mode===m?"bg-amber-500 text-slate-900":tc(dark,"text-slate-400","text-slate-500")}`}>{label}</button>
+        ))}
+      </div>
+      <p className={`text-sm mb-3 ${tc(dark,"text-slate-300","text-slate-600")}`}>
+        {mode==="add"?"Add to":"Remove from"} assignees of {count} task(s):
+      </p>
+      <div className="flex flex-wrap gap-2 mb-4">
+        {team.map(u=>(
+          <button key={u.id} onClick={()=>setBulkTarget(u.id)}
+            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border transition-colors
+              ${bulkTarget===u.id
+                ? mode==="remove"
+                  ? tc(dark,"bg-red-500/20 border-red-400 text-red-300","bg-red-100 border-red-400 text-red-700")
+                  : tc(dark,"bg-amber-500/20 border-amber-400 text-amber-300","bg-amber-100 border-amber-400 text-amber-700")
+                : tc(dark,"border-slate-700 text-slate-400","border-slate-200 text-slate-500")}`}>
+            <span className={`w-4 h-4 rounded flex items-center justify-center text-white font-bold ${bulkTarget===u.id?(mode==="remove"?"bg-red-500":"bg-amber-500"):tc(dark,"bg-slate-600","bg-slate-300")}`} style={{fontSize:8}}>{u.name.charAt(0)}</span>
+            {u.name}
+          </button>
+        ))}
+      </div>
+      <div className="flex gap-2 justify-end">
+        <Btn variant="secondary" size="sm" onClick={onClose}>Cancel</Btn>
+        <Btn size="sm" variant={mode==="remove"?"danger":"primary"} disabled={!bulkTarget}
+          onClick={()=>onApply(bulkTarget, mode)}>
+          {mode==="remove"?"Remove":"Assign"}
+        </Btn>
+      </div>
+    </Modal>
+  );
+};
+
 const TasksPage = ({tasks, setTasks, projects, users, currentUser, developer}) => {
   const {dark} = useTheme();
   const toast = useToast();
@@ -6509,28 +6546,25 @@ const TasksPage = ({tasks, setTasks, projects, users, currentUser, developer}) =
         </Modal>
       )}
       {bulkModal==="assign"&&(
-        <Modal title="Assign To" onClose={()=>setBulkModal(null)}>
-          <p className={`text-sm mb-3 ${tc(dark,"text-slate-300","text-slate-600")}`}>Assign {selectedTaskIds.size} task(s) to:</p>
-          <div className="flex flex-wrap gap-2 mb-4">
-            {devTeam.map(u=>(
-              <button key={u.id} onClick={()=>setBulkTarget(u.id)}
-                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border transition-colors ${bulkTarget===u.id?tc(dark,"bg-amber-500/20 border-amber-400 text-amber-300","bg-amber-100 border-amber-400 text-amber-700"):tc(dark,"border-slate-700 text-slate-400","border-slate-200 text-slate-500")}`}>
-                <span className={`w-4 h-4 rounded flex items-center justify-center text-white font-bold ${bulkTarget===u.id?"bg-amber-500":tc(dark,"bg-slate-600","bg-slate-300")}`} style={{fontSize:8}}>{u.name.charAt(0)}</span>
-                {u.name}
-              </button>
-            ))}
-          </div>
-          <div className="flex gap-2 justify-end">
-            <Btn variant="secondary" size="sm" onClick={()=>setBulkModal(null)}>Cancel</Btn>
-            <Btn size="sm" disabled={!bulkTarget} onClick={()=>{
-              const now=new Date().toISOString();
-              const uname=devTeam.find(u=>u.id===bulkTarget)?.name;
-              setTasks(ts=>ts.map(t=>selectedTaskIds.has(t.id)?{...t,assignedTo:[...new Set([...(t.assignedTo||[]),bulkTarget])],activityLog:[...(t.activityLog||[]),{id:`ta${Date.now()}`,action:`bulk assigned to ${uname}`,by:currentUser.name,at:now}]}:t));
+        <BulkAssignModal
+          count={selectedTaskIds.size}
+          team={devTeam}
+          bulkTarget={bulkTarget}
+          setBulkTarget={setBulkTarget}
+          dark={dark}
+          onClose={()=>setBulkModal(null)}
+          onApply={(uid, mode)=>{
+            const now=new Date().toISOString();
+            const uname=devTeam.find(u=>u.id===uid)?.name||"";
+            if (mode==="add") {
+              setTasks(ts=>ts.map(t=>selectedTaskIds.has(t.id)?{...t,assignedTo:[...new Set([...(t.assignedTo||[]),uid])],activityLog:[...(t.activityLog||[]),{id:`ta${Date.now()}`,action:`bulk assigned to ${uname}`,by:currentUser.name,at:now}]}:t));
               toast.show({message:`Assigned ${selectedTaskIds.size} task(s) to ${uname}.`});
-              setSelectedTaskIds(new Set()); setBulkModal(null); setBulkTarget("");
-            }}>Assign</Btn>
-          </div>
-        </Modal>
+            } else {
+              setTasks(ts=>ts.map(t=>selectedTaskIds.has(t.id)?{...t,assignedTo:(t.assignedTo||[]).filter(id=>id!==uid),activityLog:[...(t.activityLog||[]),{id:`ta${Date.now()}`,action:`bulk removed ${uname}`,by:currentUser.name,at:now}]}:t));
+              toast.show({message:`Removed ${uname} from ${selectedTaskIds.size} task(s).`});
+            }
+            setSelectedTaskIds(new Set()); setBulkModal(null); setBulkTarget("");
+          }}/>
       )}
       {bulkModal==="duedate"&&(
         <Modal title="Set Due Date" onClose={()=>setBulkModal(null)}>
@@ -6885,7 +6919,7 @@ export default function SolarProApp() {
         `}</style>
 
         <Sidebar user={currentUser} currentPage={currentPage} setPage={setPage}
-          onLogout={() => { setCurrentUser(null); setCurrentPage("dashboard"); setCurrentProjectId(null); }}
+          onLogout={() => { setCurrentUser(null); setCurrentPage("dashboard"); setCurrentProjectId(null); setMobileOpen(false); }}
           developer={developer} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen}/>
 
         <div className="flex-1 flex flex-col overflow-hidden min-w-0">
