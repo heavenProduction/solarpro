@@ -1317,6 +1317,7 @@ const Sidebar = ({ user, currentPage, setPage, onLogout, developer, mobileOpen, 
     {id:"dashboard",label:"Dashboard",icon:"home"},
     ...(hasPerm(user,"projects.view") ? [{id:"projects",label:"Projects",icon:"folder"}] : []),
     ...(hasPerm(user,"projects.view") ? [{id:"tasks",label:"Tasks",icon:"check"}] : []),
+    ...(hasPerm(user,"projects.view") ? [{id:"pm-dashboard",label:"PM Dashboard",icon:"task"}] : []),
     ...(hasPerm(user,"invoices.view") ? [{id:"invoices",label:"Invoices",icon:"invoice"}] : []),
     {id:"my-settings",label:"My Profile",icon:"user"},
   ];
@@ -2756,7 +2757,7 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
   }).length;
 
   const myProjects = projects.filter(p => {
-    if (currentUser.role===ROLES.USER) return p.assignedUserId===currentUser.id || p.userId===currentUser.id;
+    if (currentUser.role===ROLES.USER) return p.assignedUserId===currentUser.id || p.userId===currentUser.id || (p.visibleTo||[]).includes(currentUser.id);
     return p.developerId===currentUser.developerId;
   });
 
@@ -3878,6 +3879,29 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
           <div className="grid grid-cols-2 gap-3">
             <Field label="Project Lane / Status" type="select" value={form.laneId} onChange={v=>SF("laneId",v)} options={lanes.map(l=>({value:l.id,label:l.name}))}/>
             <Field label="Assign To" type="select" value={form.assignedUserId||currentUser.id} onChange={v=>SF("assignedUserId",v)} options={[{value:currentUser.id,label:"Myself"},...devTeam.filter(u=>u.id!==currentUser.id).map(u=>({value:u.id,label:u.name}))]}/>
+            <div>
+              <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Visible To <span className={`text-xs font-normal ${tc(dark,"text-slate-500","text-slate-400")}`}>(read-only access for these users)</span></label>
+              <div className="flex flex-wrap gap-1.5 mb-1.5">
+                {(form.visibleTo||[]).map(uid=>{
+                  const u=devTeam.find(x=>x.id===uid);
+                  return u ? (
+                    <span key={uid} className={`text-xs px-2 py-1 rounded-full flex items-center gap-1 ${tc(dark,"bg-sky-500/20 text-sky-300 border border-sky-500/30","bg-sky-100 text-sky-700 border border-sky-200")}`}>
+                      {u.name}
+                      <button type="button" onClick={()=>SF("visibleTo",(form.visibleTo||[]).filter(id=>id!==uid))} className="ml-0.5 opacity-70 hover:opacity-100">×</button>
+                    </span>
+                  ) : null;
+                })}
+              </div>
+              <select onChange={e=>{
+                const uid=e.target.value; if(!uid) return;
+                if((form.visibleTo||[]).includes(uid)) return;
+                SF("visibleTo",[...(form.visibleTo||[]),uid]);
+                e.target.value="";
+              }} className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+                <option value="">+ Add user</option>
+                {devTeam.filter(u=>u.id!==form.assignedUserId&&u.id!==currentUser.id&&!(form.visibleTo||[]).includes(u.id)).map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </div>
           </div>
 
           {/* Tags */}
@@ -4578,7 +4602,7 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
     if (t==="tasks")     return hasPerm(currentUser,"projects.view");
     if (t==="notes")     return hasPerm(currentUser,"notes.view");
     if (t==="documents") return hasPerm(currentUser,"documents.view");
-    if (t==="proposal")  return hasPerm(currentUser,"proposals.view");
+    if (t==="proposal")  return hasPerm(currentUser,"proposals.view")||isViewOnly;
     if (t==="activity")  return hasPerm(currentUser,"activity.view");
     return true;
   });
@@ -4594,6 +4618,8 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
 
   // Safety guard: if project is gone (e.g. deleted), return nothing
   if (!project) return null;
+  // Is the current user a "visible" (read-only shared) user on this project?
+  const isViewOnly = currentUser.role===ROLES.USER && (project.visibleTo||[]).includes(currentUser.id) && project.assignedUserId!==currentUser.id && project.userId!==currentUser.id;
 
   return (
     <div>
@@ -4609,7 +4635,7 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
           {devLanes.length>0&&(
             <div className="flex items-center gap-1">
               <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{backgroundColor:laneHex(currentLane?.color||"slate")}}/>
-              {hasPerm(currentUser,"projects.edit") ? (
+              {hasPerm(currentUser,"projects.edit")&&!isViewOnly ? (
                 <select value={project.laneId||""} onChange={e=>quickUpdate({laneId:e.target.value})}
                   className={`border rounded-lg px-2 py-1.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
                   {devLanes.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}
@@ -4619,7 +4645,7 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
               )}
             </div>
           )}
-          {devTeam.length>0&&hasPerm(currentUser,"projects.edit")&&(
+          {devTeam.length>0&&hasPerm(currentUser,"projects.edit")&&!isViewOnly&&(
             <select value={project.assignedUserId||project.userId||""} onChange={e=>quickUpdate({assignedUserId:e.target.value})}
               className={`border rounded-lg px-2 py-1.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
               <option value="">Unassigned</option>
@@ -4627,7 +4653,8 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
             </select>
           )}
           <span className={`text-xs px-2 py-1 rounded-full ${tc(dark,"bg-slate-700 text-slate-300","bg-slate-100 text-slate-600")}`}>{project.customerType||"—"}</span>
-          {hasPerm(currentUser,"projects.edit")&&<Btn size="sm" onClick={()=>setEditingProject(true)}><Icon name="edit" size={13}/>Edit Project</Btn>}
+          {isViewOnly&&<span className={`text-xs px-2 py-1 rounded-full font-medium ${tc(dark,"bg-sky-500/20 text-sky-400 border border-sky-500/30","bg-sky-100 text-sky-700 border border-sky-200")}`}>👁 View Only</span>}
+          {hasPerm(currentUser,"projects.edit")&&!isViewOnly&&<Btn size="sm" onClick={()=>setEditingProject(true)}><Icon name="edit" size={13}/>Edit Project</Btn>}
         </div>
       </div>
 
@@ -4662,6 +4689,27 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
             <Field label="Enquiry Type" type="select" value={ef.enquiryType||"Warm"} onChange={v=>SEF("enquiryType",v)} options={["Hot","Warm","Cold"]}/>
             <Field label="Lane" type="select" value={ef.laneId||""} onChange={v=>SEF("laneId",v)} options={lanesLocal.map(l=>({value:l.id,label:l.name}))}/>
             <Field label="Assign To" type="select" value={ef.assignedUserId||""} onChange={v=>SEF("assignedUserId",v)} options={[{value:"",label:"Unassigned"},...devTeamLocal.map(u=>({value:u.id,label:u.name}))]}/>
+            <div>
+              <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Visible To <span className={`text-xs font-normal ${tc(dark,"text-slate-500","text-slate-400")}`}>(read-only)</span></label>
+              <div className="flex flex-wrap gap-1.5 mb-1.5">
+                {(ef.visibleTo||[]).map(uid=>{
+                  const u=devTeamLocal.find(x=>x.id===uid);
+                  return u ? (
+                    <span key={uid} className={`text-xs px-2 py-1 rounded-full flex items-center gap-1 ${tc(dark,"bg-sky-500/20 text-sky-300 border border-sky-500/30","bg-sky-100 text-sky-700 border border-sky-200")}`}>
+                      {u.name}<button type="button" onClick={()=>SEF("visibleTo",(ef.visibleTo||[]).filter(id=>id!==uid))} className="ml-0.5 opacity-70 hover:opacity-100">×</button>
+                    </span>
+                  ) : null;
+                })}
+              </div>
+              <select onChange={e=>{
+                const uid=e.target.value; if(!uid) return;
+                SEF("visibleTo",[...(ef.visibleTo||[]),uid]);
+                e.target.value="";
+              }} className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}>
+                <option value="">+ Add user</option>
+                {devTeamLocal.filter(u=>!(ef.visibleTo||[]).includes(u.id)).map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </div>
           </div>
           <div className="mb-4">
             <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Tags</label>
@@ -4726,6 +4774,23 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
               ))}
             </div>
           </div>
+          {/* Visible To section */}
+          {(project.visibleTo||[]).length>0&&(
+            <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+              <h3 className={`font-bold text-sm mb-3 ${tc(dark,"text-white","text-slate-800")}`}>Visible To <span className={`text-xs font-normal ${tc(dark,"text-slate-400","text-slate-500")}`}>(read-only access)</span></h3>
+              <div className="flex flex-wrap gap-2">
+                {(project.visibleTo||[]).map(uid=>{
+                  const u=devTeam.find(x=>x.id===uid);
+                  return u ? (
+                    <div key={uid} className={`flex items-center gap-2 px-2.5 py-1.5 rounded-full border text-xs ${tc(dark,"bg-sky-500/10 border-sky-500/30 text-sky-300","bg-sky-50 border-sky-200 text-sky-700")}`}>
+                      <div className={`w-4 h-4 rounded-full flex items-center justify-center text-white font-bold ${tc(dark,"bg-sky-600","bg-sky-500")}`} style={{fontSize:7}}>{u.name.charAt(0)}</div>
+                      {u.name}
+                    </div>
+                  ) : null;
+                })}
+              </div>
+            </div>
+          )}
           {/* Tags section */}
           <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
             <div className="flex items-center justify-between mb-3">
@@ -4770,7 +4835,8 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
           pmTemplates={pmTemplates||[]} setPmTemplates={setPmTemplates}
           pmCollections={pmCollections||[]} setPmCollections={setPmCollections}
           users={users||[]} currentUser={currentUser}
-          developer={developer} projects={projects||[]}/>
+          developer={developer} projects={projects||[]}
+          isViewOnly={isViewOnly}/>
       )}
 
       {/* NOTES TAB */}
@@ -6713,6 +6779,11 @@ const PmTaskDrawer = ({task:taskSnap, pmTasks, setPmTasks, pmSubtasks, setPmSubt
   const [ef,setEF]=useState({...task});
   const [newSubtask,setNewSubtask]=useState("");
   const [newComment,setNewComment]=useState("");
+  const [commentMentions,setCommentMentions]=useState([]);
+  const [showMentionDropdown,setShowMentionDropdown]=useState(false);
+  const [mentionQuery,setMentionQuery]=useState("");
+  const [commentAttachments,setCommentAttachments]=useState([]);
+  const commentFileRef=useRef();
   const canEdit = currentUser.role===ROLES.DEV_ADMIN||currentUser.role===ROLES.SUPER_ADMIN||task.assignedTo===currentUser.id||(task.collaborators||[]).includes(currentUser.id);
   const devTeam=users.filter(u=>u.developerId===task.developerId&&u.active);
   const project=projects?.find(p=>p.id===task.projectId);
@@ -6748,9 +6819,39 @@ const PmTaskDrawer = ({task:taskSnap, pmTasks, setPmTasks, pmSubtasks, setPmSubt
     setPmSubtasks(ss=>ss.map(s=>s.id===id?{...s,status:s.status==="Completed"?"To Do":"Completed"}:s));
   };
   const addComment=()=>{
-    if(!newComment.trim()) return;
-    setPmComments(cs=>[...cs,{id:`pmcmt${Date.now()}`,entityType:"task",entityId:task.id,text:newComment.trim(),mentionedUsers:[],createdBy:currentUser.id,createdAt:new Date().toISOString()}]);
-    setNewComment("");
+    if(!newComment.trim()&&!commentAttachments.length) return;
+    const mentioned=devTeam.filter(u=>(newComment.includes(`@${u.name}`)||commentMentions.includes(u.id))).map(u=>u.id);
+    setPmComments(cs=>[...cs,{
+      id:`pmcmt${Date.now()}`,entityType:"task",entityId:task.id,
+      text:newComment.trim(),mentionedUsers:mentioned,
+      attachments:commentAttachments.map(a=>({name:a.name,dataUrl:a.dataUrl,type:a.type})),
+      createdBy:currentUser.id,createdAt:new Date().toISOString()
+    }]);
+    setNewComment(""); setCommentMentions([]); setCommentAttachments([]); setShowMentionDropdown(false);
+  };
+  const handleCommentInput=(e)=>{
+    const val=e.target.value;
+    setNewComment(val);
+    const atIdx=val.lastIndexOf("@");
+    if(atIdx>=0){
+      const after=val.slice(atIdx+1);
+      if(!after.includes(" ")){setMentionQuery(after);setShowMentionDropdown(true);}
+      else setShowMentionDropdown(false);
+    } else setShowMentionDropdown(false);
+  };
+  const insertMention=(u)=>{
+    const atIdx=newComment.lastIndexOf("@");
+    const before=newComment.slice(0,atIdx);
+    setNewComment(before+"@"+u.name+" ");
+    setCommentMentions(m=>[...m,u.id]);
+    setShowMentionDropdown(false);
+  };
+  const handleCommentFile=(e)=>{
+    const file=e.target.files[0]; if(!file) return;
+    const reader=new FileReader();
+    reader.onload=ev=>setCommentAttachments(a=>[...a,{name:file.name,dataUrl:ev.target.result,type:file.type}]);
+    reader.readAsDataURL(file);
+    e.target.value="";
   };
 
   const inp=`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white placeholder-slate-500 focus:border-amber-400","bg-white border-slate-300 text-slate-800 focus:border-amber-500")}`;
@@ -6944,28 +7045,107 @@ const PmTaskDrawer = ({task:taskSnap, pmTasks, setPmTasks, pmSubtasks, setPmSubt
           {/* ── COMMENTS TAB ── */}
           {drawerTab==="comments"&&(
             <div>
-              <div className="space-y-3 mb-4">
-                {comments.length===0&&<p className={`text-sm text-center py-6 ${tc(dark,"text-slate-500","text-slate-400")}`}>No comments yet.</p>}
+              {/* Comment list */}
+              <div className="space-y-4 mb-4">
+                {comments.length===0&&<p className={`text-sm text-center py-6 ${tc(dark,"text-slate-500","text-slate-400")}`}>No comments yet. Be the first to comment.</p>}
                 {comments.map(c=>{
                   const author=users.find(u=>u.id===c.createdBy);
+                  const renderText=(txt)=>{
+                    if(!txt) return null;
+                    const parts=txt.split(/(@\w[\w\s]*)/g);
+                    return parts.map((p,i)=>{
+                      if(p.startsWith("@")){
+                        const name=p.slice(1).trim();
+                        const u=devTeam.find(x=>x.name===name);
+                        return <span key={i} className={`font-semibold ${tc(dark,"text-amber-400","text-amber-600")}`}>{p}</span>;
+                      }
+                      return p;
+                    });
+                  };
                   return (
-                    <div key={c.id} className={`flex gap-2.5`}>
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0 ${tc(dark,"bg-slate-600","bg-amber-500")}`} style={{fontSize:10}}>{author?.name.charAt(0)||"?"}</div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-0.5">
+                    <div key={c.id} className="flex gap-2.5">
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0 mt-0.5 ${tc(dark,"bg-slate-600","bg-amber-500")}`} style={{fontSize:10}}>{author?.name.charAt(0)||"?"}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
                           <span className={`text-xs font-semibold ${tc(dark,"text-white","text-slate-800")}`}>{author?.name||"Unknown"}</span>
-                          <span className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>{new Date(c.createdAt).toLocaleString("en-IN",{dateStyle:"short",timeStyle:"short"})}</span>
+                          {(c.mentionedUsers||[]).length>0&&(
+                            <div className="flex gap-1">
+                              {(c.mentionedUsers||[]).map(uid=>{
+                                const mu=users.find(u=>u.id===uid);
+                                return mu ? <span key={uid} className={`text-xs px-1.5 py-0.5 rounded-full ${tc(dark,"bg-amber-500/20 text-amber-400","bg-amber-100 text-amber-700")}`}>@{mu.name}</span> : null;
+                              })}
+                            </div>
+                          )}
+                          <span className={`text-xs ml-auto flex-shrink-0 ${tc(dark,"text-slate-500","text-slate-400")}`}>{new Date(c.createdAt).toLocaleString("en-IN",{dateStyle:"short",timeStyle:"short"})}</span>
                         </div>
-                        <div className={`text-sm p-2.5 rounded-xl ${tc(dark,"bg-slate-800/60 text-slate-300","bg-slate-100 text-slate-700")}`}>{c.text}</div>
+                        {c.text&&<div className={`text-sm p-2.5 rounded-xl mb-1 ${tc(dark,"bg-slate-800/60 text-slate-300","bg-slate-100 text-slate-700")}`}>{renderText(c.text)}</div>}
+                        {(c.attachments||[]).length>0&&(
+                          <div className="flex flex-wrap gap-1.5 mt-1">
+                            {(c.attachments||[]).map((a,i)=>(
+                              <a key={i} href={a.dataUrl} download={a.name} className={`text-xs px-2 py-0.5 rounded-lg flex items-center gap-1 border ${tc(dark,"border-slate-700 bg-slate-800 text-sky-400","border-slate-200 bg-slate-50 text-sky-600")}`}>
+                                <Icon name="file" size={11}/>{a.name}
+                              </a>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
                 })}
               </div>
-              <div className="flex gap-2">
-                <textarea value={newComment} onChange={e=>setNewComment(e.target.value)} rows={2} placeholder="Add a comment…"
-                  className={`flex-1 border rounded-xl px-3 py-2 text-sm focus:outline-none resize-none ${tc(dark,"bg-slate-800 border-slate-600 text-white placeholder-slate-500 focus:border-amber-400","bg-white border-slate-300 text-slate-800 focus:border-amber-500")}`}/>
-                <Btn size="sm" onClick={addComment} disabled={!newComment.trim()}>Post</Btn>
+
+              {/* Comment input with @mention and file upload */}
+              <div className={`border rounded-xl p-3 ${tc(dark,"border-slate-700 bg-slate-800/30","border-slate-200 bg-slate-50")}`}>
+                {/* Attachment previews */}
+                {commentAttachments.length>0&&(
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {commentAttachments.map((a,i)=>(
+                      <span key={i} className={`text-xs px-2 py-0.5 rounded-lg flex items-center gap-1 ${tc(dark,"bg-slate-700 text-slate-300","bg-slate-200 text-slate-600")}`}>
+                        <Icon name="file" size={11}/>{a.name}
+                        <button onClick={()=>setCommentAttachments(ca=>ca.filter((_,j)=>j!==i))} className="text-red-400 ml-0.5">×</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {/* Textarea with @mention dropdown */}
+                <div className="relative mb-2">
+                  <textarea value={newComment} onChange={handleCommentInput} rows={3}
+                    placeholder={"Write a comment… type @ to mention someone"}
+                    className={`w-full bg-transparent text-sm focus:outline-none resize-none ${tc(dark,"text-white placeholder-slate-500","text-slate-800 placeholder-slate-400")}`}/>
+                  {/* @mention dropdown */}
+                  {showMentionDropdown&&(
+                    <div className={`absolute left-0 z-50 w-52 rounded-xl border shadow-xl overflow-hidden ${tc(dark,"bg-slate-800 border-slate-600","bg-white border-slate-200")}`}>
+                      {devTeam.filter(u=>u.name.toLowerCase().includes(mentionQuery.toLowerCase())&&u.id!==currentUser.id).slice(0,6).map(u=>(
+                        <button key={u.id} onClick={()=>insertMention(u)}
+                          className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-left transition-colors ${tc(dark,"hover:bg-slate-700 text-white","hover:bg-slate-50 text-slate-800")}`}>
+                          <div className={`w-5 h-5 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0 ${tc(dark,"bg-slate-600","bg-amber-500")}`} style={{fontSize:8}}>{u.name.charAt(0)}</div>
+                          {u.name}
+                          <span className={`ml-auto text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>{u.role.replace("_"," ")}</span>
+                        </button>
+                      ))}
+                      {devTeam.filter(u=>u.name.toLowerCase().includes(mentionQuery.toLowerCase())&&u.id!==currentUser.id).length===0&&(
+                        <p className={`px-3 py-2 text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>No users found</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {/* Actions */}
+                <div className="flex items-center gap-2">
+                  <button onClick={()=>commentFileRef.current?.click()}
+                    className={`p-1.5 rounded-lg transition-colors ${tc(dark,"text-slate-400 hover:bg-slate-700 hover:text-white","text-slate-400 hover:bg-slate-100 hover:text-slate-700")}`}
+                    title="Attach file">
+                    <Icon name="upload" size={15}/>
+                  </button>
+                  <input ref={commentFileRef} type="file" className="hidden" onChange={handleCommentFile} accept="image/*,.pdf,.doc,.docx,.xlsx,.xls"/>
+                  <button onClick={()=>{
+                    if(showMentionDropdown){setShowMentionDropdown(false);return;}
+                    const atIdx=newComment.lastIndexOf("@");
+                    setNewComment(newComment.slice(0,atIdx>=0&&!newComment.slice(atIdx).includes(" ")?atIdx:newComment.length)+"@");
+                    setShowMentionDropdown(true); setMentionQuery("");
+                  }} className={`p-1.5 rounded-lg transition-colors text-xs font-bold ${tc(dark,"text-slate-400 hover:bg-slate-700 hover:text-amber-400","text-slate-400 hover:bg-slate-100 hover:text-amber-600")}`} title="Mention someone">@</button>
+                  <div className="flex-1"/>
+                  <Btn size="sm" onClick={addComment} disabled={!newComment.trim()&&!commentAttachments.length}>Post</Btn>
+                </div>
               </div>
             </div>
           )}
@@ -7176,7 +7356,7 @@ const PmCategoryColumn = ({cat, tasks, pmSubtasks, users, currentUser, developer
 };
 
 // ── PROJECT MANAGEMENT TAB ────────────────────────────────────
-const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, setPmTasks, pmSubtasks, setPmSubtasks, pmComments, setPmComments, pmTemplates, setPmTemplates, pmCollections, setPmCollections, users, currentUser, developer, projects}) => {
+const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, setPmTasks, pmSubtasks, setPmSubtasks, pmComments, setPmComments, pmTemplates, setPmTemplates, pmCollections, setPmCollections, users, currentUser, developer, projects, isViewOnly}) => {
   const {dark}=useTheme();
   const toast=useToast();
   const [selectedTask,setSelectedTask]=useState(null);
@@ -7193,7 +7373,7 @@ const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, 
   const [showCollectionModal,setShowCollectionModal]=useState(false);
   const [collForm,setCollForm]=useState({assignedTo:currentUser.id,accessLevel:"Category-Level",dateAccessLevel:"Project-Level"});
 
-  const canManage=currentUser.role===ROLES.DEV_ADMIN||currentUser.role===ROLES.SUPER_ADMIN;
+  const canManage=(currentUser.role===ROLES.DEV_ADMIN||currentUser.role===ROLES.SUPER_ADMIN)&&!isViewOnly;
   const cats=pmCategories.filter(c=>c.projectId===project.id&&c.developerId===currentUser.developerId).sort((a,b)=>a.orderIndex-b.orderIndex);
   const devTeam=users.filter(u=>u.developerId===currentUser.developerId&&u.active);
   // Check if this project has a collection
