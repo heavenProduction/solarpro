@@ -2566,83 +2566,93 @@ const SettingsPage = (props) => {
 
 
       {settingsTab==="task-statuses"&&(()=>{
-        const taskStatuses = developer?.taskStatuses||[];
+        // Unified list: built-in + custom, all draggable
+        const allStatuses = getTaskStatuses(developer);
+
+        const saveOrder = (newOrder) => {
+          props.setDevelopers(ds=>ds.map(d=>d.id===developer.id?{...d,taskStatusOrder:newOrder}:d));
+        };
         const addTaskStatus = () => {
-          if (!newSName.trim()||TASK_STATUS_BUILTIN.includes(newSName.trim())) return;
-          const ns = {id:`ts${Date.now()}`,name:newSName.trim(),hex:laneHex(newSColor)};
-          props.setDevelopers(ds=>ds.map(d=>d.id===developer.id?{...d,taskStatuses:[...(d.taskStatuses||[]),ns]}:d));
+          if (!newSName.trim()) return;
+          const exists = allStatuses.some(s=>s.name.toLowerCase()===newSName.trim().toLowerCase());
+          if (exists) return;
+          const ns = {id:`ts${Date.now()}`,name:newSName.trim(),hex:laneHex(newSColor),isBuiltin:false};
+          // Append to unified order
+          saveOrder([...allStatuses, ns]);
+          // Also persist in taskStatuses array for backward compat
+          props.setDevelopers(ds=>ds.map(d=>d.id===developer.id?{...d,taskStatuses:[...(d.taskStatuses||[]),{id:ns.id,name:ns.name,hex:ns.hex}]}:d));
           setNewSName("");
         };
-        const removeTaskStatus = (id) => {
+        const removeStatus = (id, name) => {
+          if (TASK_STATUS_BUILTIN.includes(name)) return; // never delete built-ins
+          const newOrder = allStatuses.filter(s=>s.id!==id);
+          saveOrder(newOrder);
           props.setDevelopers(ds=>ds.map(d=>d.id===developer.id?{...d,taskStatuses:(d.taskStatuses||[]).filter(s=>s.id!==id)}:d));
         };
+        const handleDrop = (targetId) => {
+          if (!tsDragId||tsDragId===targetId) return;
+          const arr=[...allStatuses];
+          const fromIdx=arr.findIndex(x=>x.id===targetId===tsDragId?x.id===tsDragId:x.id===tsDragId);
+          const fromI=arr.findIndex(x=>x.id===tsDragId);
+          const toI=arr.findIndex(x=>x.id===targetId);
+          if (fromI<0||toI<0) return;
+          const moved=arr.splice(fromI,1)[0];
+          arr.splice(toI,0,moved);
+          saveOrder(arr);
+          setTsDragId(null); setTsDragOver(null);
+        };
+
+        const nameDuplicate = newSName.trim() && allStatuses.some(s=>s.name.toLowerCase()===newSName.trim().toLowerCase());
+
         return (
           <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
-            <h3 className={`font-bold mb-1 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Custom Task Statuses</h3>
-            <p className={`text-xs mb-4 ${tc(dark,"text-slate-400","text-slate-500")}`}>Add custom statuses beyond the built-in ones. Built-in statuses cannot be removed.</p>
+            <h3 className={`font-bold mb-1 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Task Statuses</h3>
+            <p className={`text-xs mb-4 ${tc(dark,"text-slate-400","text-slate-500")}`}>
+              Drag ↕ to reorder any status. Built-in statuses cannot be deleted. Custom statuses can be removed.
+            </p>
 
-            {/* Built-in statuses (read-only) */}
-            <p className={`text-xs font-semibold mb-2 ${tc(dark,"text-slate-500","text-slate-400")}`}>Built-in (system)</p>
-            <div className="flex flex-wrap gap-2 mb-4">
-              {TASK_STATUS_BUILTIN.map(s=>{
-                const hex = TASK_STATUS_COLORS[s]?.hex||"#64748b";
-                return (
-                  <div key={s} className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs ${tc(dark,"border-slate-700 bg-slate-800/40 text-slate-300","border-slate-200 bg-slate-50 text-slate-600")}`}>
-                    <span style={{width:8,height:8,borderRadius:"50%",background:hex,flexShrink:0,display:"inline-block"}}/>
-                    {s}
-                    <span className={`text-xs px-1.5 py-0.5 rounded ${tc(dark,"bg-slate-700 text-slate-500","bg-slate-200 text-slate-400")}`}>system</span>
-                  </div>
-                );
-              })}
+            {/* All statuses — unified drag list */}
+            <div className="space-y-2 mb-5">
+              {allStatuses.map((s)=>(
+                <div key={s.id}
+                  draggable
+                  onDragStart={()=>setTsDragId(s.id)}
+                  onDragOver={e=>{e.preventDefault();setTsDragOver(s.id);}}
+                  onDrop={e=>{e.preventDefault();handleDrop(s.id);}}
+                  onDragEnd={()=>{setTsDragId(null);setTsDragOver(null);}}
+                  className={`flex items-center gap-3 border rounded-xl p-3 cursor-grab active:cursor-grabbing transition-all
+                    ${tsDragOver===s.id?tc(dark,"border-amber-400/60 bg-amber-500/10","border-amber-400 bg-amber-50"):tc(dark,"border-slate-700 bg-slate-800/40","border-slate-200 bg-slate-50")}
+                    ${tsDragId===s.id?"opacity-30":""}`}>
+                  {/* Grip handle */}
+                  <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor" className={`flex-shrink-0 ${tc(dark,"text-slate-600","text-slate-300")}`}>
+                    <circle cx="3" cy="3" r="1.3"/><circle cx="7" cy="3" r="1.3"/>
+                    <circle cx="3" cy="8" r="1.3"/><circle cx="7" cy="8" r="1.3"/>
+                    <circle cx="3" cy="13" r="1.3"/><circle cx="7" cy="13" r="1.3"/>
+                  </svg>
+                  {/* Color dot */}
+                  <span style={{width:10,height:10,borderRadius:"50%",background:s.hex,flexShrink:0,display:"inline-block"}}/>
+                  {/* Name */}
+                  <span className={`flex-1 text-sm font-medium ${tc(dark,"text-white","text-slate-800")}`}>{s.name}</span>
+                  {/* Built-in badge */}
+                  {s.isBuiltin
+                    ? <span className={`text-xs px-2 py-0.5 rounded-full ${tc(dark,"bg-slate-700 text-slate-500","bg-slate-200 text-slate-400")}`}>built-in</span>
+                    : <button onClick={()=>removeStatus(s.id,s.name)} className={`p-1 rounded ${tc(dark,"hover:bg-slate-700 text-red-400","hover:bg-red-50 text-red-500")}`} title="Remove"><Icon name="trash" size={12}/></button>
+                  }
+                </div>
+              ))}
             </div>
 
-            {/* Custom statuses */}
-            {taskStatuses.length>0&&(
-              <>
-                <p className={`text-xs font-semibold mb-2 ${tc(dark,"text-slate-500","text-slate-400")}`}>Custom <span className="font-normal opacity-70">— drag ↕ to reorder</span></p>
-                <div className="space-y-2 mb-4">
-                  {taskStatuses.map(s=>(
-                    <div key={s.id}
-                      draggable
-                      onDragStart={()=>setTsDragId(s.id)}
-                      onDragOver={e=>{e.preventDefault();setTsDragOver(s.id);}}
-                      onDrop={e=>{
-                        e.preventDefault();
-                        if (!tsDragId||tsDragId===s.id) return;
-                        const arr=[...taskStatuses];
-                        const fromIdx=arr.findIndex(x=>x.id===tsDragId);
-                        const toIdx=arr.findIndex(x=>x.id===s.id);
-                        const moved=arr.splice(fromIdx,1)[0];
-                        arr.splice(toIdx,0,moved);
-                        props.setDevelopers(ds=>ds.map(d=>d.id===developer.id?{...d,taskStatuses:arr}:d));
-                        setTsDragId(null);setTsDragOver(null);
-                      }}
-                      onDragEnd={()=>{setTsDragId(null);setTsDragOver(null);}}
-                      className={`flex items-center gap-3 border rounded-xl p-3 cursor-grab active:cursor-grabbing transition-all ${tsDragOver===s.id?tc(dark,"border-amber-400/60 bg-amber-500/10","border-amber-400 bg-amber-50"):tc(dark,"border-slate-700 bg-slate-800/40","border-slate-200 bg-slate-50")} ${tsDragId===s.id?"opacity-40":""}`}>
-                      <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor" className={`flex-shrink-0 ${tc(dark,"text-slate-600","text-slate-300")}`}>
-                        <circle cx="3" cy="3" r="1.3"/><circle cx="7" cy="3" r="1.3"/>
-                        <circle cx="3" cy="8" r="1.3"/><circle cx="7" cy="8" r="1.3"/>
-                        <circle cx="3" cy="13" r="1.3"/><circle cx="7" cy="13" r="1.3"/>
-                      </svg>
-                      <span style={{width:10,height:10,borderRadius:"50%",background:s.hex,flexShrink:0,display:"inline-block"}}/>
-                      <span className={`flex-1 text-sm font-medium ${tc(dark,"text-white","text-slate-800")}`}>{s.name}</span>
-                      <button onClick={()=>removeTaskStatus(s.id)} className={`p-1 rounded ${tc(dark,"hover:bg-slate-700 text-red-400","hover:bg-red-50 text-red-500")}`}><Icon name="trash" size={12}/></button>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-
-            {/* Add new */}
+            {/* Add new custom status */}
             <div className={`border rounded-xl p-3 ${tc(dark,"bg-slate-800/30 border-slate-700","bg-slate-50 border-slate-200")}`}>
               <h4 className={`text-xs font-bold mb-2 ${tc(dark,"text-slate-400","text-slate-500")}`}>Add New Status</h4>
-              <div className="flex gap-2 mb-3">
+              <div className="flex gap-2 mb-2">
                 <input value={newSName} onChange={e=>setNewSName(e.target.value)}
                   placeholder="e.g. Under Review, Pending Approval…"
+                  onKeyDown={e=>e.key==="Enter"&&addTaskStatus()}
                   className={`flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none ${tc(dark,"bg-slate-700 border-slate-600 text-white placeholder-slate-500","bg-white border-slate-300 text-slate-800")}`}/>
-                <Btn size="sm" onClick={addTaskStatus} disabled={!newSName.trim()||TASK_STATUS_BUILTIN.includes(newSName.trim())}><Icon name="plus" size={13}/>Add</Btn>
+                <Btn size="sm" onClick={addTaskStatus} disabled={!newSName.trim()||nameDuplicate}><Icon name="plus" size={13}/>Add</Btn>
               </div>
-              {TASK_STATUS_BUILTIN.includes(newSName.trim())&&<p className="text-xs text-red-400 mb-2">"{newSName.trim()}" is a built-in status and cannot be duplicated.</p>}
+              {nameDuplicate&&<p className="text-xs text-red-400 mb-2">"{newSName.trim()}" already exists.</p>}
               <p className={`text-xs mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>Color:</p>
               <div className="flex flex-wrap gap-1.5">
                 {LANE_COLORS.map(c=>(
@@ -4315,7 +4325,7 @@ const ProjectTasksTab = ({project, tasks, setTasks, users, currentUser, develope
   );
 };
 
-const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, proposals, setProposals, templates, developer, currentUser, onBack, setCurrentPage, setProjects, users, tasks, setTasks }) => {
+const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, proposals, setProposals, templates, developer, currentUser, onBack, setCurrentPage, setProjects, users, tasks, setTasks, projects }) => {
   const { dark } = useTheme();
   const toast = useToast();
   const [tab, setTab] = useState("info");
@@ -5125,13 +5135,25 @@ const TASK_STATUS_BUILTIN = ["To Do","In Progress","On Hold","Completed","Delaye
 const TASK_STATUS = TASK_STATUS_BUILTIN; // kept for legacy refs
 // Returns merged list: built-in + developer custom statuses
 const getTaskStatuses = (developer) => {
+  // If a custom order exists, use it (contains both built-in and custom in user order)
+  const order = developer?.taskStatusOrder;
+  if (order && order.length > 0) {
+    // Make sure all built-in statuses are included (in case new ones were added)
+    const names = new Set(order.map(s=>s.name));
+    const missing = TASK_STATUS_BUILTIN.filter(s=>!names.has(s)).map(s=>{
+      const c = TASK_STATUS_COLORS[s]||{hex:"#64748b"};
+      return {id:`builtin-${s}`,name:s,hex:c.hex,isBuiltin:true};
+    });
+    return [...order, ...missing];
+  }
+  // Default order: built-in first, then custom
   const custom = (developer?.taskStatuses||[]).filter(s=>s.name&&!TASK_STATUS_BUILTIN.includes(s.name));
   return [
     ...TASK_STATUS_BUILTIN.map(s=>{
       const c = TASK_STATUS_COLORS[s]||{hex:"#64748b"};
-      return {name:s, hex:c.hex, isBuiltin:true};
+      return {id:`builtin-${s}`, name:s, hex:c.hex, isBuiltin:true};
     }),
-    ...custom.map(s=>({name:s.name, hex:s.hex||"#64748b", isBuiltin:false, id:s.id})),
+    ...custom.map(s=>({name:s.name, hex:s.hex||"#64748b", isBuiltin:false, id:s.id||`custom-${s.name}`})),
   ];
 };
 // Get color hex for any status (built-in or custom)
@@ -6543,6 +6565,7 @@ export default function SolarProApp() {
           currentUser={currentUser} onBack={() => pushNav("projects", null)}
           setProjects={setProjects} users={users}
           tasks={tasks} setTasks={setTasks}
+          projects={projects}
         />
       );
     }
