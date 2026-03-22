@@ -3629,11 +3629,11 @@ const ProjectsPage = ({ projects, setProjects, currentUser, setCurrentProjectId,
                     className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${filters.datePreset===v?tc(dark,"bg-amber-500/20 border-amber-400/60 text-amber-300","bg-amber-100 border-amber-400 text-amber-700"):tc(dark,"border-slate-700 text-slate-400 hover:border-slate-500","border-slate-200 text-slate-500 hover:border-slate-300")}`}>{label}</button>
                 ))}
                 {filters.datePreset==="custom"&&(
-                  <>
-                    <input type="date" value={filters.dateFrom} onChange={e=>FF("dateFrom",e.target.value)} className={`${selCls}`}/>
-                    <span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>to</span>
-                    <input type="date" value={filters.dateTo} onChange={e=>FF("dateTo",e.target.value)} className={`${selCls}`}/>
-                  </>
+                  <div className="flex items-center gap-2 w-full mt-1 flex-wrap">
+                    <input type="date" value={filters.dateFrom} onChange={e=>FF("dateFrom",e.target.value)} className={`flex-1 min-w-[130px] ${selCls}`}/>
+                    <span className={`text-xs flex-shrink-0 ${tc(dark,"text-slate-400","text-slate-500")}`}>to</span>
+                    <input type="date" value={filters.dateTo} onChange={e=>FF("dateTo",e.target.value)} className={`flex-1 min-w-[130px] ${selCls}`}/>
+                  </div>
                 )}
               </div>
             </div>
@@ -4178,6 +4178,10 @@ const ProjectTasksTab = ({project, tasks, setTasks, users, currentUser, develope
   const [taskPriorityF, setTaskPriorityF] = useState("all");
   const [taskUserF, setTaskUserF]         = useState("all");
   const [showTaskAdd, setShowTaskAdd]     = useState(false);
+  const [selectedTask, setSelectedTask]   = useState(null);
+  const [selectedTaskIds, setSelectedTaskIds] = useState(new Set());
+  const [bulkModal, setBulkModal]         = useState(null); // "status"|"assign"|"duedate"|"delete"
+  const [bulkTarget, setBulkTarget]       = useState("");
 
   const devTeamT = users ? users.filter(u=>u.developerId===project.developerId&&u.active) : [];
   const now2 = new Date();
@@ -4273,40 +4277,140 @@ const ProjectTasksTab = ({project, tasks, setTasks, users, currentUser, develope
             const total=(t.subtasks||[]).length;
             return (
               <div key={t.id}
-                className={`border rounded-xl p-3 transition-all hover:shadow-md ${overdue?tc(dark,"border-red-500/40 bg-red-500/5","border-red-300 bg-red-50"):tc(dark,"border-slate-700/50 bg-[#0c1929]","border-slate-200 bg-white shadow-sm")}`}>
-                <div className="flex flex-wrap items-start gap-2 mb-1.5">
-                  <span className={`text-xs font-mono ${tc(dark,"text-slate-500","text-slate-400")}`}>{t.taskId}</span>
-                  <PriorityBadge priority={t.priority}/>
-                  <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{background:hex+"20",color:hex,border:`1px solid ${hex}40`}}>{t.status}</span>
-                  {overdue&&<span className={`text-xs px-2 py-0.5 rounded-full ${tc(dark,"bg-red-500/20 text-red-400","bg-red-100 text-red-600")}`}>⚠ Overdue</span>}
+                className={`border rounded-xl p-3 transition-all select-none ${selectedTaskIds.has(t.id)?tc(dark,"border-amber-500/60 bg-amber-500/5","border-amber-400 bg-amber-50"):overdue?tc(dark,"border-red-500/40 bg-red-500/5","border-red-300 bg-red-50"):tc(dark,"border-slate-700/50 bg-[#0c1929]","border-slate-200 bg-white shadow-sm")}`}>
+                {/* Top row: checkbox + badges */}
+                <div className="flex items-start gap-2 mb-1.5">
+                  <input type="checkbox"
+                    checked={selectedTaskIds.has(t.id)}
+                    onChange={()=>setSelectedTaskIds(s=>{const n=new Set(s);n.has(t.id)?n.delete(t.id):n.add(t.id);return n;})}
+                    onClick={e=>e.stopPropagation()}
+                    className="w-3.5 h-3.5 accent-amber-500 flex-shrink-0 mt-0.5 cursor-pointer"/>
+                  <div className="flex flex-wrap items-start gap-1.5 flex-1 cursor-pointer" onClick={()=>setSelectedTask(t)}>
+                    <span className={`text-xs font-mono ${tc(dark,"text-slate-500","text-slate-400")}`}>{t.taskId}</span>
+                    <PriorityBadge priority={t.priority}/>
+                    <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{background:hex+"20",color:hex,border:`1px solid ${hex}40`}}>{t.status}</span>
+                    {overdue&&<span className={`text-xs px-2 py-0.5 rounded-full ${tc(dark,"bg-red-500/20 text-red-400","bg-red-100 text-red-600")}`}>⚠ Overdue</span>}
+                  </div>
                 </div>
-                <p className={`font-semibold text-sm mb-1 ${tc(dark,"text-white","text-slate-800")}`}>{t.taskName}</p>
-                {t.description&&<p className={`text-xs mb-2 line-clamp-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>{t.description}</p>}
-                {total>0&&(
-                  <div className="mb-2">
-                    <div className="flex justify-between mb-0.5">
-                      <span className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>Subtasks</span>
-                      <span className={`text-xs font-medium ${tc(dark,"text-slate-300","text-slate-600")}`}>{done}/{total}</span>
+                <div className="cursor-pointer" onClick={()=>setSelectedTask(t)}>
+                  <p className={`font-semibold text-sm mb-1 ${tc(dark,"text-white","text-slate-800")}`}>{t.taskName}</p>
+                  {t.description&&<p className={`text-xs mb-2 line-clamp-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>{t.description}</p>}
+                  {total>0&&(
+                    <div className="mb-2">
+                      <div className="flex justify-between mb-0.5">
+                        <span className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>Subtasks</span>
+                        <span className={`text-xs font-medium ${tc(dark,"text-slate-300","text-slate-600")}`}>{done}/{total}</span>
+                      </div>
+                      <div className={`h-1.5 rounded-full ${tc(dark,"bg-slate-700","bg-slate-200")}`}>
+                        <div className="h-full rounded-full bg-amber-500 transition-all" style={{width:`${total?done/total*100:0}%`}}/>
+                      </div>
                     </div>
-                    <div className={`h-1.5 rounded-full ${tc(dark,"bg-slate-700","bg-slate-200")}`}>
-                      <div className="h-full rounded-full bg-amber-500 transition-all" style={{width:`${total?done/total*100:0}%`}}/>
+                  )}
+                  <div className="flex flex-wrap items-center gap-3 mt-1">
+                    <div className="flex -space-x-1">
+                      {assignees.slice(0,4).map(u=>(
+                        <div key={u.id} title={u.name} className={`w-5 h-5 rounded-full text-white flex items-center justify-center font-bold border-2 ${tc(dark,"bg-slate-600 border-[#0c1929]","bg-amber-500 border-white")}`} style={{fontSize:8}}>{u.name.charAt(0)}</div>
+                      ))}
                     </div>
+                    {t.dueDate&&<span className={`text-xs ${overdue?tc(dark,"text-red-400","text-red-600"):tc(dark,"text-slate-500","text-slate-400")}`}>Due {new Date(t.dueDate).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}</span>}
+                    {total>0&&<span className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>✓ {done}/{total}</span>}
+                    {(t.tags||[]).slice(0,2).map(tag=><span key={tag} className={`text-xs px-1.5 py-0.5 rounded ${tc(dark,"bg-slate-700 text-slate-400","bg-slate-100 text-slate-500")}`}>#{tag}</span>)}
                   </div>
-                )}
-                <div className="flex flex-wrap items-center gap-3 mt-1">
-                  <div className="flex -space-x-1">
-                    {assignees.slice(0,4).map(u=>(
-                      <div key={u.id} title={u.name} className={`w-5 h-5 rounded-full text-white flex items-center justify-center font-bold border-2 ${tc(dark,"bg-slate-600 border-[#0c1929]","bg-amber-500 border-white")}`} style={{fontSize:8}}>{u.name.charAt(0)}</div>
-                    ))}
-                  </div>
-                  {t.dueDate&&<span className={`text-xs ${overdue?tc(dark,"text-red-400","text-red-600"):tc(dark,"text-slate-500","text-slate-400")}`}>Due {new Date(t.dueDate).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}</span>}
-                  {total>0&&<span className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>✓ {done}/{total}</span>}
-                  {(t.tags||[]).slice(0,2).map(tag=><span key={tag} className={`text-xs px-1.5 py-0.5 rounded ${tc(dark,"bg-slate-700 text-slate-400","bg-slate-100 text-slate-500")}`}>#{tag}</span>)}
                 </div>
               </div>
             );
           })}
         </div>
+      )}
+
+      {/* Bulk action bar */}
+      {selectedTaskIds.size>0&&(
+        <div className={`fixed bottom-20 sm:bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-4 py-2.5 rounded-2xl shadow-2xl border ${tc(dark,"bg-slate-800 border-slate-600","bg-white border-slate-200")}`}>
+          <span className={`text-sm font-medium mr-1 ${tc(dark,"text-amber-300","text-amber-700")}`}>{selectedTaskIds.size} selected</span>
+          <Btn size="sm" onClick={()=>setBulkModal("status")} variant="ghost"><Icon name="check" size={13}/>Status</Btn>
+          <Btn size="sm" onClick={()=>setBulkModal("assign")} variant="ghost"><Icon name="user" size={13}/>Assign</Btn>
+          <Btn size="sm" onClick={()=>setBulkModal("duedate")} variant="ghost"><Icon name="home" size={13}/>Due Date</Btn>
+          <Btn size="sm" onClick={()=>setBulkModal("delete")} variant="ghost" className="text-red-400"><Icon name="trash" size={13}/>Delete</Btn>
+          <button onClick={()=>setSelectedTaskIds(new Set())} className={`ml-1 text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>✕</button>
+        </div>
+      )}
+
+      {/* Bulk modals */}
+      {bulkModal==="status"&&(
+        <Modal title="Change Status" onClose={()=>setBulkModal(null)}>
+          <p className={`text-sm mb-3 ${tc(dark,"text-slate-300","text-slate-600")}`}>Change status for {selectedTaskIds.size} task(s):</p>
+          <div className="flex flex-wrap gap-2 mb-4">
+            {getTaskStatuses(developer).map(s=>(
+              <button key={s.name} onClick={()=>setBulkTarget(s.name)}
+                className={"text-xs px-3 py-1.5 rounded-full border transition-colors"}
+                style={bulkTarget===s.name?{background:s.hex+"30",color:s.hex,borderColor:s.hex}:{borderColor:dark?"#334155":"#e2e8f0",color:dark?"#94a3b8":"#64748b"}}>
+                <span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:s.hex,verticalAlign:"middle",marginRight:4}}/>
+                {s.name}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Btn variant="secondary" size="sm" onClick={()=>setBulkModal(null)}>Cancel</Btn>
+            <Btn size="sm" disabled={!bulkTarget} onClick={()=>{
+              const now=new Date().toISOString();
+              setTasks(ts=>ts.map(t=>selectedTaskIds.has(t.id)?{...t,status:bulkTarget,activityLog:[...(t.activityLog||[]),{id:`ta${Date.now()}`,action:`bulk status → ${bulkTarget}`,by:currentUser.name,at:now}]}:t));
+              setSelectedTaskIds(new Set()); setBulkModal(null); setBulkTarget("");
+              toast.show({message:`Status updated to "${bulkTarget}" for ${selectedTaskIds.size} task(s).`});
+            }}>Apply</Btn>
+          </div>
+        </Modal>
+      )}
+      {bulkModal==="assign"&&(
+        <Modal title="Assign To" onClose={()=>setBulkModal(null)}>
+          <p className={`text-sm mb-3 ${tc(dark,"text-slate-300","text-slate-600")}`}>Assign {selectedTaskIds.size} task(s) to:</p>
+          <div className="flex flex-wrap gap-2 mb-4">
+            {devTeamT.map(u=>(
+              <button key={u.id} onClick={()=>setBulkTarget(u.id)}
+                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border transition-colors ${bulkTarget===u.id?tc(dark,"bg-amber-500/20 border-amber-400 text-amber-300","bg-amber-100 border-amber-400 text-amber-700"):tc(dark,"border-slate-700 text-slate-400","border-slate-200 text-slate-500")}`}>
+                <span className={`w-4 h-4 rounded flex items-center justify-center text-white font-bold ${bulkTarget===u.id?"bg-amber-500":tc(dark,"bg-slate-600","bg-slate-300")}`} style={{fontSize:8}}>{u.name.charAt(0)}</span>
+                {u.name}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Btn variant="secondary" size="sm" onClick={()=>setBulkModal(null)}>Cancel</Btn>
+            <Btn size="sm" disabled={!bulkTarget} onClick={()=>{
+              const now=new Date().toISOString();
+              setTasks(ts=>ts.map(t=>selectedTaskIds.has(t.id)?{...t,assignedTo:[...new Set([...(t.assignedTo||[]),bulkTarget])],activityLog:[...(t.activityLog||[]),{id:`ta${Date.now()}`,action:`bulk assigned to ${devTeamT.find(u=>u.id===bulkTarget)?.name}`,by:currentUser.name,at:now}]}:t));
+              setSelectedTaskIds(new Set()); setBulkModal(null); setBulkTarget("");
+              toast.show({message:`Assigned ${selectedTaskIds.size} task(s).`});
+            }}>Assign</Btn>
+          </div>
+        </Modal>
+      )}
+      {bulkModal==="duedate"&&(
+        <Modal title="Set Due Date" onClose={()=>setBulkModal(null)}>
+          <p className={`text-sm mb-3 ${tc(dark,"text-slate-300","text-slate-600")}`}>Set due date for {selectedTaskIds.size} task(s):</p>
+          <input type="datetime-local" value={bulkTarget} onChange={e=>setBulkTarget(e.target.value)}
+            className={`w-full border rounded-lg px-3 py-2 text-sm mb-4 focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}/>
+          <div className="flex gap-2 justify-end">
+            <Btn variant="secondary" size="sm" onClick={()=>setBulkModal(null)}>Cancel</Btn>
+            <Btn size="sm" disabled={!bulkTarget} onClick={()=>{
+              const now=new Date().toISOString();
+              setTasks(ts=>ts.map(t=>selectedTaskIds.has(t.id)?{...t,dueDate:bulkTarget,activityLog:[...(t.activityLog||[]),{id:`ta${Date.now()}`,action:`bulk due date set to ${bulkTarget}`,by:currentUser.name,at:now}]}:t));
+              setSelectedTaskIds(new Set()); setBulkModal(null); setBulkTarget("");
+              toast.show({message:`Due date updated for ${selectedTaskIds.size} task(s).`});
+            }}>Apply</Btn>
+          </div>
+        </Modal>
+      )}
+      {bulkModal==="delete"&&(
+        <Modal title="Delete Tasks" onClose={()=>setBulkModal(null)}>
+          <p className={`text-sm mb-4 ${tc(dark,"text-slate-300","text-slate-600")}`}>Delete {selectedTaskIds.size} task(s)? This cannot be undone.</p>
+          <div className="flex gap-2 justify-end">
+            <Btn variant="secondary" size="sm" onClick={()=>setBulkModal(null)}>Cancel</Btn>
+            <Btn variant="danger" size="sm" onClick={()=>{
+              setTasks(ts=>ts.filter(t=>!selectedTaskIds.has(t.id)));
+              setSelectedTaskIds(new Set()); setBulkModal(null);
+              toast.show({message:`Deleted ${selectedTaskIds.size} task(s).`});
+            }}>Delete</Btn>
+          </div>
+        </Modal>
       )}
 
       {/* Add task modal */}
@@ -4320,6 +4424,19 @@ const ProjectTasksTab = ({project, tasks, setTasks, users, currentUser, develope
           defaultProjectId={project.id}
           onSave={addTaskForProject}
           onClose={()=>setShowTaskAdd(false)}/>
+      )}
+
+      {/* Task detail modal */}
+      {selectedTask&&(
+        <TaskDetailModal
+          task={selectedTask}
+          tasks={tasks}
+          setTasks={setTasks}
+          users={users}
+          projects={projects||[]}
+          currentUser={currentUser}
+          developer={developer}
+          onClose={()=>setSelectedTask(null)}/>
       )}
     </div>
   );
@@ -5285,7 +5402,7 @@ const PriorityBadge = ({priority}) => {
 };
 
 // ── TASK CARD (Kanban) ────────────────────────────────────────
-const TaskCard = ({task, users, projects, onClick, onStatusChange, currentUser}) => {
+const TaskCard = ({task, users, projects, onClick, onStatusChange, currentUser, isSelected, onToggleSelect}) => {
   const {dark} = useTheme();
   const assignees = (task.assignedTo||[]).map(id=>users.find(u=>u.id===id)).filter(Boolean);
   const project = projects.find(p=>p.id===task.projectId);
@@ -5295,13 +5412,19 @@ const TaskCard = ({task, users, projects, onClick, onStatusChange, currentUser})
   const statusC = dark ? TASK_STATUS_COLORS[task.status]||TASK_STATUS_COLORS["To Do"]
                        : TASK_STATUS_COLORS_L[task.status]||TASK_STATUS_COLORS_L["To Do"];
   return (
-    <div onClick={onClick}
-      className={`border rounded-xl p-3 mb-2 cursor-pointer select-none transition-all hover:shadow-lg ${overdue?tc(dark,"border-red-500/40 bg-red-500/5","border-red-300 bg-red-50"):tc(dark,"border-slate-700/50 bg-[#0c1929]","border-slate-200 bg-white shadow-sm")}`}>
-      {/* Priority strip */}
+    <div className={`border rounded-xl p-3 mb-2 select-none transition-all hover:shadow-lg ${isSelected?tc(dark,"border-amber-500/60 bg-amber-500/5","border-amber-400 bg-amber-50"):overdue?tc(dark,"border-red-500/40 bg-red-500/5","border-red-300 bg-red-50"):tc(dark,"border-slate-700/50 bg-[#0c1929]","border-slate-200 bg-white shadow-sm")}`}>
+      {/* Top row: checkbox + priority + status */}
       <div className="flex items-start justify-between gap-2 mb-2">
-        <PriorityBadge priority={task.priority}/>
+        <div className="flex items-center gap-1.5">
+          <input type="checkbox" checked={!!isSelected}
+            onChange={e=>{e.stopPropagation();onToggleSelect&&onToggleSelect();}}
+            onClick={e=>e.stopPropagation()}
+            className="w-3.5 h-3.5 accent-amber-500 flex-shrink-0 cursor-pointer mt-0.5"/>
+          <PriorityBadge priority={task.priority}/>
+        </div>
         <TaskBadge status={task.status}/>
       </div>
+      <div className="cursor-pointer" onClick={onClick}>
       <h4 className={`text-sm font-semibold mb-1 leading-tight ${tc(dark,"text-white","text-slate-800")}`}>{task.taskName}</h4>
       {project&&<p className={`text-xs mb-2 ${tc(dark,"text-amber-400/80","text-amber-600")}`}>{project.customerName}</p>}
       {task.description&&<p className={`text-xs mb-2 line-clamp-2 ${tc(dark,"text-slate-400","text-slate-500")}`}>{task.description}</p>}
@@ -5338,6 +5461,7 @@ const TaskCard = ({task, users, projects, onClick, onStatusChange, currentUser})
           ))}
         </div>
       )}
+      </div>{/* end cursor-pointer wrapper */}
     </div>
   );
 };
@@ -5576,12 +5700,22 @@ const TaskDetailModal = ({task: taskSnapshot, tasks, setTasks, users, projects, 
           <div>
             <p className={`text-xs font-medium mb-1.5 ${tc(dark,"text-slate-400","text-slate-500")}`}>Change Status</p>
             <div className="flex flex-wrap gap-1.5">
-              {[...TASK_STATUS_BUILTIN,...(developer?.taskStatuses||[]).map(x=>x.name)].map(s=>(
-                <button key={s} onClick={()=>changeStatus(s)}
-                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${task.status===s?`${(dark?TASK_STATUS_COLORS:TASK_STATUS_COLORS_L)[s]?.bg} ${(dark?TASK_STATUS_COLORS:TASK_STATUS_COLORS_L)[s]?.text} border-current`:`${tc(dark,"border-slate-700 text-slate-400","border-slate-200 text-slate-500")} hover:border-amber-400`}`}>
-                  {s}
-                </button>
-              ))}
+              {getTaskStatuses(developer).map(s=>{
+                const hex = getStatusHex(s.name, developer);
+                const isActive = task.status===s.name;
+                return (
+                  <button key={s.name} onClick={()=>changeStatus(s.name)}
+                    className={`text-xs px-2.5 py-1 rounded-full border transition-colors`}
+                    style={isActive
+                      ? {background:hex+"30",color:hex,borderColor:hex+"80",fontWeight:600}
+                      : {}
+                    }
+                    {...(!isActive ? {className:`text-xs px-2.5 py-1 rounded-full border transition-colors ${tc(dark,"border-slate-700 text-slate-400 hover:border-amber-400","border-slate-200 text-slate-500 hover:border-amber-500")}`} : {})}>
+                    <span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:hex,verticalAlign:"middle",marginRight:4}}/>
+                    {s.name}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
@@ -6018,6 +6152,9 @@ const TasksPage = ({tasks, setTasks, projects, users, currentUser, developer}) =
   const [view, setView]         = useState("kanban");
   const [showAdd, setShowAdd]   = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
+  const [selectedTaskIds, setSelectedTaskIds] = useState(new Set());
+  const [bulkModal, setBulkModal]         = useState(null);
+  const [bulkTarget, setBulkTarget]       = useState("");
   const [filterProject, setFilterProject]   = useState("all");
   const [filterUser, setFilterUser]         = useState("all");
   const [filterStatus, setFilterStatus]     = useState("all");
@@ -6156,7 +6293,7 @@ const TasksPage = ({tasks, setTasks, projects, users, currentUser, developer}) =
         <table className="w-full text-sm" style={{minWidth:700}}>
           <thead>
             <tr className={`border-b ${tc(dark,"border-slate-700 bg-slate-800/30","border-slate-200 bg-slate-50")}`}>
-              {["Task","Project","Priority","Status","Assigned To","Due Date","Actions"].map(h=>(
+              {["","Task","Project","Priority","Status","Assigned To","Due Date","Actions"].map(h=>(
                 <th key={h} className={`text-left px-4 py-3 text-xs font-medium ${tc(dark,"text-slate-400","text-slate-500")}`}>{h}</th>
               ))}
             </tr>
@@ -6169,7 +6306,12 @@ const TasksPage = ({tasks, setTasks, projects, users, currentUser, developer}) =
               const overdue=t.dueDate&&new Date(t.dueDate)<now&&t.status!=="Completed"&&t.status!=="Cancelled";
               return (
                 <tr key={t.id} onClick={()=>setSelectedTask(t)}
-                  className={`border-b cursor-pointer transition-colors ${tc(dark,"border-slate-700/30 hover:bg-slate-800/40","border-slate-100 hover:bg-slate-50")}`}>
+                  className={`border-b cursor-pointer transition-colors ${selectedTaskIds.has(t.id)?tc(dark,"bg-amber-500/10 border-amber-500/20","bg-amber-50 border-amber-200"):tc(dark,"border-slate-700/30 hover:bg-slate-800/40","border-slate-100 hover:bg-slate-50")}`}>
+                  <td className="px-4 py-3" onClick={e=>e.stopPropagation()}>
+                    <input type="checkbox" checked={selectedTaskIds.has(t.id)}
+                      onChange={()=>setSelectedTaskIds(s=>{const n=new Set(s);n.has(t.id)?n.delete(t.id):n.add(t.id);return n;})}
+                      className="w-3.5 h-3.5 accent-amber-500"/>
+                  </td>
                   <td className="px-4 py-3">
                     <div className={`font-medium text-sm ${tc(dark,"text-white","text-slate-800")}`}>{t.taskName}</div>
                     <div className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>{t.taskId}</div>
@@ -6233,9 +6375,11 @@ const TasksPage = ({tasks, setTasks, projects, users, currentUser, developer}) =
                   background:isOver?dark?"rgba(245,158,11,0.04)":"rgba(245,158,11,0.03)":"transparent",transition:"all 150ms"}}>
                   {col.map(t=>(
                     <div key={t.id} style={{opacity:isDragging&&dragTaskId===t.id?0.2:1,transition:"opacity 120ms"}}
-                      onPointerDown={e=>onTaskPointerDown(e,t.id)}>
+                      onPointerDown={e=>{ if(!selectedTaskIds.has(t.id)) onTaskPointerDown(e,t.id); }}>
                       <TaskCard task={t} users={users} projects={projects} currentUser={currentUser}
-                        onClick={()=>{ if(!taskDragRef.current.moved) setSelectedTask(t); }}/>
+                        isSelected={selectedTaskIds.has(t.id)}
+                        onToggleSelect={()=>setSelectedTaskIds(s=>{const n=new Set(s);n.has(t.id)?n.delete(t.id):n.add(t.id);return n;})}
+                        onClick={()=>{ if(!taskDragRef.current.moved&&!selectedTaskIds.has(t.id)) setSelectedTask(t); }}/>
                     </div>
                   ))}
                   {isOver&&isDragging&&(
@@ -6327,6 +6471,96 @@ const TasksPage = ({tasks, setTasks, projects, users, currentUser, developer}) =
       {view==="list"     && renderList()}
       {view==="calendar" && <TaskCalendarView tasks={filtered} users={users} projects={projects} currentUser={currentUser} onTaskClick={setSelectedTask}/>}
       {view==="reports"  && <TaskReportsView tasks={tasks} users={users} projects={projects} currentUser={currentUser}/>}
+
+      {/* Bulk action floating bar */}
+      {selectedTaskIds.size>0&&(
+        <div className={`fixed bottom-20 sm:bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-4 py-2.5 rounded-2xl shadow-2xl border ${tc(dark,"bg-slate-800 border-slate-600","bg-white border-slate-200")}`}>
+          <span className={`text-sm font-medium mr-1 ${tc(dark,"text-amber-300","text-amber-700")}`}>{selectedTaskIds.size} selected</span>
+          <Btn size="sm" variant="ghost" onClick={()=>setBulkModal("status")}><Icon name="check" size={13}/>Status</Btn>
+          <Btn size="sm" variant="ghost" onClick={()=>setBulkModal("assign")}><Icon name="user" size={13}/>Assign</Btn>
+          <Btn size="sm" variant="ghost" onClick={()=>setBulkModal("duedate")}><Icon name="home" size={13}/>Due Date</Btn>
+          <Btn size="sm" variant="ghost" className="text-red-400" onClick={()=>setBulkModal("delete")}><Icon name="trash" size={13}/>Delete</Btn>
+          <button onClick={()=>setSelectedTaskIds(new Set())} className={`ml-1 text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>✕</button>
+        </div>
+      )}
+
+      {bulkModal==="status"&&(
+        <Modal title="Change Status" onClose={()=>setBulkModal(null)}>
+          <p className={`text-sm mb-3 ${tc(dark,"text-slate-300","text-slate-600")}`}>Change status for {selectedTaskIds.size} task(s):</p>
+          <div className="flex flex-wrap gap-2 mb-4">
+            {getTaskStatuses(developer).map(s=>(
+              <button key={s.name} onClick={()=>setBulkTarget(s.name)}
+                className="text-xs px-3 py-1.5 rounded-full border transition-colors"
+                style={bulkTarget===s.name?{background:s.hex+"30",color:s.hex,borderColor:s.hex}:{borderColor:dark?"#334155":"#e2e8f0",color:dark?"#94a3b8":"#64748b"}}>
+                <span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:s.hex,verticalAlign:"middle",marginRight:4}}/>
+                {s.name}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Btn variant="secondary" size="sm" onClick={()=>setBulkModal(null)}>Cancel</Btn>
+            <Btn size="sm" disabled={!bulkTarget} onClick={()=>{
+              const now=new Date().toISOString();
+              setTasks(ts=>ts.map(t=>selectedTaskIds.has(t.id)?{...t,status:bulkTarget,activityLog:[...(t.activityLog||[]),{id:`ta${Date.now()}`,action:`bulk status → ${bulkTarget}`,by:currentUser.name,at:now}]}:t));
+              toast.show({message:`Status set to "${bulkTarget}" for ${selectedTaskIds.size} task(s).`});
+              setSelectedTaskIds(new Set()); setBulkModal(null); setBulkTarget("");
+            }}>Apply</Btn>
+          </div>
+        </Modal>
+      )}
+      {bulkModal==="assign"&&(
+        <Modal title="Assign To" onClose={()=>setBulkModal(null)}>
+          <p className={`text-sm mb-3 ${tc(dark,"text-slate-300","text-slate-600")}`}>Assign {selectedTaskIds.size} task(s) to:</p>
+          <div className="flex flex-wrap gap-2 mb-4">
+            {devTeam.map(u=>(
+              <button key={u.id} onClick={()=>setBulkTarget(u.id)}
+                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border transition-colors ${bulkTarget===u.id?tc(dark,"bg-amber-500/20 border-amber-400 text-amber-300","bg-amber-100 border-amber-400 text-amber-700"):tc(dark,"border-slate-700 text-slate-400","border-slate-200 text-slate-500")}`}>
+                <span className={`w-4 h-4 rounded flex items-center justify-center text-white font-bold ${bulkTarget===u.id?"bg-amber-500":tc(dark,"bg-slate-600","bg-slate-300")}`} style={{fontSize:8}}>{u.name.charAt(0)}</span>
+                {u.name}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Btn variant="secondary" size="sm" onClick={()=>setBulkModal(null)}>Cancel</Btn>
+            <Btn size="sm" disabled={!bulkTarget} onClick={()=>{
+              const now=new Date().toISOString();
+              const uname=devTeam.find(u=>u.id===bulkTarget)?.name;
+              setTasks(ts=>ts.map(t=>selectedTaskIds.has(t.id)?{...t,assignedTo:[...new Set([...(t.assignedTo||[]),bulkTarget])],activityLog:[...(t.activityLog||[]),{id:`ta${Date.now()}`,action:`bulk assigned to ${uname}`,by:currentUser.name,at:now}]}:t));
+              toast.show({message:`Assigned ${selectedTaskIds.size} task(s) to ${uname}.`});
+              setSelectedTaskIds(new Set()); setBulkModal(null); setBulkTarget("");
+            }}>Assign</Btn>
+          </div>
+        </Modal>
+      )}
+      {bulkModal==="duedate"&&(
+        <Modal title="Set Due Date" onClose={()=>setBulkModal(null)}>
+          <p className={`text-sm mb-3 ${tc(dark,"text-slate-300","text-slate-600")}`}>Set due date for {selectedTaskIds.size} task(s):</p>
+          <input type="datetime-local" value={bulkTarget} onChange={e=>setBulkTarget(e.target.value)}
+            className={`w-full border rounded-lg px-3 py-2 text-sm mb-4 focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}/>
+          <div className="flex gap-2 justify-end">
+            <Btn variant="secondary" size="sm" onClick={()=>setBulkModal(null)}>Cancel</Btn>
+            <Btn size="sm" disabled={!bulkTarget} onClick={()=>{
+              const now=new Date().toISOString();
+              setTasks(ts=>ts.map(t=>selectedTaskIds.has(t.id)?{...t,dueDate:bulkTarget,activityLog:[...(t.activityLog||[]),{id:`ta${Date.now()}`,action:`bulk due date → ${bulkTarget}`,by:currentUser.name,at:now}]}:t));
+              toast.show({message:`Due date set for ${selectedTaskIds.size} task(s).`});
+              setSelectedTaskIds(new Set()); setBulkModal(null); setBulkTarget("");
+            }}>Apply</Btn>
+          </div>
+        </Modal>
+      )}
+      {bulkModal==="delete"&&(
+        <Modal title="Delete Tasks" onClose={()=>setBulkModal(null)}>
+          <p className={`text-sm mb-4 ${tc(dark,"text-slate-300","text-slate-600")}`}>Delete {selectedTaskIds.size} task(s)? This cannot be undone.</p>
+          <div className="flex gap-2 justify-end">
+            <Btn variant="secondary" size="sm" onClick={()=>setBulkModal(null)}>Cancel</Btn>
+            <Btn variant="danger" size="sm" onClick={()=>{
+              setTasks(ts=>ts.filter(t=>!selectedTaskIds.has(t.id)));
+              toast.show({message:`Deleted ${selectedTaskIds.size} task(s).`});
+              setSelectedTaskIds(new Set()); setBulkModal(null);
+            }}>Delete</Btn>
+          </div>
+        </Modal>
+      )}
 
       {/* Modals */}
       {showAdd&&<TaskFormModal projects={projects} users={users} currentUser={currentUser} developer={developer} onSave={createTask} onClose={()=>setShowAdd(false)}/>}
