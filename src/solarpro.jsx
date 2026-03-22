@@ -4447,7 +4447,7 @@ const ProjectTasksTab = ({project, tasks, setTasks, users, currentUser, develope
   );
 };
 
-const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, proposals, setProposals, templates, developer, currentUser, onBack, setCurrentPage, setProjects, users, tasks, setTasks, projects, pmCategories, setPmCategories, pmTasks, setPmTasks, pmSubtasks, setPmSubtasks, pmComments, setPmComments, pmTemplates, setPmTemplates }) => {
+const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, proposals, setProposals, templates, developer, currentUser, onBack, setCurrentPage, setProjects, users, tasks, setTasks, projects, pmCategories, setPmCategories, pmTasks, setPmTasks, pmSubtasks, setPmSubtasks, pmComments, setPmComments, pmTemplates, setPmTemplates, pmCollections, setPmCollections }) => {
   const { dark } = useTheme();
   const toast = useToast();
   const [tab, setTab] = useState("info");
@@ -4768,6 +4768,7 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
           pmSubtasks={pmSubtasks||[]}   setPmSubtasks={setPmSubtasks}
           pmComments={pmComments||[]}   setPmComments={setPmComments}
           pmTemplates={pmTemplates||[]} setPmTemplates={setPmTemplates}
+          pmCollections={pmCollections||[]} setPmCollections={setPmCollections}
           users={users||[]} currentUser={currentUser}
           developer={developer} projects={projects||[]}/>
       )}
@@ -6651,6 +6652,9 @@ const SEED_PM_COMMENTS = [
   {id:"pmcmt1",entityType:"task",entityId:"pmt2",text:"Utility company needs additional documents. Following up tomorrow.",mentionedUsers:[],createdBy:"u3",createdAt:"2025-01-15T09:00:00Z"},
 ];
 const SEED_PM_TEMPLATES = [];
+const SEED_PM_COLLECTIONS = [
+  // Will be populated when user clicks "Create Collection" on a project
+];
 
 // ── PM CONSTANTS ──────────────────────────────────────────────
 const PM_STATUS  = ["To Do","In Progress","On Hold","Completed","Delayed"];
@@ -7015,18 +7019,34 @@ const PmCategoryColumn = ({cat, tasks, pmSubtasks, users, currentUser, developer
   const {dark}=useTheme();
   const toast=useToast();
   const [collapsed,setCollapsed]=useState(false);
-  const [addingTask,setAddingTask]=useState(false);
-  const [newTaskName,setNewTaskName]=useState("");
+  const [showAddTask,setShowAddTask]=useState(false);
+  const [taskForm,setTaskForm]=useState({name:"",assignedTo:currentUser.id,isMilestone:false,isCritical:false,startDate:"",dueDate:"",priority:"Medium"});
   const [taskDragId,setTaskDragId]=useState(null);
   const [taskDragOver,setTaskDragOver]=useState(null);
   const done=tasks.filter(t=>t.status==="Completed").length;
+  const devTeam=users.filter(u=>u.developerId===cat.developerId&&u.active);
+
+  const resetTaskForm=()=>setTaskForm({name:"",assignedTo:currentUser.id,isMilestone:false,isCritical:false,startDate:"",dueDate:"",priority:"Medium"});
 
   const addTask=()=>{
-    if(!newTaskName.trim()) return;
-    const t={id:`pmt${Date.now()}`,projectId:cat.projectId,categoryId:cat.id,name:newTaskName.trim(),description:"",assignedTo:currentUser.id,createdBy:currentUser.id,priority:"Medium",status:"To Do",startDate:"",dueDate:"",completedAt:null,isDelayed:false,isDelayedCompleted:false,collaborators:[],createdAt:new Date().toISOString(),developerId:cat.developerId};
+    if(!taskForm.name.trim()) return;
+    const t={
+      id:`pmt${Date.now()}`,projectId:cat.projectId,categoryId:cat.id,
+      name:taskForm.name.trim(),description:"",
+      assignedTo:taskForm.assignedTo||currentUser.id,
+      createdBy:currentUser.id,
+      priority:taskForm.isCritical?"Urgent":taskForm.priority,
+      status:"To Do",
+      startDate:taskForm.startDate||"",
+      dueDate:taskForm.dueDate||"",
+      isMilestone:taskForm.isMilestone,
+      isCritical:taskForm.isCritical,
+      completedAt:null,isDelayed:false,isDelayedCompleted:false,
+      collaborators:[],createdAt:new Date().toISOString(),developerId:cat.developerId
+    };
     setPmTasks(ts=>[...ts,t]);
-    setNewTaskName(""); setAddingTask(false);
-    toast.show({message:`Task "${t.name}" added.`});
+    resetTaskForm(); setShowAddTask(false);
+    toast.show({message:`Task "${t.name}" created.`});
   };
   const deleteTask=(id)=>{
     setPmTasks(ts=>ts.filter(t=>t.id!==id));
@@ -7050,6 +7070,7 @@ const PmCategoryColumn = ({cat, tasks, pmSubtasks, users, currentUser, developer
   };
 
   return (
+    <>
     <div className="flex-shrink-0 w-72 sm:w-80" style={{scrollSnapAlign:"start"}}
       draggable onDragStart={()=>setCatDragId(cat.id)} onDragOver={e=>{e.preventDefault();setCatDragOver(cat.id);}}
       onDrop={e=>{e.preventDefault();onCatDrop(cat.id);}} onDragEnd={()=>{setCatDragId(null);setCatDragOver(null);}}>
@@ -7092,35 +7113,75 @@ const PmCategoryColumn = ({cat, tasks, pmSubtasks, users, currentUser, developer
             <div className={`rounded-xl p-4 text-center text-xs border-2 border-dashed ${tc(dark,"border-slate-800 text-slate-700","border-slate-200 text-slate-400")}`}>No tasks yet</div>
           )}
 
-          {/* Add task inline */}
-          {canManage&&(addingTask ? (
-            <div className="mt-1">
-              <input autoFocus value={newTaskName} onChange={e=>setNewTaskName(e.target.value)} placeholder="Task name…"
-                onKeyDown={e=>{if(e.key==="Enter")addTask();if(e.key==="Escape")setAddingTask(false);}}
-                className={`w-full border rounded-xl px-3 py-2 text-sm focus:outline-none mb-1.5 ${tc(dark,"bg-slate-800 border-slate-600 text-white placeholder-slate-500 focus:border-amber-400","bg-white border-slate-300 text-slate-800 focus:border-amber-500")}`}/>
-              <div className="flex gap-1.5">
-                <Btn size="sm" onClick={addTask} disabled={!newTaskName.trim()}>Add Task</Btn>
-                <Btn size="sm" variant="secondary" onClick={()=>setAddingTask(false)}>Cancel</Btn>
-              </div>
-            </div>
-          ) : (
-            <button onClick={()=>setAddingTask(true)} className={`w-full text-xs py-2 rounded-xl border-2 border-dashed transition-colors mt-1 ${tc(dark,"border-slate-800 text-slate-600 hover:border-amber-500/40 hover:text-amber-400","border-slate-200 text-slate-400 hover:border-amber-400 hover:text-amber-600")}`}>
+          {/* Add task button → opens modal */}
+          {canManage&&(
+            <button onClick={()=>setShowAddTask(true)} className={`w-full text-xs py-2 rounded-xl border-2 border-dashed transition-colors mt-1 ${tc(dark,"border-slate-800 text-slate-600 hover:border-teal-500/40 hover:text-teal-400","border-slate-200 text-slate-400 hover:border-teal-500 hover:text-teal-600")}`}>
               + Add Task
             </button>
-          ))}
+          )}
         </div>
       )}
     </div>
+    {/* ADD TASK MODAL — matches screenshot 3 */}
+    {showAddTask&&(
+      <Modal title="ADD TASK" onClose={()=>{setShowAddTask(false);resetTaskForm();}}>
+        <div className={`flex items-center gap-3 p-3 mb-4 rounded-xl border ${tc(dark,"border-slate-700 bg-slate-800/30","border-slate-200 bg-slate-50")}`}>
+          <input type="checkbox" id={`ms-${cat.id}`} checked={taskForm.isMilestone}
+            onChange={e=>setTaskForm(f=>({...f,isMilestone:e.target.checked}))}
+            className="w-4 h-4 accent-teal-600"/>
+          <label htmlFor={`ms-${cat.id}`} className={`text-sm font-medium cursor-pointer ${tc(dark,"text-slate-300","text-slate-700")}`}>Is Milestone?</label>
+        </div>
+        <div className="mb-4">
+          <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Task Name</label>
+          <input autoFocus value={taskForm.name} onChange={e=>setTaskForm(f=>({...f,name:e.target.value}))}
+            onKeyDown={e=>e.key==="Enter"&&addTask()}
+            placeholder="Ex: Add Wiring"
+            className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white placeholder-slate-400 focus:border-teal-500","bg-white border-slate-300 text-slate-800 placeholder-slate-400 focus:border-teal-500")}`}/>
+        </div>
+        <div className="mb-4">
+          <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Assigned To</label>
+          <select value={taskForm.assignedTo} onChange={e=>setTaskForm(f=>({...f,assignedTo:e.target.value}))}
+            className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")} focus:border-teal-500`}>
+            <option value={currentUser.id}>You</option>
+            {devTeam.filter(u=>u.id!==currentUser.id).map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+        </div>
+        <div className={`flex items-center gap-3 p-3 mb-4 rounded-xl border ${tc(dark,"border-slate-700 bg-slate-800/30","border-slate-200 bg-slate-50")}`}>
+          <input type="checkbox" id={`cr-${cat.id}`} checked={taskForm.isCritical}
+            onChange={e=>setTaskForm(f=>({...f,isCritical:e.target.checked}))}
+            className="w-4 h-4 accent-teal-600"/>
+          <label htmlFor={`cr-${cat.id}`} className={`text-sm font-medium cursor-pointer ${tc(dark,"text-slate-300","text-slate-700")}`}>Is Critical Task?</label>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
+          <div>
+            <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Due From</label>
+            <input type="date" value={taskForm.startDate} onChange={e=>setTaskForm(f=>({...f,startDate:e.target.value}))}
+              className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")} focus:border-teal-500`}/>
+          </div>
+          <div>
+            <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Due Till</label>
+            <input type="date" value={taskForm.dueDate} onChange={e=>setTaskForm(f=>({...f,dueDate:e.target.value}))}
+              className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")} focus:border-teal-500`}/>
+          </div>
+        </div>
+        <button onClick={addTask} disabled={!taskForm.name.trim()}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-all ${taskForm.name.trim()?"bg-teal-600 hover:bg-teal-500 text-white":"bg-teal-600/40 text-white/50 cursor-not-allowed"}`}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 5v6M5 8h6"/></svg>
+          CREATE TASK
+        </button>
+      </Modal>
+      )}
+    </>
   );
 };
 
 // ── PROJECT MANAGEMENT TAB ────────────────────────────────────
-const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, setPmTasks, pmSubtasks, setPmSubtasks, pmComments, setPmComments, pmTemplates, setPmTemplates, users, currentUser, developer, projects}) => {
+const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, setPmTasks, pmSubtasks, setPmSubtasks, pmComments, setPmComments, pmTemplates, setPmTemplates, pmCollections, setPmCollections, users, currentUser, developer, projects}) => {
   const {dark}=useTheme();
   const toast=useToast();
   const [selectedTask,setSelectedTask]=useState(null);
-  const [addingCat,setAddingCat]=useState(false);
-  const [newCatName,setNewCatName]=useState("");
+  const [showCatModal,setShowCatModal]=useState(false);
+  const [catForm,setCatForm]=useState({name:"",assignedTo:currentUser.id});
   const [renamingCat,setRenamingCat]=useState(null);
   const [catDragId,setCatDragId]=useState(null);
   const [catDragOver,setCatDragOver]=useState(null);
@@ -7128,10 +7189,15 @@ const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, 
   const [filterUser,setFilterUser]=useState("all");
   const [showTemplateModal,setShowTemplateModal]=useState(false);
   const [newTplName,setNewTplName]=useState("");
+  // Collection modal — shown when no collection exists for this project yet
+  const [showCollectionModal,setShowCollectionModal]=useState(false);
+  const [collForm,setCollForm]=useState({assignedTo:currentUser.id,accessLevel:"Category-Level",dateAccessLevel:"Project-Level"});
 
   const canManage=currentUser.role===ROLES.DEV_ADMIN||currentUser.role===ROLES.SUPER_ADMIN;
   const cats=pmCategories.filter(c=>c.projectId===project.id&&c.developerId===currentUser.developerId).sort((a,b)=>a.orderIndex-b.orderIndex);
   const devTeam=users.filter(u=>u.developerId===currentUser.developerId&&u.active);
+  // Check if this project has a collection
+  const projectCollection=(pmCollections||[]).find(c=>c.projectId===project.id&&c.developerId===currentUser.developerId);
 
   const getTasksForCat=(catId)=>pmTasks
     .filter(t=>t.categoryId===catId)
@@ -7147,11 +7213,17 @@ const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, 
   const totalDelayed=allProjTasks.filter(t=>t.isDelayed||t.status==="Delayed").length;
 
   const addCategory=()=>{
-    if(!newCatName.trim()) return;
-    const c={id:`pmc${Date.now()}`,projectId:project.id,name:newCatName.trim(),description:"",orderIndex:cats.length,createdAt:new Date().toISOString(),developerId:currentUser.developerId};
+    if(!catForm.name.trim()) return;
+    const c={id:`pmc${Date.now()}`,projectId:project.id,name:catForm.name.trim(),description:"",assignedTo:catForm.assignedTo,orderIndex:cats.length,createdAt:new Date().toISOString(),developerId:currentUser.developerId};
     setPmCategories(cs=>[...cs,c]);
-    setNewCatName(""); setAddingCat(false);
-    toast.show({message:`Category "${c.name}" added.`});
+    setCatForm({name:"",assignedTo:currentUser.id}); setShowCatModal(false);
+    toast.show({message:`Category "${c.name}" created.`});
+  };
+  const createCollection=()=>{
+    const coll={id:`pmcoll${Date.now()}`,projectId:project.id,developerId:currentUser.developerId,assignedTo:collForm.assignedTo,accessLevel:collForm.accessLevel,dateAccessLevel:collForm.dateAccessLevel,createdAt:new Date().toISOString()};
+    setPmCollections(cs=>[...cs,coll]);
+    setShowCollectionModal(false);
+    toast.show({message:"Collection created! You can now add categories."});
   };
   const deleteCategory=(id)=>{
     const taskIds=pmTasks.filter(t=>t.categoryId===id).map(t=>t.id);
@@ -7217,7 +7289,8 @@ const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, 
         </div>
         <div className="flex flex-wrap gap-2">
           {canManage&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>setShowTemplateModal(true)}>Templates</Btn>}
-          {canManage&&<Btn size="sm" onClick={()=>setAddingCat(true)}><Icon name="plus" size={14}/>Add Category</Btn>}
+          {canManage&&projectCollection&&<Btn size="sm" onClick={()=>setShowCatModal(true)} style={{backgroundColor:"#0d9488",borderColor:"#0d9488"}} className="text-white"><Icon name="plus" size={14}/>Add Category</Btn>}
+          {canManage&&!projectCollection&&<Btn size="sm" onClick={()=>setShowCollectionModal(true)} style={{backgroundColor:"#0d9488",borderColor:"#0d9488"}} className="text-white"><Icon name="plus" size={14}/>Create Collection</Btn>}
         </div>
       </div>
 
@@ -7253,18 +7326,63 @@ const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, 
         {(filterStatus!=="all"||filterUser!=="all")&&<button onClick={()=>{setFilterStatus("all");setFilterUser("all");}} className="text-xs text-amber-400 underline">Clear</button>}
       </div>
 
-      {/* Add category inline */}
-      {addingCat&&(
-        <div className={`border rounded-xl p-3 mb-4 ${tc(dark,"border-slate-700 bg-slate-800/40","border-slate-200 bg-slate-50")}`}>
-          <p className={`text-xs font-medium mb-2 ${tc(dark,"text-slate-400","text-slate-500")}`}>New Category</p>
-          <div className="flex gap-2">
-            <input autoFocus value={newCatName} onChange={e=>setNewCatName(e.target.value)} placeholder="e.g. Installation, Testing…"
-              onKeyDown={e=>{if(e.key==="Enter")addCategory();if(e.key==="Escape")setAddingCat(false);}}
-              className={`flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none ${tc(dark,"bg-slate-700 border-slate-600 text-white placeholder-slate-500","bg-white border-slate-300 text-slate-800")}`}/>
-            <Btn size="sm" onClick={addCategory} disabled={!newCatName.trim()}>Add</Btn>
-            <Btn size="sm" variant="secondary" onClick={()=>setAddingCat(false)}>Cancel</Btn>
+      {/* CREATE COLLECTION MODAL — shown when no collection for this project */}
+      {showCollectionModal&&(
+        <Modal title="CREATE COLLECTION" onClose={()=>setShowCollectionModal(false)}>
+          <p className={`text-xs mb-4 ${tc(dark,"text-slate-400","text-slate-500")}`}>Assigned To (You can assign multiple people once you create this collection.)</p>
+          <div className="mb-4">
+            <select value={collForm.assignedTo} onChange={e=>setCollForm(f=>({...f,assignedTo:e.target.value}))}
+              className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")} focus:border-teal-500`}>
+              <option value={currentUser.id}>You</option>
+              {devTeam.filter(u=>u.id!==currentUser.id).map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
           </div>
-        </div>
+          <div className="mb-4">
+            <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Access Level</label>
+            <select value={collForm.accessLevel} onChange={e=>setCollForm(f=>({...f,accessLevel:e.target.value}))}
+              className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")} focus:border-teal-500`}>
+              {["Category-Level","Task-Level","Project-Level","Full Access"].map(v=><option key={v}>{v}</option>)}
+            </select>
+          </div>
+          <div className="mb-5">
+            <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Date Access Level</label>
+            <select value={collForm.dateAccessLevel} onChange={e=>setCollForm(f=>({...f,dateAccessLevel:e.target.value}))}
+              className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")} focus:border-teal-500`}>
+              {["Project-Level","Category-Level","Task-Level","All Dates"].map(v=><option key={v}>{v}</option>)}
+            </select>
+          </div>
+          <button onClick={createCollection}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm bg-teal-600 hover:bg-teal-500 text-white transition-colors">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 5v6M5 8h6"/></svg>
+            CREATE COLLECTION
+          </button>
+        </Modal>
+      )}
+
+      {/* CREATE CATEGORY MODAL — screenshot 2 */}
+      {showCatModal&&(
+        <Modal title="CREATE CATEGORY" onClose={()=>{setShowCatModal(false);setCatForm({name:"",assignedTo:currentUser.id});}}>
+          <div className="mb-4">
+            <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Category Name</label>
+            <input autoFocus value={catForm.name} onChange={e=>setCatForm(f=>({...f,name:e.target.value}))}
+              onKeyDown={e=>e.key==="Enter"&&addCategory()}
+              placeholder="Ex: Setup Of Factory"
+              className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white placeholder-slate-400 focus:border-teal-500","bg-white border-slate-300 text-slate-800 placeholder-slate-400 focus:border-teal-500")}`}/>
+          </div>
+          <div className="mb-5">
+            <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Assigned To</label>
+            <select value={catForm.assignedTo} onChange={e=>setCatForm(f=>({...f,assignedTo:e.target.value}))}
+              className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")} focus:border-teal-500`}>
+              <option value={currentUser.id}>You</option>
+              {devTeam.filter(u=>u.id!==currentUser.id).map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+          </div>
+          <button onClick={addCategory} disabled={!catForm.name.trim()}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-all ${catForm.name.trim()?"bg-teal-600 hover:bg-teal-500 text-white":"bg-teal-600/40 text-white/50 cursor-not-allowed"}`}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 5v6M5 8h6"/></svg>
+            CREATE CATEGORY
+          </button>
+        </Modal>
       )}
 
       {/* Rename category modal */}
@@ -7281,13 +7399,27 @@ const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, 
         </Modal>
       )}
 
-      {/* Kanban board */}
-      {cats.length===0 ? (
+      {/* Kanban board — gated on collection existing */}
+      {!projectCollection ? (
+        <div className={`text-center py-20 border-2 border-dashed rounded-2xl ${tc(dark,"border-slate-800 text-slate-600","border-slate-200 text-slate-400")}`}>
+          <div className="text-5xl mb-4">📁</div>
+          <p className={`text-lg font-bold mb-2 ${tc(dark,"text-white","text-slate-800")}`}>Get Started</p>
+          <p className={`text-sm mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>Create a collection to start organising this project.</p>
+          <p className={`text-xs mb-6 opacity-60 ${tc(dark,"","")}`}>Collections let you set access levels and date controls for your team.</p>
+          {canManage&&(
+            <button onClick={()=>setShowCollectionModal(true)}
+              className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm bg-teal-600 hover:bg-teal-500 text-white transition-colors mx-auto">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 5v6M5 8h6"/></svg>
+              Create Collection
+            </button>
+          )}
+        </div>
+      ) : cats.length===0 ? (
         <div className={`text-center py-16 border-2 border-dashed rounded-xl ${tc(dark,"border-slate-800 text-slate-600","border-slate-200 text-slate-400")}`}>
           <div className="text-4xl mb-3">📋</div>
           <p className="text-sm font-medium mb-1">No categories yet</p>
           <p className="text-xs opacity-60 mb-3">Add your first category to organise tasks by phase or workflow</p>
-          {canManage&&<Btn size="sm" onClick={()=>setAddingCat(true)}><Icon name="plus" size={14}/>Add Category</Btn>}
+          {canManage&&<button onClick={()=>setShowCatModal(true)} className="flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm bg-teal-600 hover:bg-teal-500 text-white transition-colors mx-auto"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 5v6M5 8h6"/></svg>Add Category</button>}
         </div>
       ) : (
         <div className="flex gap-4 overflow-x-auto pb-4" style={{scrollSnapType:"x mandatory"}}>
@@ -7698,6 +7830,7 @@ export default function SolarProApp() {
   const [pmSubtasks, setPmSubtasks]     = useLS("sp_pm_subtasks",    SEED_PM_SUBTASKS);
   const [pmComments, setPmComments]     = useLS("sp_pm_comments",    SEED_PM_COMMENTS);
   const [pmTemplates, setPmTemplates]   = useLS("sp_pm_templates",   SEED_PM_TEMPLATES);
+  const [pmCollections, setPmCollections] = useLS("sp_pm_collections", SEED_PM_COLLECTIONS);
   useReminderChecker(tasks); // fires browser + in-app notifications
 
   // ── NAV STATE with browser history ──
@@ -7770,6 +7903,7 @@ export default function SolarProApp() {
           pmSubtasks={pmSubtasks} setPmSubtasks={setPmSubtasks}
           pmComments={pmComments} setPmComments={setPmComments}
           pmTemplates={pmTemplates} setPmTemplates={setPmTemplates}
+          pmCollections={pmCollections} setPmCollections={setPmCollections}
         />
       );
     }
