@@ -1306,6 +1306,7 @@ const Sidebar = ({ user, currentPage, setPage, onLogout, developer, mobileOpen, 
     {id:"dashboard",label:"Dashboard",icon:"home"},
     {id:"projects",label:"Projects",icon:"folder"},
     {id:"tasks",label:"Tasks",icon:"check"},
+    {id:"pm-dashboard",label:"PM Dashboard",icon:"task"},
     {id:"team",label:"My Team",icon:"users"},
     {id:"invoices",label:"Invoices",icon:"invoice"},
     {id:"templates",label:"Templates",icon:"template"},
@@ -4446,7 +4447,7 @@ const ProjectTasksTab = ({project, tasks, setTasks, users, currentUser, develope
   );
 };
 
-const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, proposals, setProposals, templates, developer, currentUser, onBack, setCurrentPage, setProjects, users, tasks, setTasks, projects }) => {
+const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, proposals, setProposals, templates, developer, currentUser, onBack, setCurrentPage, setProjects, users, tasks, setTasks, projects, pmCategories, setPmCategories, pmTasks, setPmTasks, pmSubtasks, setPmSubtasks, pmComments, setPmComments, pmTemplates, setPmTemplates }) => {
   const { dark } = useTheme();
   const toast = useToast();
   const [tab, setTab] = useState("info");
@@ -4571,8 +4572,9 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
     setShowGen(false); setViewProposal(np);
   };
 
-  const tabs = ["info","tasks","notes","documents","proposal","activity"].filter(t=>{
+  const tabs = ["info","pm","tasks","notes","documents","proposal","activity"].filter(t=>{
     if (t==="info") return true; // always visible
+    if (t==="pm")        return hasPerm(currentUser,"projects.view");
     if (t==="tasks")     return hasPerm(currentUser,"projects.view");
     if (t==="notes")     return hasPerm(currentUser,"notes.view");
     if (t==="documents") return hasPerm(currentUser,"documents.view");
@@ -4697,7 +4699,7 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
       {/* Tab bar */}
       <div className={`flex gap-1 rounded-xl p-1 mb-5 border overflow-x-auto flex-nowrap ${tc(dark,"bg-[#070e1c] border-slate-800","bg-slate-100 border-slate-200")}`} style={{WebkitOverflowScrolling:"touch"}}>
         {tabs.map(t=>(
-          <button key={t} onClick={()=>setTab(t)} className={`px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-medium capitalize transition-all whitespace-nowrap ${tab===t ? "bg-amber-500 text-slate-900" : tc(dark,"text-slate-400 hover:text-white","text-slate-500 hover:text-slate-700")}`}>{t}</button>
+          <button key={t} onClick={()=>setTab(t)} className={`px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-medium capitalize transition-all whitespace-nowrap ${tab===t ? "bg-amber-500 text-slate-900" : tc(dark,"text-slate-400 hover:text-white","text-slate-500 hover:text-slate-700")}`}>{t==="pm"?"📋 PM":t}</button>
         ))}
       </div>
 
@@ -4755,6 +4757,19 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
           currentUser={currentUser}
           developer={developer}
           projects={projects}/>
+      )}
+
+      {/* PROJECT MANAGEMENT TAB */}
+      {tab==="pm"&&(
+        <ProjectManagementTab
+          project={project}
+          pmCategories={pmCategories||[]} setPmCategories={setPmCategories}
+          pmTasks={pmTasks||[]}         setPmTasks={setPmTasks}
+          pmSubtasks={pmSubtasks||[]}   setPmSubtasks={setPmSubtasks}
+          pmComments={pmComments||[]}   setPmComments={setPmComments}
+          pmTemplates={pmTemplates||[]} setPmTemplates={setPmTemplates}
+          users={users||[]} currentUser={currentUser}
+          developer={developer} projects={projects||[]}/>
       )}
 
       {/* NOTES TAB */}
@@ -6610,6 +6625,909 @@ const TasksPage = ({tasks, setTasks, projects, users, currentUser, developer}) =
 };
 
 
+// ============================================================
+// SOLARPRO — PROJECT MANAGEMENT MODULE
+// Categories → Tasks → Subtasks, drag-reorder, full detail view
+// ============================================================
+
+// ── PM SEED DATA ─────────────────────────────────────────────
+const SEED_PM_CATEGORIES = [
+  {id:"pmc1",projectId:"p1",name:"Site Preparation",description:"Pre-installation groundwork",orderIndex:0,createdAt:"2025-01-01",developerId:"d1"},
+  {id:"pmc2",projectId:"p1",name:"Installation",description:"Panel and inverter installation",orderIndex:1,createdAt:"2025-01-01",developerId:"d1"},
+  {id:"pmc3",projectId:"p1",name:"Commissioning",description:"Testing and handover",orderIndex:2,createdAt:"2025-01-01",developerId:"d1"},
+];
+const SEED_PM_TASKS = [
+  {id:"pmt1",projectId:"p1",categoryId:"pmc1",name:"Roof structural assessment",description:"Check load bearing capacity",assignedTo:"u3",createdBy:"u2",priority:"High",status:"Completed",startDate:"2025-01-10",dueDate:"2025-01-12",completedAt:"2025-01-11",isDelayed:false,isDelayedCompleted:false,collaborators:[],createdAt:"2025-01-09",developerId:"d1"},
+  {id:"pmt2",projectId:"p1",categoryId:"pmc1",name:"Obtain required permits",description:"Municipal and utility permissions",assignedTo:"u3",createdBy:"u2",priority:"Urgent",status:"In Progress",startDate:"2025-01-12",dueDate:"2025-01-20",completedAt:null,isDelayed:false,isDelayedCompleted:false,collaborators:[],createdAt:"2025-01-09",developerId:"d1"},
+  {id:"pmt3",projectId:"p1",categoryId:"pmc2",name:"Mount racking system",description:"Install mounting rails on roof",assignedTo:"u3",createdBy:"u2",priority:"High",status:"To Do",startDate:"2025-01-21",dueDate:"2025-01-25",completedAt:null,isDelayed:false,isDelayedCompleted:false,collaborators:[],createdAt:"2025-01-09",developerId:"d1"},
+];
+const SEED_PM_SUBTASKS = [
+  {id:"pmst1",taskId:"pmt1",name:"Measure roof dimensions",assignedTo:"u3",status:"Completed",startDate:"2025-01-10",dueDate:"2025-01-10",createdAt:"2025-01-09"},
+  {id:"pmst2",taskId:"pmt1",name:"Document load calculations",assignedTo:"u3",status:"Completed",startDate:"2025-01-11",dueDate:"2025-01-11",createdAt:"2025-01-09"},
+  {id:"pmst3",taskId:"pmt2",name:"Submit municipal application",assignedTo:"u3",status:"Completed",startDate:"2025-01-12",dueDate:"2025-01-13",createdAt:"2025-01-09"},
+  {id:"pmst4",taskId:"pmt2",name:"Coordinate with utility company",assignedTo:"u3",status:"In Progress",startDate:"2025-01-14",dueDate:"2025-01-20",createdAt:"2025-01-09"},
+];
+const SEED_PM_COMMENTS = [
+  {id:"pmcmt1",entityType:"task",entityId:"pmt2",text:"Utility company needs additional documents. Following up tomorrow.",mentionedUsers:[],createdBy:"u3",createdAt:"2025-01-15T09:00:00Z"},
+];
+const SEED_PM_TEMPLATES = [];
+
+// ── PM CONSTANTS ──────────────────────────────────────────────
+const PM_STATUS  = ["To Do","In Progress","On Hold","Completed","Delayed"];
+const PM_PRIORITY= ["Low","Medium","High","Urgent"];
+const PM_STATUS_HEX = {"To Do":"#64748b","In Progress":"#0ea5e9","On Hold":"#f59e0b","Completed":"#10b981","Delayed":"#ef4444","Cancelled":"#475569"};
+
+const pmStatusBg = (s,dark) => {
+  const map = dark
+    ? {"To Do":"bg-slate-500/20 text-slate-300","In Progress":"bg-sky-500/20 text-sky-300","On Hold":"bg-amber-500/20 text-amber-300","Completed":"bg-emerald-500/20 text-emerald-300","Delayed":"bg-red-500/20 text-red-300"}
+    : {"To Do":"bg-slate-100 text-slate-600","In Progress":"bg-sky-100 text-sky-700","On Hold":"bg-amber-100 text-amber-700","Completed":"bg-emerald-100 text-emerald-700","Delayed":"bg-red-100 text-red-700"};
+  return map[s] || (dark?"bg-slate-700 text-slate-300":"bg-slate-100 text-slate-600");
+};
+const pmPriBg = (p,dark) => {
+  const map = dark
+    ? {"Low":"bg-slate-500/20 text-slate-400","Medium":"bg-sky-500/20 text-sky-300","High":"bg-orange-500/20 text-orange-300","Urgent":"bg-red-500/20 text-red-300"}
+    : {"Low":"bg-slate-100 text-slate-500","Medium":"bg-sky-100 text-sky-700","High":"bg-orange-100 text-orange-700","Urgent":"bg-red-100 text-red-700"};
+  return map[p] || (dark?"bg-slate-700 text-slate-400":"bg-slate-100 text-slate-500");
+};
+
+// ── AUTO DELAY ────────────────────────────────────────────────
+const applyPmDelay = (task) => {
+  if (task.status==="Completed"||task.status==="Cancelled") return task;
+  const now=new Date(), due=task.dueDate?new Date(task.dueDate):null;
+  if (due&&now>due) return {...task,isDelayed:true,status:"Delayed"};
+  return task;
+};
+
+// ── PM TASK STATUS BADGE ─────────────────────────────────────
+const PmBadge = ({label, type="status"}) => {
+  const {dark}=useTheme();
+  const cls = type==="priority" ? pmPriBg(label,dark) : pmStatusBg(label,dark);
+  return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cls}`}>{label}</span>;
+};
+
+// ── PROGRESS BAR ─────────────────────────────────────────────
+const ProgressBar = ({done,total,size="sm"}) => {
+  const pct = total ? Math.round(done/total*100) : 0;
+  const {dark}=useTheme();
+  return (
+    <div>
+      <div className={`${size==="sm"?"h-1.5":"h-2.5"} rounded-full ${tc(dark,"bg-slate-700","bg-slate-200")}`}>
+        <div className="h-full rounded-full bg-amber-500 transition-all" style={{width:`${pct}%`}}/>
+      </div>
+      {size!=="sm"&&<div className={`text-xs mt-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>{done}/{total} tasks · {pct}%</div>}
+    </div>
+  );
+};
+
+// ── PM TASK DETAIL DRAWER ─────────────────────────────────────
+const PmTaskDrawer = ({task:taskSnap, pmTasks, setPmTasks, pmSubtasks, setPmSubtasks, pmComments, setPmComments, users, currentUser, developer, projects, pmCategories, onClose}) => {
+  const {dark}=useTheme();
+  const toast=useToast();
+  const task = pmTasks.find(t=>t.id===taskSnap.id)||taskSnap;
+  const [drawerTab,setDrawerTab]=useState("overview");
+  const [editing,setEditing]=useState(false);
+  const [ef,setEF]=useState({...task});
+  const [newSubtask,setNewSubtask]=useState("");
+  const [newComment,setNewComment]=useState("");
+  const canEdit = currentUser.role===ROLES.DEV_ADMIN||currentUser.role===ROLES.SUPER_ADMIN||task.assignedTo===currentUser.id||(task.collaborators||[]).includes(currentUser.id);
+  const devTeam=users.filter(u=>u.developerId===task.developerId&&u.active);
+  const project=projects?.find(p=>p.id===task.projectId);
+  const category=pmCategories?.find(c=>c.id===task.categoryId);
+  const subtasks=pmSubtasks.filter(s=>s.taskId===task.id);
+  const comments=pmComments.filter(c=>c.entityType==="task"&&c.entityId===task.id).sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt));
+  const done=subtasks.filter(s=>s.status==="Completed").length;
+  const overdue=task.dueDate&&new Date(task.dueDate)<new Date()&&task.status!=="Completed";
+
+  const saveTask=()=>{
+    setPmTasks(ts=>ts.map(t=>t.id===task.id?{...t,...ef,updatedAt:new Date().toISOString()}:t));
+    setEditing(false);
+    toast.show({message:"Task updated."});
+  };
+  const changeStatus=(s)=>{
+    const now=new Date();
+    const wasDelayed=task.dueDate&&now>new Date(task.dueDate);
+    setPmTasks(ts=>ts.map(t=>t.id===task.id?{...t,status:s,
+      completedAt:s==="Completed"?now.toISOString():t.completedAt,
+      isDelayed:s!=="Completed"&&wasDelayed,
+      isDelayedCompleted:s==="Completed"&&wasDelayed,
+      updatedAt:now.toISOString()
+    }:t));
+    toast.show({message:`Status → ${s}`});
+  };
+  const addSubtask=()=>{
+    if(!newSubtask.trim()) return;
+    const ns={id:`pmst${Date.now()}`,taskId:task.id,name:newSubtask.trim(),assignedTo:task.assignedTo,status:"To Do",startDate:"",dueDate:"",createdAt:new Date().toISOString()};
+    setPmSubtasks(ss=>[...ss,ns]);
+    setNewSubtask("");
+  };
+  const toggleSubtask=(id)=>{
+    setPmSubtasks(ss=>ss.map(s=>s.id===id?{...s,status:s.status==="Completed"?"To Do":"Completed"}:s));
+  };
+  const addComment=()=>{
+    if(!newComment.trim()) return;
+    setPmComments(cs=>[...cs,{id:`pmcmt${Date.now()}`,entityType:"task",entityId:task.id,text:newComment.trim(),mentionedUsers:[],createdBy:currentUser.id,createdAt:new Date().toISOString()}]);
+    setNewComment("");
+  };
+
+  const inp=`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white placeholder-slate-500 focus:border-amber-400","bg-white border-slate-300 text-slate-800 focus:border-amber-500")}`;
+
+  return (
+    <div className="fixed inset-0 z-50 flex" onClick={onClose}>
+      {/* Backdrop */}
+      <div className="flex-1 bg-black/60 backdrop-blur-sm"/>
+      {/* Drawer panel */}
+      <div className={`w-full sm:w-[520px] lg:w-[580px] h-full flex flex-col overflow-hidden shadow-2xl ${tc(dark,"bg-[#0a1628]","bg-white")}`} onClick={e=>e.stopPropagation()}>
+        {/* Header */}
+        <div className={`flex items-start gap-3 px-5 py-4 border-b ${tc(dark,"border-slate-700","border-slate-200")}`}>
+          <div className="flex-1 min-w-0">
+            {editing ? (
+              <input value={ef.name} onChange={e=>setEF(f=>({...f,name:e.target.value}))}
+                className={`w-full text-base font-bold bg-transparent border-b pb-0.5 focus:outline-none ${tc(dark,"border-amber-400 text-white","border-amber-500 text-slate-800")}`}/>
+            ) : (
+              <h2 className={`text-base font-bold leading-tight ${tc(dark,"text-white","text-slate-800")}`}>{task.name}</h2>
+            )}
+            <div className="flex flex-wrap items-center gap-2 mt-1.5">
+              <PmBadge label={task.status}/>
+              <PmBadge label={task.priority} type="priority"/>
+              {overdue&&<span className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/30">⚠ Overdue</span>}
+              <span className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>{category?.name} · {project?.customerName}</span>
+            </div>
+          </div>
+          <div className="flex gap-1.5 flex-shrink-0">
+            {canEdit&&!editing&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>setEditing(true)}><Icon name="edit" size={13}/></Btn>}
+            {editing&&<><Btn size="sm" onClick={saveTask}>Save</Btn><Btn size="sm" variant="secondary" onClick={()=>setEditing(false)}>Cancel</Btn></>}
+            <button onClick={onClose} className={`p-1.5 rounded-lg ${tc(dark,"text-slate-400 hover:bg-slate-700","text-slate-400 hover:bg-slate-100")}`}><Icon name="x" size={16}/></button>
+          </div>
+        </div>
+
+        {/* Status quick-change */}
+        {canEdit&&!editing&&(
+          <div className={`flex gap-1.5 flex-wrap px-5 py-2.5 border-b ${tc(dark,"border-slate-700/50","border-slate-100")}`}>
+            {PM_STATUS.map(s=>(
+              <button key={s} onClick={()=>changeStatus(s)}
+                className="text-xs px-2.5 py-1 rounded-full border transition-colors"
+                style={task.status===s
+                  ? {background:PM_STATUS_HEX[s]+"30",color:PM_STATUS_HEX[s],borderColor:PM_STATUS_HEX[s]+"60",fontWeight:600}
+                  : {borderColor:dark?"#334155":"#e2e8f0",color:dark?"#94a3b8":"#64748b"}}>
+                <span style={{display:"inline-block",width:5,height:5,borderRadius:"50%",background:PM_STATUS_HEX[s],verticalAlign:"middle",marginRight:3}}/>
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Tabs */}
+        <div className={`flex gap-1 px-5 py-2 border-b overflow-x-auto flex-nowrap ${tc(dark,"border-slate-700/50","border-slate-200")}`}>
+          {["overview","subtasks","comments"].map(t=>(
+            <button key={t} onClick={()=>setDrawerTab(t)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap capitalize transition-all ${drawerTab===t?"bg-amber-500 text-slate-900":tc(dark,"text-slate-400 hover:text-white","text-slate-500 hover:text-slate-700")}`}>
+              {t}{t==="subtasks"&&subtasks.length>0&&` (${done}/${subtasks.length})`}
+              {t==="comments"&&comments.length>0&&` (${comments.length})`}
+            </button>
+          ))}
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+
+          {/* ── OVERVIEW TAB ── */}
+          {drawerTab==="overview"&&(
+            <div className="space-y-4">
+              {/* Description */}
+              <div>
+                <p className={`text-xs font-semibold mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>Description</p>
+                {editing ? (
+                  <textarea value={ef.description||""} onChange={e=>setEF(f=>({...f,description:e.target.value}))} rows={3} className={`${inp} resize-none`} placeholder="Task description…"/>
+                ) : (
+                  <p className={`text-sm ${tc(dark,"text-slate-300","text-slate-600")}`}>{task.description||<span className="italic opacity-40">No description</span>}</p>
+                )}
+              </div>
+
+              {/* Details grid */}
+              <div className={`grid grid-cols-2 gap-3 p-4 rounded-xl border ${tc(dark,"bg-slate-800/30 border-slate-700/50","bg-slate-50 border-slate-200")}`}>
+                {/* Assigned To */}
+                <div>
+                  <p className={`text-xs mb-1 ${tc(dark,"text-slate-500","text-slate-400")}`}>Assigned To</p>
+                  {editing ? (
+                    <select value={ef.assignedTo||""} onChange={e=>setEF(f=>({...f,assignedTo:e.target.value}))} className={`w-full text-xs border rounded-lg px-2 py-1 ${tc(dark,"bg-slate-700 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")} focus:outline-none`}>
+                      <option value="">Unassigned</option>
+                      {devTeam.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+                    </select>
+                  ) : (
+                    <p className={`text-sm font-medium ${tc(dark,"text-white","text-slate-800")}`}>{devTeam.find(u=>u.id===task.assignedTo)?.name||"Unassigned"}</p>
+                  )}
+                </div>
+                {/* Priority */}
+                <div>
+                  <p className={`text-xs mb-1 ${tc(dark,"text-slate-500","text-slate-400")}`}>Priority</p>
+                  {editing ? (
+                    <select value={ef.priority} onChange={e=>setEF(f=>({...f,priority:e.target.value}))} className={`w-full text-xs border rounded-lg px-2 py-1 ${tc(dark,"bg-slate-700 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")} focus:outline-none`}>
+                      {PM_PRIORITY.map(p=><option key={p}>{p}</option>)}
+                    </select>
+                  ) : (
+                    <PmBadge label={task.priority} type="priority"/>
+                  )}
+                </div>
+                {/* Start Date */}
+                <div>
+                  <p className={`text-xs mb-1 ${tc(dark,"text-slate-500","text-slate-400")}`}>Start Date</p>
+                  {editing ? (
+                    <input type="date" value={(ef.startDate||"").slice(0,10)} onChange={e=>setEF(f=>({...f,startDate:e.target.value}))} className={`w-full text-xs border rounded-lg px-2 py-1 ${tc(dark,"bg-slate-700 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")} focus:outline-none`}/>
+                  ) : (
+                    <p className={`text-sm font-medium ${tc(dark,"text-white","text-slate-800")}`}>{task.startDate?new Date(task.startDate).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"2-digit"}):"—"}</p>
+                  )}
+                </div>
+                {/* Due Date */}
+                <div>
+                  <p className={`text-xs mb-1 ${tc(dark,"text-slate-500","text-slate-400")}`}>Due Date</p>
+                  {editing ? (
+                    <input type="date" value={(ef.dueDate||"").slice(0,10)} onChange={e=>setEF(f=>({...f,dueDate:e.target.value}))} className={`w-full text-xs border rounded-lg px-2 py-1 ${tc(dark,"bg-slate-700 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")} focus:outline-none`}/>
+                  ) : (
+                    <p className={`text-sm font-medium ${overdue?tc(dark,"text-red-400","text-red-600"):tc(dark,"text-white","text-slate-800")}`}>{task.dueDate?new Date(task.dueDate).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"2-digit"}):"—"}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Subtask progress */}
+              {subtasks.length>0&&(
+                <div>
+                  <p className={`text-xs font-semibold mb-2 ${tc(dark,"text-slate-400","text-slate-500")}`}>Subtask Progress — {done}/{subtasks.length}</p>
+                  <ProgressBar done={done} total={subtasks.length} size="md"/>
+                </div>
+              )}
+
+              {/* Collaborators */}
+              <div>
+                <p className={`text-xs font-semibold mb-2 ${tc(dark,"text-slate-400","text-slate-500")}`}>Collaborators</p>
+                <div className="flex flex-wrap gap-2">
+                  {(task.collaborators||[]).map(uid=>{
+                    const u=devTeam.find(x=>x.id===uid);
+                    return u?(
+                      <div key={uid} className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-full border ${tc(dark,"border-slate-700 bg-slate-800 text-slate-300","border-slate-200 bg-white text-slate-600")}`}>
+                        <span className={`w-4 h-4 rounded-full flex items-center justify-center text-white font-bold ${tc(dark,"bg-slate-600","bg-amber-500")}`} style={{fontSize:8}}>{u.name.charAt(0)}</span>
+                        {u.name}
+                        {canEdit&&<button onClick={()=>setPmTasks(ts=>ts.map(t=>t.id===task.id?{...t,collaborators:(t.collaborators||[]).filter(id=>id!==uid)}:t))} className="text-red-400 ml-0.5">×</button>}
+                      </div>
+                    ):null;
+                  })}
+                  {canEdit&&(
+                    <select onChange={e=>{
+                      if(!e.target.value) return;
+                      if((task.collaborators||[]).includes(e.target.value)) return;
+                      setPmTasks(ts=>ts.map(t=>t.id===task.id?{...t,collaborators:[...(t.collaborators||[]),e.target.value]}:t));
+                      e.target.value="";
+                    }} className={`text-xs border rounded-full px-2 py-1 focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-slate-300","bg-white border-slate-300 text-slate-600")}`}>
+                      <option value="">+ Add collaborator</option>
+                      {devTeam.filter(u=>u.id!==task.assignedTo&&!(task.collaborators||[]).includes(u.id)).map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+                    </select>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── SUBTASKS TAB ── */}
+          {drawerTab==="subtasks"&&(
+            <div>
+              <div className="space-y-1.5 mb-4">
+                {subtasks.length===0&&<p className={`text-sm text-center py-6 ${tc(dark,"text-slate-500","text-slate-400")}`}>No subtasks yet.</p>}
+                {subtasks.map(s=>(
+                  <div key={s.id} className={`flex items-start gap-2.5 p-3 border rounded-xl transition-colors ${s.status==="Completed"?tc(dark,"border-emerald-500/20 bg-emerald-500/5","border-emerald-200 bg-emerald-50"):tc(dark,"border-slate-700/50 bg-slate-800/20","border-slate-200 bg-white")}`}>
+                    <input type="checkbox" checked={s.status==="Completed"} onChange={()=>canEdit&&toggleSubtask(s.id)}
+                      className="w-4 h-4 accent-amber-500 mt-0.5 flex-shrink-0 cursor-pointer" disabled={!canEdit}/>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm font-medium ${s.status==="Completed"?tc(dark,"line-through text-slate-500","line-through text-slate-400"):tc(dark,"text-white","text-slate-800")}`}>{s.name}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>{devTeam.find(u=>u.id===s.assignedTo)?.name||"—"}</span>
+                        {s.dueDate&&<span className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>· Due {new Date(s.dueDate).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}</span>}
+                      </div>
+                    </div>
+                    {canEdit&&<button onClick={()=>setPmSubtasks(ss=>ss.filter(x=>x.id!==s.id))} className={`text-xs ${tc(dark,"text-slate-600 hover:text-red-400","text-slate-300 hover:text-red-500")}`}><Icon name="trash" size={12}/></button>}
+                  </div>
+                ))}
+              </div>
+              {canEdit&&(
+                <div className="flex gap-2">
+                  <input value={newSubtask} onChange={e=>setNewSubtask(e.target.value)} placeholder="Add subtask…"
+                    onKeyDown={e=>e.key==="Enter"&&addSubtask()}
+                    className={`flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white placeholder-slate-500 focus:border-amber-400","bg-white border-slate-300 text-slate-800 focus:border-amber-500")}`}/>
+                  <Btn size="sm" onClick={addSubtask}><Icon name="plus" size={13}/>Add</Btn>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── COMMENTS TAB ── */}
+          {drawerTab==="comments"&&(
+            <div>
+              <div className="space-y-3 mb-4">
+                {comments.length===0&&<p className={`text-sm text-center py-6 ${tc(dark,"text-slate-500","text-slate-400")}`}>No comments yet.</p>}
+                {comments.map(c=>{
+                  const author=users.find(u=>u.id===c.createdBy);
+                  return (
+                    <div key={c.id} className={`flex gap-2.5`}>
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0 ${tc(dark,"bg-slate-600","bg-amber-500")}`} style={{fontSize:10}}>{author?.name.charAt(0)||"?"}</div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className={`text-xs font-semibold ${tc(dark,"text-white","text-slate-800")}`}>{author?.name||"Unknown"}</span>
+                          <span className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>{new Date(c.createdAt).toLocaleString("en-IN",{dateStyle:"short",timeStyle:"short"})}</span>
+                        </div>
+                        <div className={`text-sm p-2.5 rounded-xl ${tc(dark,"bg-slate-800/60 text-slate-300","bg-slate-100 text-slate-700")}`}>{c.text}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex gap-2">
+                <textarea value={newComment} onChange={e=>setNewComment(e.target.value)} rows={2} placeholder="Add a comment…"
+                  className={`flex-1 border rounded-xl px-3 py-2 text-sm focus:outline-none resize-none ${tc(dark,"bg-slate-800 border-slate-600 text-white placeholder-slate-500 focus:border-amber-400","bg-white border-slate-300 text-slate-800 focus:border-amber-500")}`}/>
+                <Btn size="sm" onClick={addComment} disabled={!newComment.trim()}>Post</Btn>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── PM TASK CARD ──────────────────────────────────────────────
+const PmTaskCard = ({task, pmSubtasks, users, currentUser, developer, onClick, onDelete, canManage, isDragging}) => {
+  const {dark}=useTheme();
+  const subtasks=pmSubtasks.filter(s=>s.taskId===task.id);
+  const done=subtasks.filter(s=>s.status==="Completed").length;
+  const assignee=users.find(u=>u.id===task.assignedTo);
+  const overdue=task.dueDate&&new Date(task.dueDate)<new Date()&&task.status!=="Completed";
+  return (
+    <div onClick={onClick}
+      className={`border rounded-xl p-3 mb-2 cursor-pointer select-none transition-all hover:shadow-lg ${isDragging?"opacity-30":""}
+        ${overdue?tc(dark,"border-red-500/40 bg-red-500/5","border-red-200 bg-red-50"):tc(dark,"border-slate-700/50 bg-[#0c1929]","border-slate-200 bg-white shadow-sm")}`}>
+      <div className="flex items-start justify-between gap-2 mb-1.5">
+        <div className="flex flex-wrap gap-1">
+          <PmBadge label={task.priority} type="priority"/>
+          <PmBadge label={task.status}/>
+        </div>
+        {canManage&&<button onClick={e=>{e.stopPropagation();onDelete();}} className={`p-0.5 rounded ${tc(dark,"text-slate-600 hover:text-red-400","text-slate-300 hover:text-red-500")}`}><Icon name="trash" size={12}/></button>}
+      </div>
+      <p className={`text-sm font-semibold mb-1.5 leading-tight ${tc(dark,"text-white","text-slate-800")}`}>{task.name}</p>
+      {task.description&&<p className={`text-xs mb-2 line-clamp-2 ${tc(dark,"text-slate-400","text-slate-500")}`}>{task.description}</p>}
+      {subtasks.length>0&&(
+        <div className="mb-2">
+          <ProgressBar done={done} total={subtasks.length}/>
+          <p className={`text-xs mt-0.5 ${tc(dark,"text-slate-500","text-slate-400")}`}>{done}/{subtasks.length} subtasks</p>
+        </div>
+      )}
+      <div className="flex items-center justify-between">
+        {assignee ? (
+          <div className="flex items-center gap-1.5">
+            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-white font-bold ${tc(dark,"bg-slate-600","bg-amber-500")}`} style={{fontSize:8}}>{assignee.name.charAt(0)}</div>
+            <span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{assignee.name.split(" ")[0]}</span>
+          </div>
+        ) : <span/>}
+        {task.dueDate&&<span className={`text-xs font-mono ${overdue?tc(dark,"text-red-400","text-red-600"):tc(dark,"text-slate-500","text-slate-400")}`}>{overdue?"⚠ ":""}{new Date(task.dueDate).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}</span>}
+      </div>
+    </div>
+  );
+};
+
+// ── PM CATEGORY COLUMN ────────────────────────────────────────
+const PmCategoryColumn = ({cat, tasks, pmSubtasks, users, currentUser, developer, setPmTasks, setPmSubtasks, setPmComments, pmComments, projects, pmCategories, onTaskClick, onDeleteCat, onRenameRequest, catDragId, setCatDragId, catDragOver, setCatDragOver, onCatDrop, canManage}) => {
+  const {dark}=useTheme();
+  const toast=useToast();
+  const [collapsed,setCollapsed]=useState(false);
+  const [addingTask,setAddingTask]=useState(false);
+  const [newTaskName,setNewTaskName]=useState("");
+  const [taskDragId,setTaskDragId]=useState(null);
+  const [taskDragOver,setTaskDragOver]=useState(null);
+  const done=tasks.filter(t=>t.status==="Completed").length;
+
+  const addTask=()=>{
+    if(!newTaskName.trim()) return;
+    const t={id:`pmt${Date.now()}`,projectId:cat.projectId,categoryId:cat.id,name:newTaskName.trim(),description:"",assignedTo:currentUser.id,createdBy:currentUser.id,priority:"Medium",status:"To Do",startDate:"",dueDate:"",completedAt:null,isDelayed:false,isDelayedCompleted:false,collaborators:[],createdAt:new Date().toISOString(),developerId:cat.developerId};
+    setPmTasks(ts=>[...ts,t]);
+    setNewTaskName(""); setAddingTask(false);
+    toast.show({message:`Task "${t.name}" added.`});
+  };
+  const deleteTask=(id)=>{
+    setPmTasks(ts=>ts.filter(t=>t.id!==id));
+    setPmSubtasks(ss=>ss.filter(s=>s.taskId!==id));
+    setPmComments(cs=>cs.filter(c=>c.entityId!==id));
+  };
+
+  const handleTaskDrop=(toId)=>{
+    if(!taskDragId||taskDragId===toId) return;
+    const arr=[...tasks];
+    const fi=arr.findIndex(t=>t.id===taskDragId);
+    const ti=arr.findIndex(t=>t.id===toId);
+    if(fi<0||ti<0) return;
+    const [moved]=arr.splice(fi,1);
+    arr.splice(ti,0,moved);
+    setPmTasks(ts=>{
+      const others=ts.filter(t=>t.categoryId!==cat.id);
+      return [...others,...arr];
+    });
+    setTaskDragId(null); setTaskDragOver(null);
+  };
+
+  return (
+    <div className="flex-shrink-0 w-72 sm:w-80" style={{scrollSnapAlign:"start"}}
+      draggable onDragStart={()=>setCatDragId(cat.id)} onDragOver={e=>{e.preventDefault();setCatDragOver(cat.id);}}
+      onDrop={e=>{e.preventDefault();onCatDrop(cat.id);}} onDragEnd={()=>{setCatDragId(null);setCatDragOver(null);}}>
+      {/* Category header */}
+      <div className={`rounded-xl p-3 mb-2 border-l-4 transition-all ${catDragOver===cat.id?"scale-105":""}
+        ${tc(dark,"bg-slate-800/60 border-slate-700","bg-white border-slate-200 shadow-sm")}`}
+        style={{borderLeftColor:PM_STATUS_HEX["In Progress"]}}>
+        <div className="flex items-center gap-2">
+          <button onClick={()=>setCollapsed(c=>!c)} className={`p-0.5 rounded ${tc(dark,"text-slate-400 hover:text-white","text-slate-500 hover:text-slate-700")}`}>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" style={{transform:collapsed?"rotate(-90deg)":"rotate(0deg)",transition:"transform 200ms"}}>
+              <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
+            </svg>
+          </button>
+          <div className="flex-1 min-w-0">
+            <p className={`text-sm font-bold truncate ${tc(dark,"text-white","text-slate-800")}`}>{cat.name}</p>
+            <p className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>{done}/{tasks.length} done</p>
+          </div>
+          <div className="flex gap-1 flex-shrink-0">
+            {canManage&&<button onClick={()=>onRenameRequest(cat)} className={`p-1 rounded ${tc(dark,"text-slate-500 hover:text-white hover:bg-slate-700","text-slate-400 hover:text-slate-700 hover:bg-slate-100")}`}><Icon name="edit" size={12}/></button>}
+            {canManage&&<button onClick={()=>onDeleteCat(cat.id)} className={`p-1 rounded ${tc(dark,"text-slate-500 hover:text-red-400 hover:bg-slate-700","text-slate-400 hover:text-red-500 hover:bg-red-50")}`}><Icon name="trash" size={12}/></button>}
+          </div>
+        </div>
+      </div>
+
+      {/* Tasks */}
+      {!collapsed&&(
+        <div style={{maxHeight:520,overflowY:"auto",scrollbarWidth:"thin"}}>
+          {tasks.map(t=>(
+            <div key={t.id} draggable
+              onDragStart={e=>{e.stopPropagation();setTaskDragId(t.id);}}
+              onDragOver={e=>{e.preventDefault();e.stopPropagation();setTaskDragOver(t.id);}}
+              onDrop={e=>{e.preventDefault();e.stopPropagation();handleTaskDrop(t.id);}}
+              onDragEnd={()=>{setTaskDragId(null);setTaskDragOver(null);}}
+              style={{opacity:taskDragId===t.id?0.3:1,outline:taskDragOver===t.id?"2px dashed #f59e0b":"none",borderRadius:12,transition:"outline 100ms"}}>
+              <PmTaskCard task={t} pmSubtasks={pmSubtasks} users={users} currentUser={currentUser} developer={developer}
+                onClick={()=>onTaskClick(t)} onDelete={()=>deleteTask(t.id)} canManage={canManage} isDragging={taskDragId===t.id}/>
+            </div>
+          ))}
+          {tasks.length===0&&(
+            <div className={`rounded-xl p-4 text-center text-xs border-2 border-dashed ${tc(dark,"border-slate-800 text-slate-700","border-slate-200 text-slate-400")}`}>No tasks yet</div>
+          )}
+
+          {/* Add task inline */}
+          {canManage&&(addingTask ? (
+            <div className="mt-1">
+              <input autoFocus value={newTaskName} onChange={e=>setNewTaskName(e.target.value)} placeholder="Task name…"
+                onKeyDown={e=>{if(e.key==="Enter")addTask();if(e.key==="Escape")setAddingTask(false);}}
+                className={`w-full border rounded-xl px-3 py-2 text-sm focus:outline-none mb-1.5 ${tc(dark,"bg-slate-800 border-slate-600 text-white placeholder-slate-500 focus:border-amber-400","bg-white border-slate-300 text-slate-800 focus:border-amber-500")}`}/>
+              <div className="flex gap-1.5">
+                <Btn size="sm" onClick={addTask} disabled={!newTaskName.trim()}>Add Task</Btn>
+                <Btn size="sm" variant="secondary" onClick={()=>setAddingTask(false)}>Cancel</Btn>
+              </div>
+            </div>
+          ) : (
+            <button onClick={()=>setAddingTask(true)} className={`w-full text-xs py-2 rounded-xl border-2 border-dashed transition-colors mt-1 ${tc(dark,"border-slate-800 text-slate-600 hover:border-amber-500/40 hover:text-amber-400","border-slate-200 text-slate-400 hover:border-amber-400 hover:text-amber-600")}`}>
+              + Add Task
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── PROJECT MANAGEMENT TAB ────────────────────────────────────
+const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, setPmTasks, pmSubtasks, setPmSubtasks, pmComments, setPmComments, pmTemplates, setPmTemplates, users, currentUser, developer, projects}) => {
+  const {dark}=useTheme();
+  const toast=useToast();
+  const [selectedTask,setSelectedTask]=useState(null);
+  const [addingCat,setAddingCat]=useState(false);
+  const [newCatName,setNewCatName]=useState("");
+  const [renamingCat,setRenamingCat]=useState(null);
+  const [catDragId,setCatDragId]=useState(null);
+  const [catDragOver,setCatDragOver]=useState(null);
+  const [filterStatus,setFilterStatus]=useState("all");
+  const [filterUser,setFilterUser]=useState("all");
+  const [showTemplateModal,setShowTemplateModal]=useState(false);
+  const [newTplName,setNewTplName]=useState("");
+
+  const canManage=currentUser.role===ROLES.DEV_ADMIN||currentUser.role===ROLES.SUPER_ADMIN;
+  const cats=pmCategories.filter(c=>c.projectId===project.id&&c.developerId===currentUser.developerId).sort((a,b)=>a.orderIndex-b.orderIndex);
+  const devTeam=users.filter(u=>u.developerId===currentUser.developerId&&u.active);
+
+  const getTasksForCat=(catId)=>pmTasks
+    .filter(t=>t.categoryId===catId)
+    .map(applyPmDelay)
+    .filter(t=>{
+      if(filterStatus!=="all"&&t.status!==filterStatus) return false;
+      if(filterUser!=="all"&&t.assignedTo!==filterUser) return false;
+      return true;
+    });
+
+  const allProjTasks=pmTasks.filter(t=>t.projectId===project.id).map(applyPmDelay);
+  const totalDone=allProjTasks.filter(t=>t.status==="Completed").length;
+  const totalDelayed=allProjTasks.filter(t=>t.isDelayed||t.status==="Delayed").length;
+
+  const addCategory=()=>{
+    if(!newCatName.trim()) return;
+    const c={id:`pmc${Date.now()}`,projectId:project.id,name:newCatName.trim(),description:"",orderIndex:cats.length,createdAt:new Date().toISOString(),developerId:currentUser.developerId};
+    setPmCategories(cs=>[...cs,c]);
+    setNewCatName(""); setAddingCat(false);
+    toast.show({message:`Category "${c.name}" added.`});
+  };
+  const deleteCategory=(id)=>{
+    const taskIds=pmTasks.filter(t=>t.categoryId===id).map(t=>t.id);
+    setPmCategories(cs=>cs.filter(c=>c.id!==id));
+    setPmTasks(ts=>ts.filter(t=>t.categoryId!==id));
+    setPmSubtasks(ss=>ss.filter(s=>!taskIds.includes(s.taskId)));
+    setPmComments(cs=>cs.filter(c=>!taskIds.includes(c.entityId)));
+    toast.show({message:"Category deleted."});
+  };
+  const renameCategory=(id,name)=>{
+    setPmCategories(cs=>cs.map(c=>c.id===id?{...c,name}:c));
+    setRenamingCat(null);
+  };
+  const handleCatDrop=(toId)=>{
+    if(!catDragId||catDragId===toId) return;
+    const arr=[...cats];
+    const fi=arr.findIndex(c=>c.id===catDragId);
+    const ti=arr.findIndex(c=>c.id===toId);
+    if(fi<0||ti<0) return;
+    const [moved]=arr.splice(fi,1);
+    arr.splice(ti,0,moved);
+    setPmCategories(cs=>{
+      const others=cs.filter(c=>c.projectId!==project.id||c.developerId!==currentUser.developerId);
+      return [...others,...arr.map((c,i)=>({...c,orderIndex:i}))];
+    });
+    setCatDragId(null); setCatDragOver(null);
+  };
+
+  const saveAsTemplate=()=>{
+    if(!newTplName.trim()) return;
+    const tpl={id:`pmtpl${Date.now()}`,name:newTplName.trim(),createdBy:currentUser.id,createdAt:new Date().toISOString(),developerId:currentUser.developerId,
+      categories:cats.map(c=>({...c,templateId:undefined})),
+      tasks:allProjTasks.map(t=>({...t,templateId:undefined,assignedTo:"",projectId:""})),
+    };
+    setPmTemplates(ts=>[...ts,tpl]);
+    setNewTplName(""); setShowTemplateModal(false);
+    toast.show({message:`Template "${tpl.name}" saved.`});
+  };
+
+  const applyTemplate=(tpl)=>{
+    const catMap={};
+    tpl.categories.forEach(c=>{
+      const newId=`pmc${Date.now()}${Math.random().toString(36).slice(2,6)}`;
+      catMap[c.id]=newId;
+      setPmCategories(cs=>[...cs,{...c,id:newId,projectId:project.id,developerId:currentUser.developerId,createdAt:new Date().toISOString()}]);
+    });
+    tpl.tasks.forEach(t=>{
+      const newId=`pmt${Date.now()}${Math.random().toString(36).slice(2,6)}`;
+      setPmTasks(ts=>[...ts,{...t,id:newId,projectId:project.id,categoryId:catMap[t.categoryId]||t.categoryId,assignedTo:currentUser.id,createdBy:currentUser.id,developerId:currentUser.developerId,createdAt:new Date().toISOString(),status:"To Do",completedAt:null,isDelayed:false,isDelayedCompleted:false}]);
+    });
+    toast.show({message:`Template "${tpl.name}" applied.`});
+  };
+
+  const inp=`border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`;
+
+  return (
+    <div>
+      {/* Header + stats */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+        <div>
+          <h3 className={`font-bold text-sm ${tc(dark,"text-white","text-slate-800")}`}>Project Management</h3>
+          <p className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{allProjTasks.length} tasks · {totalDone} done · {totalDelayed} delayed</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {canManage&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>setShowTemplateModal(true)}>Templates</Btn>}
+          {canManage&&<Btn size="sm" onClick={()=>setAddingCat(true)}><Icon name="plus" size={14}/>Add Category</Btn>}
+        </div>
+      </div>
+
+      {/* Progress summary */}
+      {allProjTasks.length>0&&(
+        <div className={`border rounded-xl p-4 mb-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+          <div className="flex items-center justify-between mb-2">
+            <span className={`text-xs font-medium ${tc(dark,"text-slate-400","text-slate-500")}`}>Overall Progress</span>
+            <span className={`text-xs font-bold ${tc(dark,"text-white","text-slate-800")}`}>{Math.round(totalDone/allProjTasks.length*100)}%</span>
+          </div>
+          <ProgressBar done={totalDone} total={allProjTasks.length} size="md"/>
+          <div className="flex gap-4 mt-3 flex-wrap">
+            {[["Completed",totalDone,"#10b981"],["In Progress",allProjTasks.filter(t=>t.status==="In Progress").length,"#0ea5e9"],["Delayed",totalDelayed,"#ef4444"],["To Do",allProjTasks.filter(t=>t.status==="To Do").length,"#64748b"]].map(([l,v,c])=>(
+              <div key={l} className="flex items-center gap-1.5">
+                <span style={{width:8,height:8,borderRadius:"50%",background:c,flexShrink:0,display:"inline-block"}}/>
+                <span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{l}: <strong className={tc(dark,"text-white","text-slate-700")}>{v}</strong></span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-2 mb-4">
+        <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} className={inp}>
+          <option value="all">All Status</option>
+          {PM_STATUS.map(s=><option key={s}>{s}</option>)}
+        </select>
+        <select value={filterUser} onChange={e=>setFilterUser(e.target.value)} className={inp}>
+          <option value="all">All Users</option>
+          {devTeam.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+        </select>
+        {(filterStatus!=="all"||filterUser!=="all")&&<button onClick={()=>{setFilterStatus("all");setFilterUser("all");}} className="text-xs text-amber-400 underline">Clear</button>}
+      </div>
+
+      {/* Add category inline */}
+      {addingCat&&(
+        <div className={`border rounded-xl p-3 mb-4 ${tc(dark,"border-slate-700 bg-slate-800/40","border-slate-200 bg-slate-50")}`}>
+          <p className={`text-xs font-medium mb-2 ${tc(dark,"text-slate-400","text-slate-500")}`}>New Category</p>
+          <div className="flex gap-2">
+            <input autoFocus value={newCatName} onChange={e=>setNewCatName(e.target.value)} placeholder="e.g. Installation, Testing…"
+              onKeyDown={e=>{if(e.key==="Enter")addCategory();if(e.key==="Escape")setAddingCat(false);}}
+              className={`flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none ${tc(dark,"bg-slate-700 border-slate-600 text-white placeholder-slate-500","bg-white border-slate-300 text-slate-800")}`}/>
+            <Btn size="sm" onClick={addCategory} disabled={!newCatName.trim()}>Add</Btn>
+            <Btn size="sm" variant="secondary" onClick={()=>setAddingCat(false)}>Cancel</Btn>
+          </div>
+        </div>
+      )}
+
+      {/* Rename category modal */}
+      {renamingCat&&(
+        <Modal title="Rename Category" onClose={()=>setRenamingCat(null)}>
+          <input autoFocus defaultValue={renamingCat.name}
+            onKeyDown={e=>{if(e.key==="Enter")renameCategory(renamingCat.id,e.target.value);}}
+            id="rename-cat-input"
+            className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none mb-4 ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`}/>
+          <div className="flex gap-2 justify-end">
+            <Btn variant="secondary" size="sm" onClick={()=>setRenamingCat(null)}>Cancel</Btn>
+            <Btn size="sm" onClick={()=>{const el=document.getElementById("rename-cat-input");if(el)renameCategory(renamingCat.id,el.value);}}>Save</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {/* Kanban board */}
+      {cats.length===0 ? (
+        <div className={`text-center py-16 border-2 border-dashed rounded-xl ${tc(dark,"border-slate-800 text-slate-600","border-slate-200 text-slate-400")}`}>
+          <div className="text-4xl mb-3">📋</div>
+          <p className="text-sm font-medium mb-1">No categories yet</p>
+          <p className="text-xs opacity-60 mb-3">Add your first category to organise tasks by phase or workflow</p>
+          {canManage&&<Btn size="sm" onClick={()=>setAddingCat(true)}><Icon name="plus" size={14}/>Add Category</Btn>}
+        </div>
+      ) : (
+        <div className="flex gap-4 overflow-x-auto pb-4" style={{scrollSnapType:"x mandatory"}}>
+          {cats.map(cat=>(
+            <PmCategoryColumn key={cat.id} cat={cat}
+              tasks={getTasksForCat(cat.id)}
+              pmSubtasks={pmSubtasks} users={users} currentUser={currentUser} developer={developer}
+              setPmTasks={setPmTasks} setPmSubtasks={setPmSubtasks} setPmComments={setPmComments}
+              pmComments={pmComments} projects={projects} pmCategories={pmCategories}
+              onTaskClick={setSelectedTask} onDeleteCat={deleteCategory}
+              onRenameRequest={setRenamingCat}
+              catDragId={catDragId} setCatDragId={setCatDragId}
+              catDragOver={catDragOver} setCatDragOver={setCatDragOver}
+              onCatDrop={handleCatDrop} canManage={canManage}/>
+          ))}
+        </div>
+      )}
+
+      {/* Template modal */}
+      {showTemplateModal&&(
+        <Modal title="Templates" onClose={()=>setShowTemplateModal(false)} wide>
+          <div className="mb-4">
+            <p className={`text-xs font-semibold mb-2 ${tc(dark,"text-slate-400","text-slate-500")}`}>Save current board as template</p>
+            <div className="flex gap-2">
+              <input value={newTplName} onChange={e=>setNewTplName(e.target.value)} placeholder="Template name…"
+                className={`flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white placeholder-slate-500","bg-white border-slate-300 text-slate-800")}`}/>
+              <Btn size="sm" onClick={saveAsTemplate} disabled={!newTplName.trim()}>Save</Btn>
+            </div>
+          </div>
+          <div>
+            <p className={`text-xs font-semibold mb-2 ${tc(dark,"text-slate-400","text-slate-500")}`}>Apply a template to this project</p>
+            {pmTemplates.filter(t=>t.developerId===currentUser.developerId).length===0 ? (
+              <p className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>No templates saved yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {pmTemplates.filter(t=>t.developerId===currentUser.developerId).map(tpl=>(
+                  <div key={tpl.id} className={`flex items-center justify-between p-3 border rounded-xl ${tc(dark,"border-slate-700 bg-slate-800/40","border-slate-200 bg-slate-50")}`}>
+                    <div>
+                      <p className={`text-sm font-medium ${tc(dark,"text-white","text-slate-800")}`}>{tpl.name}</p>
+                      <p className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>{tpl.categories.length} categories · {tpl.tasks.length} tasks</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Btn size="sm" onClick={()=>{applyTemplate(tpl);setShowTemplateModal(false);}}>Apply</Btn>
+                      <Btn size="sm" variant="ghost" onClick={()=>setPmTemplates(ts=>ts.filter(t=>t.id!==tpl.id))} className="text-red-400"><Icon name="trash" size={12}/></Btn>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+
+      {/* Task detail drawer */}
+      {selectedTask&&(
+        <PmTaskDrawer
+          task={selectedTask} pmTasks={pmTasks} setPmTasks={setPmTasks}
+          pmSubtasks={pmSubtasks} setPmSubtasks={setPmSubtasks}
+          pmComments={pmComments} setPmComments={setPmComments}
+          users={users} currentUser={currentUser} developer={developer}
+          projects={projects} pmCategories={pmCategories}
+          onClose={()=>setSelectedTask(null)}/>
+      )}
+    </div>
+  );
+};
+
+// ── PM GLOBAL DASHBOARD ───────────────────────────────────────
+const PmDashboard = ({pmCategories, pmTasks, pmSubtasks, pmComments, projects, users, currentUser, developer}) => {
+  const {dark}=useTheme();
+  const [filterProject,setFilterProject]=useState("all");
+  const [filterStatus,setFilterStatus]=useState("all");
+  const [filterUser,setFilterUser]=useState("all");
+  const [dateFrom,setDateFrom]=useState("");
+  const [dateTo,setDateTo]=useState("");
+
+  const devProjects=projects.filter(p=>p.developerId===currentUser.developerId);
+  const devTeam=users.filter(u=>u.developerId===currentUser.developerId&&u.active);
+  const allTasks=pmTasks.filter(t=>t.developerId===currentUser.developerId).map(applyPmDelay);
+
+  const filtered=allTasks.filter(t=>{
+    if(filterProject!=="all"&&t.projectId!==filterProject) return false;
+    if(filterStatus!=="all"&&t.status!==filterStatus) return false;
+    if(filterUser!=="all"&&t.assignedTo!==filterUser) return false;
+    if(dateFrom&&t.dueDate&&t.dueDate<dateFrom) return false;
+    if(dateTo&&t.dueDate&&t.dueDate>dateTo) return false;
+    return true;
+  });
+
+  const now=new Date();
+  const stats={
+    total:allTasks.length, completed:allTasks.filter(t=>t.status==="Completed").length,
+    inProgress:allTasks.filter(t=>t.status==="In Progress").length, delayed:allTasks.filter(t=>t.isDelayed||t.status==="Delayed").length,
+    overdue:allTasks.filter(t=>t.dueDate&&new Date(t.dueDate)<now&&t.status!=="Completed").length,
+  };
+
+  const projectStats=devProjects.map(p=>{
+    const pts=allTasks.filter(t=>t.projectId===p.id);
+    const done=pts.filter(t=>t.status==="Completed").length;
+    const delayed=pts.filter(t=>t.isDelayed||t.status==="Delayed").length;
+    const pct=pts.length?Math.round(done/pts.length*100):0;
+    const status=pts.length===0?"No Tasks":done===pts.length&&pts.length>0?"Completed":delayed>0?"Delayed":pct>=75?"On Track":"In Progress";
+    return {project:p, total:pts.length, done, delayed, pct, status};
+  }).filter(r=>r.total>0);
+
+  const statusBadge=(s)=>{
+    const map={"Completed":"bg-emerald-500/20 text-emerald-400","Delayed":"bg-red-500/20 text-red-400","On Track":"bg-sky-500/20 text-sky-400","In Progress":"bg-amber-500/20 text-amber-400","No Tasks":"bg-slate-500/20 text-slate-400"};
+    return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${map[s]||"bg-slate-500/20 text-slate-400"}`}>{s}</span>;
+  };
+
+  const inp=`border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`;
+
+  return (
+    <div>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-5">
+        <div>
+          <h1 className={`text-xl font-bold ${tc(dark,"text-white","text-slate-800")}`}>Project Management</h1>
+          <p className={`text-sm ${tc(dark,"text-slate-400","text-slate-500")}`}>Across {devProjects.length} projects</p>
+        </div>
+      </div>
+
+      {/* Top metrics */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-5">
+        {[
+          {label:"Total Tasks",val:stats.total,color:"slate"},
+          {label:"Completed",val:stats.completed,color:"emerald"},
+          {label:"In Progress",val:stats.inProgress,color:"sky"},
+          {label:"Delayed",val:stats.delayed,color:"red"},
+          {label:"Overdue",val:stats.overdue,color:"orange"},
+        ].map(s=>(
+          <div key={s.label} className={`border rounded-xl p-3 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+            <p className={`text-xs mb-0.5 ${tc(dark,"text-slate-400","text-slate-500")}`}>{s.label}</p>
+            <p className={`text-2xl font-black text-${s.color}-${dark?"400":"600"}`}>{s.val}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div className={`border rounded-xl p-3 mb-5 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+        <div className="flex flex-wrap gap-2 items-center">
+          <select value={filterProject} onChange={e=>setFilterProject(e.target.value)} className={inp}>
+            <option value="all">All Projects</option>
+            {devProjects.map(p=><option key={p.id} value={p.id}>{p.customerName}</option>)}
+          </select>
+          <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} className={inp}>
+            <option value="all">All Status</option>
+            {PM_STATUS.map(s=><option key={s}>{s}</option>)}
+          </select>
+          <select value={filterUser} onChange={e=>setFilterUser(e.target.value)} className={inp}>
+            <option value="all">All Users</option>
+            {devTeam.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+          <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} className={`${inp} min-w-[130px]`}/>
+          <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)} className={`${inp} min-w-[130px]`}/>
+          {(filterProject!=="all"||filterStatus!=="all"||filterUser!=="all"||dateFrom||dateTo)&&(
+            <button onClick={()=>{setFilterProject("all");setFilterStatus("all");setFilterUser("all");setDateFrom("");setDateTo("");}} className="text-xs text-amber-400 underline">Clear</button>
+          )}
+        </div>
+      </div>
+
+      {/* Project table */}
+      <div className={`border rounded-xl overflow-hidden mb-5 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+        <div className="flex items-center justify-between px-4 py-3 border-b" style={{borderColor:dark?"rgba(51,65,85,0.5)":"#e2e8f0"}}>
+          <h3 className={`font-bold text-sm ${tc(dark,"text-white","text-slate-800")}`}>Project Summary</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm" style={{minWidth:640}}>
+            <thead>
+              <tr className={`border-b ${tc(dark,"border-slate-700 bg-slate-800/30","border-slate-200 bg-slate-50")}`}>
+                {["Project","Total","Done","Delayed","Progress","Status"].map(h=>(
+                  <th key={h} className={`text-left px-4 py-3 text-xs font-medium ${tc(dark,"text-slate-400","text-slate-500")}`}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {projectStats.length===0&&<tr><td colSpan={6} className={`text-center py-8 text-sm ${tc(dark,"text-slate-500","text-slate-400")}`}>No project tasks yet</td></tr>}
+              {projectStats.map(r=>(
+                <tr key={r.project.id} className={`border-b ${tc(dark,"border-slate-700/30 hover:bg-slate-800/30","border-slate-100 hover:bg-slate-50")}`}>
+                  <td className={`px-4 py-3 font-medium ${tc(dark,"text-white","text-slate-800")}`}>{r.project.customerName}</td>
+                  <td className={`px-4 py-3 ${tc(dark,"text-slate-300","text-slate-600")}`}>{r.total}</td>
+                  <td className="px-4 py-3 text-emerald-400 font-medium">{r.done}</td>
+                  <td className="px-4 py-3 text-red-400 font-medium">{r.delayed}</td>
+                  <td className="px-4 py-3" style={{minWidth:120}}>
+                    <div className="flex items-center gap-2">
+                      <div className={`flex-1 h-2 rounded-full ${tc(dark,"bg-slate-700","bg-slate-200")}`}>
+                        <div className="h-full rounded-full bg-amber-500" style={{width:`${r.pct}%`}}/>
+                      </div>
+                      <span className={`text-xs w-8 text-right ${tc(dark,"text-slate-400","text-slate-500")}`}>{r.pct}%</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">{statusBadge(r.status)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Filtered task list */}
+      <div className={`border rounded-xl overflow-hidden ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+        <div className={`px-4 py-3 border-b ${tc(dark,"border-slate-700/50","border-slate-200")}`}>
+          <h3 className={`font-bold text-sm ${tc(dark,"text-white","text-slate-800")}`}>Tasks ({filtered.length})</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm" style={{minWidth:700}}>
+            <thead>
+              <tr className={`border-b ${tc(dark,"border-slate-700 bg-slate-800/30","border-slate-200 bg-slate-50")}`}>
+                {["Task","Category","Project","Priority","Status","Assigned","Due"].map(h=>(
+                  <th key={h} className={`text-left px-4 py-3 text-xs font-medium ${tc(dark,"text-slate-400","text-slate-500")}`}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length===0&&<tr><td colSpan={7} className={`text-center py-8 text-sm ${tc(dark,"text-slate-500","text-slate-400")}`}>No tasks match filters</td></tr>}
+              {filtered.slice(0,50).map(t=>{
+                const proj=devProjects.find(p=>p.id===t.projectId);
+                const cat=pmCategories.find(c=>c.id===t.categoryId);
+                const user=devTeam.find(u=>u.id===t.assignedTo);
+                const overdue=t.dueDate&&new Date(t.dueDate)<now&&t.status!=="Completed";
+                return (
+                  <tr key={t.id} className={`border-b ${tc(dark,"border-slate-700/30 hover:bg-slate-800/30","border-slate-100 hover:bg-slate-50")}`}>
+                    <td className={`px-4 py-2.5 font-medium ${tc(dark,"text-white","text-slate-800")}`}>{t.name}</td>
+                    <td className={`px-4 py-2.5 text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{cat?.name||"—"}</td>
+                    <td className={`px-4 py-2.5 text-xs ${tc(dark,"text-amber-400","text-amber-600")}`}>{proj?.customerName||"—"}</td>
+                    <td className="px-4 py-2.5"><PmBadge label={t.priority} type="priority"/></td>
+                    <td className="px-4 py-2.5"><PmBadge label={t.status}/></td>
+                    <td className={`px-4 py-2.5 text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{user?.name||"—"}</td>
+                    <td className={`px-4 py-2.5 text-xs ${overdue?tc(dark,"text-red-400","text-red-600"):tc(dark,"text-slate-400","text-slate-500")}`}>{t.dueDate?new Date(t.dueDate).toLocaleDateString("en-IN",{day:"numeric",month:"short"}):"—"}{overdue&&" ⚠"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
 // ── REMINDER NOTIFICATION SYSTEM ─────────────────────────────
 // Request browser notification permission once
 const requestNotifPermission = () => {
@@ -6775,6 +7693,11 @@ export default function SolarProApp() {
   const [invoices,    setInvoices]    = useLS("sp_invoices",     SEED_INVOICES);
   const [deletedItems, setDeletedItems] = useLS("sp_deleted", []);
   const [tasks, setTasks] = useLS("sp_tasks", SEED_TASKS);
+  const [pmCategories, setPmCategories] = useLS("sp_pm_categories", SEED_PM_CATEGORIES);
+  const [pmTasks, setPmTasks]           = useLS("sp_pm_tasks",       SEED_PM_TASKS);
+  const [pmSubtasks, setPmSubtasks]     = useLS("sp_pm_subtasks",    SEED_PM_SUBTASKS);
+  const [pmComments, setPmComments]     = useLS("sp_pm_comments",    SEED_PM_COMMENTS);
+  const [pmTemplates, setPmTemplates]   = useLS("sp_pm_templates",   SEED_PM_TEMPLATES);
   useReminderChecker(tasks); // fires browser + in-app notifications
 
   // ── NAV STATE with browser history ──
@@ -6842,6 +7765,11 @@ export default function SolarProApp() {
           setProjects={setProjects} users={users}
           tasks={tasks} setTasks={setTasks}
           projects={projects}
+          pmCategories={pmCategories} setPmCategories={setPmCategories}
+          pmTasks={pmTasks} setPmTasks={setPmTasks}
+          pmSubtasks={pmSubtasks} setPmSubtasks={setPmSubtasks}
+          pmComments={pmComments} setPmComments={setPmComments}
+          pmTemplates={pmTemplates} setPmTemplates={setPmTemplates}
         />
       );
     }
@@ -6888,6 +7816,9 @@ export default function SolarProApp() {
         return <ProjectsPage projects={projects} setProjects={setProjects} currentUser={currentUser} setCurrentProjectId={(id)=>pushNav("projects",id)} developer={developer} users={users} setDevelopers={setDevelopers} deletedItems={deletedItems} setDeletedItems={setDeletedItems}/>;
 
       // ── DEV ADMIN: SETTINGS ──
+      case "pm-dashboard":
+        return <PmDashboard pmCategories={pmCategories} pmTasks={pmTasks} pmSubtasks={pmSubtasks} pmComments={pmComments} projects={projects} users={users} currentUser={currentUser} developer={developer}/>;
+
       case "settings":
         return developer ? <SettingsPage developer={developer} setDevelopers={setDevelopers} dateFormat={dateFormat} setDateFormat={setDateFormat} projects={projects} setProjects={setProjects} deletedItems={deletedItems} setDeletedItems={setDeletedItems}/> : null;
 
