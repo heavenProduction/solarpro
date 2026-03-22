@@ -2570,6 +2570,9 @@ const SettingsPage = (props) => {
         const allStatuses = getTaskStatuses(developer);
 
         const saveOrder = (newOrder) => {
+          // Update both: the local form state (so global Save doesn't overwrite it)
+          // AND the developers array directly (for immediate reflection everywhere)
+          setForm(f=>({...f, taskStatusOrder:newOrder}));
           props.setDevelopers(ds=>ds.map(d=>d.id===developer.id?{...d,taskStatusOrder:newOrder}:d));
         };
         const addTaskStatus = () => {
@@ -2577,16 +2580,19 @@ const SettingsPage = (props) => {
           const exists = allStatuses.some(s=>s.name.toLowerCase()===newSName.trim().toLowerCase());
           if (exists) return;
           const ns = {id:`ts${Date.now()}`,name:newSName.trim(),hex:laneHex(newSColor),isBuiltin:false};
-          // Append to unified order
+          // Append to unified order (saveOrder syncs both form and developers)
           saveOrder([...allStatuses, ns]);
-          // Also persist in taskStatuses array for backward compat
+          // Also persist in legacy taskStatuses array — sync form AND developers
+          setForm(f=>({...f, taskStatuses:[...(f.taskStatuses||[]),{id:ns.id,name:ns.name,hex:ns.hex}]}));
           props.setDevelopers(ds=>ds.map(d=>d.id===developer.id?{...d,taskStatuses:[...(d.taskStatuses||[]),{id:ns.id,name:ns.name,hex:ns.hex}]}:d));
           setNewSName("");
         };
         const removeStatus = (id, name) => {
           if (TASK_STATUS_BUILTIN.includes(name)) return; // never delete built-ins
           const newOrder = allStatuses.filter(s=>s.id!==id);
-          saveOrder(newOrder);
+          saveOrder(newOrder); // saveOrder already calls setForm + setDevelopers
+          // Also remove from legacy taskStatuses array and sync form
+          setForm(f=>({...f, taskStatuses:(f.taskStatuses||[]).filter(s=>s.id!==id)}));
           props.setDevelopers(ds=>ds.map(d=>d.id===developer.id?{...d,taskStatuses:(d.taskStatuses||[]).filter(s=>s.id!==id)}:d));
         };
         const handleDrop = (targetId) => {
@@ -6772,6 +6778,8 @@ export default function SolarProApp() {
   useReminderChecker(tasks); // fires browser + in-app notifications
 
   // ── NAV STATE with browser history ──
+  const [mobileOpen, setMobileOpen] = useState(false);
+
   const parseHash = () => {
     const h = window.location.hash.replace("#","");
     const parts = h.split("/");
@@ -6898,7 +6906,6 @@ export default function SolarProApp() {
 
   const bg = dark ? "bg-[#060c18] text-white" : "bg-slate-50 text-slate-800";
 
-  const [mobileOpen, setMobileOpen] = useState(false);
   const { dark: _dark } = themeCtx;
 
   return (
