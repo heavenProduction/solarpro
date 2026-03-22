@@ -2515,6 +2515,92 @@ const SettingsPage = (props) => {
         </div>
       )}
 
+      {settingsTab==="projects"&&(()=>{
+        const myTemplates=(props.pmTemplates||[]).filter(t=>t.developerId===developer.id);
+        const [viewTpl,setViewTpl]=useState(null);
+        const [editTpl,setEditTpl]=useState(null);
+        const [editTplName,setEditTplName]=useState("");
+        if(myTemplates.length===0) return null;
+        return (
+          <div className={`border rounded-xl p-4 mt-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+            <h3 className={`font-bold text-sm mb-1 ${tc(dark,"text-white","text-slate-800")}`}>PM Templates</h3>
+            <p className={`text-xs mb-4 ${tc(dark,"text-slate-400","text-slate-500")}`}>Saved workflow templates from your Project Management boards</p>
+            <div className="space-y-3">
+              {myTemplates.map(tpl=>{
+                const catCount=(tpl.categories||[]).length;
+                const taskCount=(tpl.tasks||[]).length;
+                const isEdit=editTpl?.id===tpl.id;
+                return (
+                  <div key={tpl.id} className={`border rounded-xl ${tc(dark,"border-slate-700 bg-slate-800/30","border-slate-200 bg-slate-50")}`}>
+                    <div className="flex items-center gap-3 p-3">
+                      <div className="flex-1 min-w-0">
+                        {isEdit ? (
+                          <input value={editTplName} onChange={e=>setEditTplName(e.target.value)}
+                            className={`w-full text-sm font-bold bg-transparent border-b pb-0.5 focus:outline-none ${tc(dark,"border-amber-400 text-white","border-amber-500 text-slate-800")}`}/>
+                        ) : (
+                          <p className={`text-sm font-bold ${tc(dark,"text-white","text-slate-800")}`}>{tpl.name}</p>
+                        )}
+                        <div className="flex items-center gap-3 mt-0.5">
+                          <span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{catCount} categor{catCount===1?"y":"ies"}</span>
+                          <span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>·</span>
+                          <span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{taskCount} task{taskCount===1?"":"s"}</span>
+                          <span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>·</span>
+                          <span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>Created {new Date(tpl.createdAt).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"2-digit"})}</span>
+                        </div>
+                      </div>
+                      <div className="flex gap-1.5 flex-shrink-0">
+                        <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>setViewTpl(viewTpl?.id===tpl.id?null:tpl)}>
+                          <Icon name="eye" size={12}/>{viewTpl?.id===tpl.id?"Hide":"View"}
+                        </Btn>
+                        {isEdit ? (
+                          <>
+                            <Btn size="sm" onClick={()=>{props.setPmTemplates(ts=>ts.map(t=>t.id===tpl.id?{...t,name:editTplName}:t));setEditTpl(null);}}>Save</Btn>
+                            <Btn size="sm" variant="secondary" onClick={()=>setEditTpl(null)}>Cancel</Btn>
+                          </>
+                        ) : (
+                          <Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>{setEditTpl(tpl);setEditTplName(tpl.name);}}>
+                            <Icon name="edit" size={12}/>Edit
+                          </Btn>
+                        )}
+                        <Btn size="sm" variant="ghost" className="text-red-400" onClick={()=>props.setPmTemplates(ts=>ts.filter(t=>t.id!==tpl.id))}>
+                          <Icon name="trash" size={12}/>
+                        </Btn>
+                      </div>
+                    </div>
+                    {/* Expanded view */}
+                    {viewTpl?.id===tpl.id&&(
+                      <div className={`border-t px-3 pb-3 ${tc(dark,"border-slate-700","border-slate-200")}`}>
+                        <div className="pt-3 space-y-2">
+                          {(tpl.categories||[]).map(cat=>{
+                            const catTasks=(tpl.tasks||[]).filter(t=>t.categoryId===cat.id);
+                            return (
+                              <div key={cat.id} className={`rounded-lg p-2.5 border ${tc(dark,"border-slate-700 bg-slate-800/20","border-slate-200 bg-white")}`}>
+                                <p className={`text-xs font-bold mb-1.5 ${tc(dark,"text-amber-400","text-amber-600")}`}>{cat.name} <span className={`font-normal ${tc(dark,"text-slate-400","text-slate-500")}`}>({catTasks.length} task{catTasks.length===1?"":"s"})</span></p>
+                                {catTasks.length>0 && (
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {catTasks.map(t=>(
+                                      <span key={t.id} className={`text-xs px-2 py-0.5 rounded-full border ${tc(dark,"bg-slate-700/60 border-slate-600 text-slate-300","bg-slate-100 border-slate-200 text-slate-600")}`}>
+                                        {t.name}
+                                        {t.isMilestone&&<span className="ml-1 text-amber-400">◆</span>}
+                                        {t.isCritical&&<span className="ml-1 text-red-400">⚡</span>}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
       {settingsTab==="lanes"&&(
         <div className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
           <h3 className={`font-bold mb-3 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Project Lanes / Status</h3>
@@ -7360,6 +7446,7 @@ const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, 
   const {dark}=useTheme();
   const toast=useToast();
   const [selectedTask,setSelectedTask]=useState(null);
+  const [pmView,setPmView]=useState("kanban"); // kanban|list|gantt|reports
   const [showCatModal,setShowCatModal]=useState(false);
   const [catForm,setCatForm]=useState({name:"",assignedTo:currentUser.id});
   const [renamingCat,setRenamingCat]=useState(null);
@@ -7462,17 +7549,32 @@ const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, 
   return (
     <div>
       {/* Header + stats */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-        <div>
-          <h3 className={`font-bold text-sm ${tc(dark,"text-white","text-slate-800")}`}>Project Management</h3>
-          <p className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{allProjTasks.length} tasks · {totalDone} done · {totalDelayed} delayed</p>
+      {/* View toolbar — matching screenshot */}
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <div className={`flex gap-0.5 rounded-xl p-1 border ${tc(dark,"bg-slate-800 border-slate-700","bg-white border-slate-200 shadow-sm")}`}>
+          {[
+            ["kanban","Kanban",<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="1" width="5" height="5" rx="1"/><rect x="1" y="8" width="5" height="7" rx="1"/><rect x="7" y="1" width="5" height="9" rx="1"/><rect x="7" y="12" width="5" height="3" rx="1"/></svg>],
+            ["list","List",<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="2" width="14" height="2" rx="1"/><rect x="1" y="7" width="14" height="2" rx="1"/><rect x="1" y="12" width="14" height="2" rx="1"/></svg>],
+            ["gantt","Gantt",<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="1" y="3" width="6" height="2.5" rx="1"/><rect x="5" y="7" width="8" height="2.5" rx="1"/><rect x="2" y="11" width="5" height="2.5" rx="1"/></svg>],
+            ["reports","Reports",<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 12V8M7 12V5M11 12V2"/><rect x="1" y="12" width="13" height="2" rx="0.5" fill="currentColor" stroke="none"/></svg>],
+          ].map(([v,label,icon])=>(
+            <button key={v} onClick={()=>setPmView(v)} title={label}
+              className={`p-2 rounded-lg transition-all ${pmView===v?tc(dark,"bg-slate-700 text-white","bg-slate-800 text-white"):tc(dark,"text-slate-400 hover:text-white hover:bg-slate-700/50","text-slate-400 hover:text-slate-700 hover:bg-slate-100")}`}>
+              {icon}
+            </button>
+          ))}
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex-1"/>
+        <div className="flex gap-2 flex-wrap">
           {canManage&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>setShowTemplateModal(true)}>Templates</Btn>}
-          {canManage&&projectCollection&&<Btn size="sm" onClick={()=>setShowCatModal(true)} style={{backgroundColor:"#0d9488",borderColor:"#0d9488"}} className="text-white"><Icon name="plus" size={14}/>Add Category</Btn>}
-          {canManage&&!projectCollection&&<Btn size="sm" onClick={()=>setShowCollectionModal(true)} style={{backgroundColor:"#0d9488",borderColor:"#0d9488"}} className="text-white"><Icon name="plus" size={14}/>Create Collection</Btn>}
+          {canManage&&projectCollection&&<Btn size="sm" onClick={()=>setShowCatModal(true)} style={{backgroundColor:"#0d9488"}} className="text-white"><Icon name="plus" size={14}/>Add Category</Btn>}
+          {canManage&&!projectCollection&&<Btn size="sm" onClick={()=>setShowCollectionModal(true)} style={{backgroundColor:"#0d9488"}} className="text-white"><Icon name="plus" size={14}/>Create Collection</Btn>}
         </div>
       </div>
+      {pmView!=="reports"&&(
+      <div>
+        <p className={`text-xs mb-4 ${tc(dark,"text-slate-400","text-slate-500")}`}>{allProjTasks.length} tasks · {totalDone} done · {totalDelayed} delayed</p>
+      </div>)}
 
       {/* Progress summary */}
       {allProjTasks.length>0&&(
@@ -7579,6 +7681,18 @@ const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, 
         </Modal>
       )}
 
+      {/* VIEW SWITCHER */}
+      {pmView==="reports"&&(
+        <PmReports cats={cats} pmTasks={pmTasks} pmSubtasks={pmSubtasks} pmComments={pmComments} users={users} currentUser={currentUser} project={project}/>
+      )}
+      {pmView==="gantt"&&projectCollection&&(
+        <PmGanttChart cats={cats} getTasksForCat={getTasksForCat} pmSubtasks={pmSubtasks} users={users} currentUser={currentUser}/>
+      )}
+      {pmView==="list"&&projectCollection&&(
+        <PmListView cats={cats} getTasksForCat={getTasksForCat} pmSubtasks={pmSubtasks} users={users} currentUser={currentUser} onTaskClick={setSelectedTask} canManage={canManage} setPmTasks={setPmTasks} setPmSubtasks={setPmSubtasks} setPmComments={setPmComments} setPmCategories={setPmCategories} pmCategories={pmCategories} project={project}/>
+      )}
+      {(pmView==="kanban"||!projectCollection)&&(
+      <div>
       {/* Kanban board — gated on collection existing */}
       {!projectCollection ? (
         <div className={`text-center py-20 border-2 border-dashed rounded-2xl ${tc(dark,"border-slate-800 text-slate-600","border-slate-200 text-slate-400")}`}>
@@ -7618,6 +7732,7 @@ const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, 
         </div>
       )}
 
+      </div>)}
       {/* Template modal */}
       {showTemplateModal&&(
         <Modal title="Templates" onClose={()=>setShowTemplateModal(false)} wide>
@@ -7667,6 +7782,631 @@ const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, 
   );
 };
 
+
+// ═══════════════════════════════════════════════════════════════
+// PM LIST VIEW — matches screenshot 1 (table layout)
+// ═══════════════════════════════════════════════════════════════
+const PmListView = ({cats, getTasksForCat, pmSubtasks, users, currentUser, onTaskClick, canManage, setPmTasks, setPmSubtasks, setPmComments, setPmCategories, pmCategories, project}) => {
+  const {dark}=useTheme();
+  const [collapsedCats,setCollapsedCats]=useState({});
+  const toggle=(id)=>setCollapsedCats(s=>({...s,[id]:!s[id]}));
+  const devTeam=users.filter(u=>u.developerId===currentUser.developerId&&u.active);
+
+  const catProgress=(catId)=>{
+    const tasks=getTasksForCat(catId);
+    const done=tasks.filter(t=>t.status==="Completed").length;
+    return tasks.length ? Math.round(done/tasks.length*100) : 0;
+  };
+  const catDateRange=(catId)=>{
+    const tasks=getTasksForCat(catId);
+    const starts=tasks.map(t=>t.startDate).filter(Boolean).sort();
+    const ends=tasks.map(t=>t.dueDate).filter(Boolean).sort();
+    const fmt=(d)=>d?new Date(d).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"2-digit"}):"";
+    if(!starts.length&&!ends.length) return "—";
+    if(starts[0]&&ends[ends.length-1]) return `${fmt(starts[0])} - ${fmt(ends[ends.length-1])}`;
+    return fmt(starts[0]||ends[0]);
+  };
+
+  const statusColor=(s)=>{
+    const m={"Completed":"bg-emerald-500 text-white","In Progress":"bg-emerald-400 text-white","To Do":"bg-slate-200 text-slate-600","On Hold":"bg-amber-400 text-white","Delayed":"bg-red-500 text-white","Cancelled":"bg-slate-400 text-white"};
+    return m[s]||"bg-slate-200 text-slate-600";
+  };
+
+  const taskPct=(t)=>{
+    const subs=pmSubtasks.filter(s=>s.taskId===t.id);
+    if(!subs.length) return t.status==="Completed"?100:0;
+    return Math.round(subs.filter(s=>s.status==="Completed").length/subs.length*100);
+  };
+
+  return (
+    <div className={`border rounded-xl overflow-hidden ${tc(dark,"border-slate-700/50","border-slate-200 shadow-sm")}`}>
+      {cats.map(cat=>{
+        const tasks=getTasksForCat(cat.id);
+        const pct=catProgress(cat.id);
+        const collapsed=collapsedCats[cat.id];
+        const assigneeIds=[...new Set(tasks.map(t=>t.assignedTo).filter(Boolean))];
+        const assignees=assigneeIds.map(id=>devTeam.find(u=>u.id===id)).filter(Boolean);
+
+        return (
+          <div key={cat.id}>
+            {/* Category row */}
+            <div className={`flex items-center gap-3 px-4 py-3 border-b cursor-pointer ${tc(dark,"border-slate-700/50 bg-slate-800/60 hover:bg-slate-800","border-slate-200 bg-slate-50 hover:bg-slate-100")}`}
+              onClick={()=>toggle(cat.id)}>
+              <button className={`w-5 h-5 flex items-center justify-center ${tc(dark,"text-slate-400","text-slate-500")}`}>
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style={{transform:collapsed?"rotate(-90deg)":"rotate(0deg)",transition:"200ms"}}>
+                  <path d="M2 3l3 4 3-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
+                </svg>
+              </button>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className={`text-sm font-bold ${tc(dark,"text-white","text-slate-800")}`}>{cat.name}</span>
+                  <span className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>{tasks.length} Task(s)</span>
+                </div>
+              </div>
+              {/* Assignee avatars */}
+              <div className="flex -space-x-1">
+                {assignees.slice(0,4).map(u=>(
+                  <div key={u.id} title={u.name} className={`w-7 h-7 rounded-full flex items-center justify-center text-white font-bold border-2 text-xs ${tc(dark,"bg-teal-600 border-slate-800","bg-teal-500 border-white")}`}>
+                    {u.name.slice(0,2).toUpperCase()}
+                  </div>
+                ))}
+              </div>
+              {/* Progress ring */}
+              <div className="relative w-10 h-10 flex-shrink-0">
+                <svg viewBox="0 0 36 36" className="w-10 h-10 -rotate-90">
+                  <circle cx="18" cy="18" r="15.9" fill="none" stroke={dark?"#334155":"#e2e8f0"} strokeWidth="3"/>
+                  <circle cx="18" cy="18" r="15.9" fill="none" stroke="#10b981" strokeWidth="3"
+                    strokeDasharray={`${pct} ${100-pct}`} strokeLinecap="round"/>
+                </svg>
+                <span className={`absolute inset-0 flex items-center justify-center text-xs font-bold ${tc(dark,"text-white","text-slate-800")}`}>{pct}%</span>
+              </div>
+              {/* Date range */}
+              <span className={`text-xs flex-shrink-0 hidden sm:block ${tc(dark,"text-slate-400","text-slate-500")}`}>{catDateRange(cat.id)}</span>
+              {/* Actions */}
+              {canManage&&(
+                <div className="flex gap-1 flex-shrink-0" onClick={e=>e.stopPropagation()}>
+                  <button className={`p-1.5 rounded-lg ${tc(dark,"text-slate-400 hover:bg-slate-700 hover:text-blue-400","text-slate-400 hover:bg-slate-100 hover:text-blue-600")}`} title="Duplicate">
+                    <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="4" y="4" width="8" height="8" rx="1"/><path d="M2 10V3a1 1 0 0 1 1-1h7"/></svg>
+                  </button>
+                  <button className={`p-1.5 rounded-lg ${tc(dark,"text-slate-400 hover:bg-slate-700 hover:text-emerald-400","text-slate-400 hover:bg-slate-100 hover:text-emerald-600")}`} title="Edit">
+                    <Icon name="edit" size={13}/>
+                  </button>
+                  <button onClick={()=>{const ids=tasks.map(t=>t.id);setPmCategories(cs=>cs.filter(c=>c.id!==cat.id));setPmTasks(ts=>ts.filter(t=>t.categoryId!==cat.id));setPmSubtasks(ss=>ss.filter(s=>!ids.includes(s.taskId)));setPmComments(cs=>cs.filter(c=>!ids.includes(c.entityId)));}}
+                    className={`p-1.5 rounded-lg ${tc(dark,"text-slate-400 hover:bg-slate-700 hover:text-red-400","text-slate-400 hover:bg-slate-100 hover:text-red-500")}`} title="Delete">
+                    <Icon name="trash" size={13}/>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Task rows */}
+            {!collapsed&&(
+              <div>
+                {/* Header */}
+                <div className={`grid px-4 py-2 text-xs font-bold uppercase tracking-wider border-b ${tc(dark,"border-slate-700/50 bg-slate-800/20 text-slate-500","border-slate-100 bg-slate-50 text-slate-400")}`}
+                  style={{gridTemplateColumns:"2fr 80px 160px 160px 200px 40px"}}>
+                  <span>NAME</span><span className="text-center">%</span><span>STATUS</span><span>ASSIGNED</span><span>DUE DATES</span><span/>
+                </div>
+                {tasks.map(t=>{
+                  const assignee=devTeam.find(u=>u.id===t.assignedTo);
+                  const pct=taskPct(t);
+                  const startFmt=t.startDate?new Date(t.startDate).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"2-digit"}):"";
+                  const dueFmt=t.dueDate?new Date(t.dueDate).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"2-digit"}):"";
+                  const dateStr=startFmt&&dueFmt?`${startFmt} - ${dueFmt}`:dueFmt||startFmt||"—";
+                  const overdue=t.dueDate&&new Date(t.dueDate)<new Date()&&t.status!=="Completed";
+                  const subs=pmSubtasks.filter(s=>s.taskId===t.id);
+                  return (
+                    <div key={t.id} className={`grid items-center px-4 py-2.5 border-b cursor-pointer transition-colors ${tc(dark,"border-slate-700/30 hover:bg-slate-800/30","border-slate-100 hover:bg-slate-50")}`}
+                      style={{gridTemplateColumns:"2fr 80px 160px 160px 200px 40px"}}
+                      onClick={()=>onTaskClick(t)}>
+                      {/* Name */}
+                      <div className="flex items-center gap-2 min-w-0">
+                        {t.isMilestone&&<span className="text-amber-400 flex-shrink-0">◆</span>}
+                        {t.isCritical&&<span className="text-red-400 flex-shrink-0">⚡</span>}
+                        {!t.isMilestone&&!t.isCritical&&<span className={`w-3 h-3 rounded-full flex-shrink-0 ${t.status==="Completed"?"bg-emerald-500":"border-2 "+tc(dark,"border-slate-600","border-slate-300")}`}/>}
+                        <span className={`text-sm truncate ${tc(dark,"text-white","text-slate-800")}`}>{t.name}</span>
+                        {subs.length>0&&<span className={`text-xs ml-1 flex-shrink-0 ${tc(dark,"text-slate-500","text-slate-400")}`}>{subs.filter(s=>s.status==="Completed").length}/{subs.length}</span>}
+                      </div>
+                      {/* % progress */}
+                      <div className="flex items-center justify-center">
+                        <div className="relative w-9 h-9">
+                          <svg viewBox="0 0 36 36" className="w-9 h-9 -rotate-90">
+                            <circle cx="18" cy="18" r="15.9" fill="none" stroke={dark?"#334155":"#e2e8f0"} strokeWidth="3"/>
+                            <circle cx="18" cy="18" r="15.9" fill="none" stroke="#10b981" strokeWidth="3"
+                              strokeDasharray={`${pct} ${100-pct}`} strokeLinecap="round"/>
+                          </svg>
+                          <span className={`absolute inset-0 flex items-center justify-center font-bold ${tc(dark,"text-white","text-slate-700")}`} style={{fontSize:8}}>{pct}%</span>
+                        </div>
+                      </div>
+                      {/* Status */}
+                      <div>
+                        <span className={`text-xs px-3 py-1 rounded font-medium ${statusColor(t.status)}`}>{t.status}</span>
+                      </div>
+                      {/* Assigned */}
+                      <div className="flex items-center gap-1.5">
+                        {assignee&&<>
+                          <div className={`w-5 h-5 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0 ${tc(dark,"bg-slate-600","bg-teal-500")}`} style={{fontSize:8}}>{assignee.name.slice(0,2).toUpperCase()}</div>
+                          <span className={`text-xs truncate ${tc(dark,"text-slate-300","text-slate-600")}`}>{assignee.name}</span>
+                        </>}
+                      </div>
+                      {/* Due dates */}
+                      <span className={`text-xs italic ${overdue?tc(dark,"text-red-400","text-red-600"):tc(dark,"text-slate-400","text-slate-500")}`}>{dateStr}</span>
+                      {/* Delete */}
+                      {canManage&&(
+                        <button onClick={e=>{e.stopPropagation();setPmTasks(ts=>ts.filter(x=>x.id!==t.id));setPmSubtasks(ss=>ss.filter(s=>s.taskId!==t.id));setPmComments(cs=>cs.filter(c=>c.entityId!==t.id));}}
+                          className={`p-1 rounded ${tc(dark,"text-slate-600 hover:text-red-400","text-slate-300 hover:text-red-500")}`}>
+                          <Icon name="trash" size={12}/>
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+                {/* Create task row */}
+                {canManage&&(
+                  <div className={`px-4 py-2 border-b ${tc(dark,"border-slate-700/30","border-slate-100")}`}>
+                    <button className={`flex items-center gap-2 text-sm font-medium ${tc(dark,"text-teal-400 hover:text-teal-300","text-teal-600 hover:text-teal-500")}`}
+                      onClick={()=>{}}>
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><circle cx="7" cy="7" r="6"/><path d="M7 4v6M4 7h6"/></svg>
+                      CREATE A TASK
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════
+// PM GANTT CHART — matches screenshot 2
+// ═══════════════════════════════════════════════════════════════
+const PmGanttChart = ({cats, getTasksForCat, pmSubtasks, users, currentUser}) => {
+  const {dark}=useTheme();
+  const [ganttView,setGanttView]=useState("week"); // day|week|month
+  const [startDate,setStartDate]=useState(()=>{const d=new Date();d.setDate(d.getDate()-3);return d;});
+  const [collapsedCats,setCollapsedCats]=useState({});
+  const toggle=(id)=>setCollapsedCats(s=>({...s,[id]:!s[id]}));
+
+  const COLS = ganttView==="day" ? 14 : ganttView==="week" ? 10 : 31;
+  const COL_W = ganttView==="day" ? 56 : ganttView==="week" ? 52 : 36;
+
+  const getDays=()=>{
+    const days=[];
+    for(let i=0;i<COLS;i++){
+      const d=new Date(startDate);
+      d.setDate(startDate.getDate()+i);
+      days.push(d);
+    }
+    return days;
+  };
+  const days=getDays();
+  const today=new Date().toISOString().slice(0,10);
+  const todayIdx=days.findIndex(d=>d.toISOString().slice(0,10)===today);
+
+  const getBarStyle=(startD,endD)=>{
+    if(!startD&&!endD) return null;
+    const s=startD?new Date(startD):new Date(endD);
+    const e=endD?new Date(endD):new Date(startD);
+    const sDay=days.findIndex(d=>d.toISOString().slice(0,10)===s.toISOString().slice(0,10));
+    const eDay=days.findIndex(d=>d.toISOString().slice(0,10)===e.toISOString().slice(0,10));
+    if(sDay<0&&eDay<0) return null;
+    const left=Math.max(0,sDay)*COL_W;
+    const width=Math.max(COL_W/2,(Math.min(eDay,days.length-1)-Math.max(sDay,0)+1)*COL_W);
+    return {left,width};
+  };
+
+  const navigate=(dir)=>{
+    const d=new Date(startDate);
+    d.setDate(d.getDate()+dir*(ganttView==="month"?14:ganttView==="week"?7:3));
+    setStartDate(d);
+  };
+
+  const ROW_H=40;
+  const LEFT_W=280;
+
+  return (
+    <div>
+      {/* Controls */}
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <button className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border ${tc(dark,"border-teal-500/50 text-teal-400 hover:bg-teal-500/10","border-teal-500 text-teal-600 hover:bg-teal-50")}`}
+          onClick={()=>setCollapsedCats({})}>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 4l4 4 4-4"/></svg>
+          COLLAPSE CATEGORIES
+        </button>
+        <div className="flex-1"/>
+        <div className={`flex rounded-lg border overflow-hidden ${tc(dark,"border-slate-700","border-slate-200")}`}>
+          {["Day","Week","Month"].map(v=>(
+            <button key={v} onClick={()=>setGanttView(v.toLowerCase())}
+              className={`px-4 py-1.5 text-xs font-medium transition-colors ${ganttView===v.toLowerCase()?tc(dark,"bg-slate-700 text-white","bg-teal-50 text-teal-700"):tc(dark,"text-slate-400 hover:bg-slate-800","text-slate-500 hover:bg-slate-50")}`}>{v}</button>
+          ))}
+        </div>
+      </div>
+
+      <div className={`border rounded-xl overflow-hidden ${tc(dark,"border-slate-700","border-slate-200 shadow-sm")}`}>
+        {/* Header row */}
+        <div className="flex" style={{minWidth:LEFT_W+COLS*COL_W}}>
+          <div style={{width:LEFT_W,flexShrink:0}} className={`border-b border-r py-2 px-3 ${tc(dark,"border-slate-700 bg-slate-800","border-slate-200 bg-slate-50")}`}/>
+          <div className="flex-1 overflow-hidden border-b relative" style={{borderColor:dark?"#334155":"#e2e8f0"}}>
+            <div className="flex">
+              {days.map((d,i)=>{
+                const isToday=d.toISOString().slice(0,10)===today;
+                return (
+                  <div key={i} style={{width:COL_W,flexShrink:0}} className={`text-center border-r py-1.5 ${isToday?tc(dark,"bg-amber-500/10","bg-amber-50"):tc(dark,"bg-slate-800","bg-slate-50")} ${tc(dark,"border-slate-700","border-slate-200")}`}>
+                    <div className={`text-xs font-medium ${isToday?tc(dark,"text-amber-400","text-amber-600"):tc(dark,"text-slate-400","text-slate-500")}`}>{d.getDate()}</div>
+                    {ganttView!=="day"&&<div className={`text-xs ${tc(dark,"text-slate-600","text-slate-400")}`}>{d.toLocaleDateString("en-US",{weekday:"short"}).charAt(0)}</div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Rows */}
+        <div className="overflow-auto" style={{maxHeight:480}}>
+          {cats.map(cat=>{
+            const tasks=getTasksForCat(cat.id);
+            const collapsed=collapsedCats[cat.id];
+            // Category span bar
+            const catStart=tasks.map(t=>t.startDate).filter(Boolean).sort()[0];
+            const catEnd=tasks.map(t=>t.dueDate).filter(Boolean).sort().pop();
+            const catBar=getBarStyle(catStart,catEnd);
+            return (
+              <div key={cat.id}>
+                {/* Category row */}
+                <div className="flex" style={{minWidth:LEFT_W+COLS*COL_W,height:ROW_H}}>
+                  <div style={{width:LEFT_W,flexShrink:0}} className={`flex items-center gap-2 px-3 border-b border-r cursor-pointer ${tc(dark,"border-slate-700 bg-slate-800/60 hover:bg-slate-700/60","border-slate-200 bg-slate-50 hover:bg-slate-100")}`}
+                    onClick={()=>toggle(cat.id)}>
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style={{transform:collapsed?"rotate(-90deg)":"rotate(0deg)",flexShrink:0,transition:"200ms",color:dark?"#94a3b8":"#64748b"}}>
+                      <path d="M2 3l3 4 3-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
+                    </svg>
+                    <span className={`text-xs font-bold uppercase tracking-wider truncate ${tc(dark,"text-slate-200","text-slate-700")}`}>{cat.name}</span>
+                  </div>
+                  <div className="flex-1 border-b relative" style={{borderColor:dark?"#334155":"#e2e8f0",minWidth:COLS*COL_W}}>
+                    {/* Grid lines */}
+                    {days.map((_,i)=>(
+                      <div key={i} className={`absolute top-0 bottom-0 border-r ${tc(dark,"border-slate-700/30","border-slate-100")}`} style={{left:i*COL_W}}/>
+                    ))}
+                    {/* Today line */}
+                    {todayIdx>=0&&<div className="absolute top-0 bottom-0 border-r-2 border-emerald-500 z-10" style={{left:todayIdx*COL_W}}/>}
+                    {/* Category bar */}
+                    {catBar&&(
+                      <div className="absolute top-1/2 -translate-y-1/2 rounded flex items-center justify-center px-2"
+                        style={{left:catBar.left,width:catBar.width,height:24,background:dark?"rgba(100,116,139,0.3)":"rgba(203,213,225,0.5)"}}>
+                        <span className={`text-xs font-medium truncate ${tc(dark,"text-slate-300","text-slate-600")}`}>{cat.name}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Task rows */}
+                {!collapsed&&tasks.map(t=>{
+                  const bar=getBarStyle(t.startDate,t.dueDate);
+                  const isMilestone=t.isMilestone||(t.startDate&&t.dueDate&&t.startDate===t.dueDate);
+                  const isCurrent=t.status==="In Progress"||t.status==="To Do";
+                  const barColor=t.status==="Completed"?"#10b981":t.status==="Delayed"?"#ef4444":isCurrent?"#06b6d4":"#64748b";
+                  return (
+                    <div key={t.id} className="flex" style={{minWidth:LEFT_W+COLS*COL_W,height:ROW_H}}>
+                      <div style={{width:LEFT_W,flexShrink:0,paddingLeft:24}} className={`flex items-center border-b border-r px-3 ${tc(dark,"border-slate-700/50 text-slate-300","border-slate-100 text-slate-600")}`}>
+                        <span className="text-xs truncate">{t.name}</span>
+                      </div>
+                      <div className="flex-1 border-b relative" style={{borderColor:dark?"#334155":"#e2e8f0",minWidth:COLS*COL_W}}>
+                        {days.map((_,i)=>(
+                          <div key={i} className={`absolute top-0 bottom-0 border-r ${tc(dark,"border-slate-700/30","border-slate-100")}`} style={{left:i*COL_W}}/>
+                        ))}
+                        {todayIdx>=0&&<div className="absolute top-0 bottom-0 border-r border-dashed border-emerald-500/60 z-10" style={{left:todayIdx*COL_W}}/>}
+                        {bar&&!isMilestone&&(
+                          <div className="absolute top-1/2 -translate-y-1/2 rounded-full flex items-center justify-center px-2 cursor-pointer hover:opacity-80 transition-opacity"
+                            style={{left:bar.left,width:bar.width,height:22,background:barColor,border:t.status==="To Do"?`2px solid ${barColor}`:"none",backgroundColor:t.status==="To Do"?barColor+"30":barColor}}>
+                            <span className="text-white font-medium truncate" style={{fontSize:10,color:t.status==="To Do"?barColor:"white"}}>{t.name}</span>
+                          </div>
+                        )}
+                        {bar&&isMilestone&&(
+                          <div className="absolute top-1/2 -translate-y-1/2 cursor-pointer"
+                            style={{left:bar.left+(bar.width/2)-8,width:16,height:16,background:"#10b981",transform:"rotate(45deg) translateY(-50%)"}}>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Nav buttons */}
+        <div className={`flex items-center gap-2 px-3 py-2 border-t ${tc(dark,"border-slate-700 bg-slate-800/30","border-slate-200 bg-slate-50")}`}>
+          <button onClick={()=>navigate(-1)} className={`px-3 py-1 rounded text-xs ${tc(dark,"text-slate-400 hover:bg-slate-700","text-slate-500 hover:bg-slate-100")}`}>‹ Prev</button>
+          <button onClick={()=>setStartDate(new Date())} className={`px-3 py-1 rounded text-xs border ${tc(dark,"border-slate-700 text-slate-400 hover:bg-slate-700","border-slate-200 text-slate-500 hover:bg-slate-100")}`}>Today</button>
+          <button onClick={()=>navigate(1)} className={`px-3 py-1 rounded text-xs ${tc(dark,"text-slate-400 hover:bg-slate-700","text-slate-500 hover:bg-slate-100")}`}>Next ›</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════
+// PM REPORTS — matches screenshots 3 & 4
+// ═══════════════════════════════════════════════════════════════
+const PmReports = ({cats, pmTasks, pmSubtasks, pmComments, users, currentUser, project}) => {
+  const {dark}=useTheme();
+  const [reportTab,setReportTab]=useState("summary"); // summary|milestones|forecast|team|documents|messages
+  const [dateRange,setDateRange]=useState("today"); // today|weekly|15days|custom
+  const [customFrom,setCustomFrom]=useState("");
+  const [customTo,setCustomTo]=useState("");
+  const [newMessage,setNewMessage]=useState("");
+  const [messages,setMessages]=useState([]);
+
+  const projTasks=pmTasks.filter(t=>t.projectId===project.id).map(applyPmDelay);
+  const projSubs=pmSubtasks.filter(s=>projTasks.some(t=>t.id===s.taskId));
+  const devTeam=users.filter(u=>u.developerId===currentUser.developerId&&u.active);
+  const now=new Date();
+
+  const filterByDateRange=(tasks)=>{
+    if(dateRange==="today") return tasks.filter(t=>t.dueDate&&t.dueDate.slice(0,10)===now.toISOString().slice(0,10));
+    if(dateRange==="weekly"){const wk=new Date(now);wk.setDate(now.getDate()+7);return tasks.filter(t=>t.dueDate&&new Date(t.dueDate)<=wk);}
+    if(dateRange==="15days"){const d15=new Date(now);d15.setDate(now.getDate()+15);return tasks.filter(t=>t.dueDate&&new Date(t.dueDate)<=d15);}
+    if(dateRange==="custom") return tasks.filter(t=>{if(!t.dueDate) return false;if(customFrom&&t.dueDate<customFrom) return false;if(customTo&&t.dueDate>customTo) return false;return true;});
+    return tasks;
+  };
+
+  const filtered=filterByDateRange(projTasks);
+  const completedTasks=filtered.filter(t=>t.status==="Completed");
+  const inProgTasks=filtered.filter(t=>t.status==="In Progress");
+  const delayedTasks=filtered.filter(t=>t.isDelayed||t.status==="Delayed");
+  const totalPct=projTasks.length?Math.round(projTasks.filter(t=>t.status==="Completed").length/projTasks.length*100):0;
+  const completedSubs=projSubs.filter(s=>s.status==="Completed");
+  const inProgSubs=projSubs.filter(s=>s.status==="In Progress");
+
+  const milestones=projTasks.filter(t=>t.isMilestone);
+
+  // All PM comment attachments across project
+  const allComments=pmComments.filter(c=>projTasks.some(t=>t.id===c.entityId));
+  const allAttachments=allComments.flatMap(c=>(c.attachments||[]).map(a=>({...a,task:projTasks.find(t=>t.id===c.entityId),category:cats.find(cat=>projTasks.find(t=>t.id===c.entityId)?.categoryId===cat.id),sentBy:users.find(u=>u.id===c.createdBy),date:c.createdAt})));
+
+  const teamPerf=devTeam.map(u=>{
+    const myTasks=projTasks.filter(t=>t.assignedTo===u.id);
+    const done=myTasks.filter(t=>t.status==="Completed").length;
+    const delayed=myTasks.filter(t=>t.isDelayed||t.status==="Delayed").length;
+    return {user:u,total:myTasks.length,done,delayed,rate:myTasks.length?Math.round(done/myTasks.length*100):0};
+  }).filter(r=>r.total>0);
+
+  const inp=`border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`;
+
+  return (
+    <div>
+      {/* Sub-tabs */}
+      <div className="flex flex-wrap gap-2 mb-4">
+        {[["summary","Summary"],["milestones","Milestones"],["forecast","Forecast"],["team","Team Performance"],["documents","Documents"],["messages","Messages"]].map(([v,label])=>(
+          <button key={v} onClick={()=>setReportTab(v)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${reportTab===v?"bg-teal-600 border-teal-600 text-white":tc(dark,"border-slate-700 text-slate-400 hover:border-teal-500","border-slate-200 text-slate-500 hover:border-teal-500")}`}>
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style={{color:reportTab===v?"white":dark?"#94a3b8":"#64748b"}}><circle cx="5" cy="5" r="4" stroke="currentColor" strokeWidth="1.5" fill="none"/><circle cx="5" cy="5" r="1.5"/></svg>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Date range filter (not for documents/messages) */}
+      {!["documents","messages"].includes(reportTab)&&(
+        <div className="flex justify-end gap-2 mb-4">
+          <div className={`flex rounded-lg border overflow-hidden ${tc(dark,"border-slate-700","border-slate-200")}`}>
+            {[["today","Today"],["weekly","Weekly"],["15days","15 Days"],["custom","Custom"]].map(([v,label])=>(
+              <button key={v} onClick={()=>setDateRange(v)}
+                className={`px-3 py-1.5 text-xs font-medium transition-colors ${dateRange===v?tc(dark,"bg-teal-600 text-white","bg-teal-600 text-white"):tc(dark,"text-slate-400 hover:bg-slate-800","text-slate-500 hover:bg-slate-50")}`}>{label}</button>
+            ))}
+          </div>
+          {dateRange==="custom"&&(
+            <><input type="date" value={customFrom} onChange={e=>setCustomFrom(e.target.value)} className={inp}/><input type="date" value={customTo} onChange={e=>setCustomTo(e.target.value)} className={inp}/></>
+          )}
+        </div>
+      )}
+
+      {/* SUMMARY TAB */}
+      {reportTab==="summary"&&(
+        <div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+            {[
+              {label:"Total % Completed",val:`${totalPct}%`,big:true},
+              {label:"No. Of Tasks Completed",val:completedTasks.length,sub:`SubTask: ${completedSubs.length}`},
+              {label:"No. Of Tasks In Progress",val:inProgTasks.length,sub:`SubTask: ${inProgSubs.length}`},
+              {label:"No. Of Tasks Delayed",val:delayedTasks.length,sub:`SubTask: ${projSubs.filter(s=>projTasks.find(t=>t.id===s.taskId)?.isDelayed).length}`},
+            ].map((s,i)=>(
+              <div key={i} className={`border rounded-xl p-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+                <p className={`text-3xl font-black mb-1 ${i===0?tc(dark,"text-white","text-slate-800"):tc(dark,"text-white","text-slate-800")}`}>{s.val}</p>
+                <p className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{s.label}</p>
+                {s.sub&&<p className={`text-xs mt-1 ${tc(dark,"text-slate-500","text-slate-400")}`}>{s.sub}</p>}
+              </div>
+            ))}
+          </div>
+          {/* Task table */}
+          <div className={`border rounded-xl overflow-hidden ${tc(dark,"border-slate-700/50 bg-[#0c1929]","border-slate-200 bg-white shadow-sm")}`}>
+            <div className={`grid px-4 py-2.5 text-xs font-medium border-b ${tc(dark,"border-slate-700/50 text-slate-400","border-slate-200 text-slate-500")}`}
+              style={{gridTemplateColumns:"2fr 100px 100px 1fr 120px 30px"}}>
+              <span>Task Name</span><span>Total Progress</span><span>Today's Progress</span><span>Assigned To</span><span>Status</span><span/>
+            </div>
+            {filtered.length===0&&<p className={`text-center py-8 text-sm ${tc(dark,"text-slate-500","text-slate-400")}`}>No tasks in this range.</p>}
+            {filtered.map(t=>{
+              const assignee=devTeam.find(u=>u.id===t.assignedTo);
+              const pct=projTasks.length&&t.status==="Completed"?100:0;
+              return (
+                <div key={t.id} className={`grid items-center px-4 py-3 border-b border-l-4 ${tc(dark,"border-slate-700/30","border-slate-100")}`}
+                  style={{gridTemplateColumns:"2fr 100px 100px 1fr 120px 30px",borderLeftColor:t.status==="Completed"?"#10b981":t.status==="Delayed"?"#ef4444":t.status==="In Progress"?"#0ea5e9":"#94a3b8"}}>
+                  <span className={`text-sm font-medium text-teal-500 cursor-pointer hover:underline`}>{t.name}</span>
+                  <div className="relative w-10 h-10">
+                    <svg viewBox="0 0 36 36" className="w-10 h-10 -rotate-90">
+                      <circle cx="18" cy="18" r="15.9" fill="none" stroke={dark?"#334155":"#e2e8f0"} strokeWidth="3"/>
+                      <circle cx="18" cy="18" r="15.9" fill="none" stroke="#10b981" strokeWidth="3" strokeDasharray={`${pct} ${100-pct}`} strokeLinecap="round"/>
+                    </svg>
+                    <span className="absolute inset-0 flex items-center justify-center font-bold" style={{fontSize:8,color:dark?"white":"#1e293b"}}>{pct}%</span>
+                  </div>
+                  <div className="relative w-10 h-10">
+                    <svg viewBox="0 0 36 36" className="w-10 h-10 -rotate-90">
+                      <circle cx="18" cy="18" r="15.9" fill="none" stroke={dark?"#334155":"#e2e8f0"} strokeWidth="3"/>
+                      <circle cx="18" cy="18" r="15.9" fill="none" stroke="#10b981" strokeWidth="3" strokeDasharray={`0 100`}/>
+                    </svg>
+                    <span className="absolute inset-0 flex items-center justify-center font-bold" style={{fontSize:8,color:dark?"white":"#1e293b"}}>0%</span>
+                  </div>
+                  <span className={`text-xs ${tc(dark,"text-slate-300","text-slate-600")}`}>{assignee?.name||"—"}</span>
+                  <span className={`text-xs px-2.5 py-1 rounded font-medium ${t.status==="Completed"?"bg-emerald-200 text-emerald-800":t.status==="In Progress"?"bg-sky-200 text-sky-800":t.status==="Delayed"?"bg-red-200 text-red-800":"bg-slate-200 text-slate-600"}`}>{t.status}</span>
+                  <button className={`p-0.5 ${tc(dark,"text-slate-500 hover:text-slate-300","text-slate-400 hover:text-slate-600")}`}>≡</button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* MILESTONES TAB */}
+      {reportTab==="milestones"&&(
+        <div className={`border rounded-xl overflow-hidden ${tc(dark,"border-slate-700/50 bg-[#0c1929]","border-slate-200 bg-white shadow-sm")}`}>
+          {milestones.length===0 ? (
+            <div className={`text-center py-12 text-sm ${tc(dark,"text-slate-500","text-slate-400")}`}>No milestones yet. Mark tasks as milestones when creating them.</div>
+          ) : milestones.map(t=>{
+            const assignee=devTeam.find(u=>u.id===t.assignedTo);
+            const overdue=t.dueDate&&new Date(t.dueDate)<now&&t.status!=="Completed";
+            return (
+              <div key={t.id} className={`flex items-center gap-3 px-4 py-3 border-b ${tc(dark,"border-slate-700/30","border-slate-100")}`}>
+                <span className="text-amber-400 text-lg">◆</span>
+                <div className="flex-1">
+                  <p className={`text-sm font-medium ${tc(dark,"text-white","text-slate-800")}`}>{t.name}</p>
+                  <p className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>{cats.find(c=>c.id===t.categoryId)?.name}</p>
+                </div>
+                {assignee&&<span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{assignee.name}</span>}
+                {t.dueDate&&<span className={`text-xs ${overdue?tc(dark,"text-red-400","text-red-600"):tc(dark,"text-slate-400","text-slate-500")}`}>{new Date(t.dueDate).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"2-digit"})}</span>}
+                <span className={`text-xs px-2.5 py-0.5 rounded font-medium ${t.status==="Completed"?"bg-emerald-500/20 text-emerald-400":"bg-slate-500/20 text-slate-400"}`}>{t.status}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* FORECAST TAB */}
+      {reportTab==="forecast"&&(
+        <div className={`border rounded-xl p-5 ${tc(dark,"border-slate-700/50 bg-[#0c1929]","border-slate-200 bg-white shadow-sm")}`}>
+          <h3 className={`font-bold text-sm mb-3 ${tc(dark,"text-white","text-slate-800")}`}>Project Forecast</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {[
+              ["Total Tasks",projTasks.length],["Completed",projTasks.filter(t=>t.status==="Completed").length],
+              ["In Progress",projTasks.filter(t=>t.status==="In Progress").length],["Delayed",projTasks.filter(t=>t.isDelayed).length],
+              ["Overdue",projTasks.filter(t=>t.dueDate&&new Date(t.dueDate)<now&&t.status!=="Completed").length],
+              ["Estimated Completion",totalPct===100?"Done":totalPct>0?`~${Math.round((100-totalPct)/Math.max(1,totalPct)*7)}d`:"N/A"],
+            ].map(([l,v])=>(
+              <div key={l} className={`border rounded-xl p-3 ${tc(dark,"border-slate-700 bg-slate-800/40","border-slate-200 bg-slate-50")}`}>
+                <p className={`text-xs mb-1 ${tc(dark,"text-slate-400","text-slate-500")}`}>{l}</p>
+                <p className={`text-xl font-black ${tc(dark,"text-white","text-slate-800")}`}>{v}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* TEAM PERFORMANCE TAB */}
+      {reportTab==="team"&&(
+        <div className={`border rounded-xl overflow-hidden ${tc(dark,"border-slate-700/50 bg-[#0c1929]","border-slate-200 bg-white shadow-sm")}`}>
+          <div className={`px-4 py-3 border-b font-bold text-sm ${tc(dark,"border-slate-700/50 text-white","border-slate-200 text-slate-800")}`}>Team Performance</div>
+          {teamPerf.length===0&&<p className={`text-center py-8 text-sm ${tc(dark,"text-slate-500","text-slate-400")}`}>No team task data yet.</p>}
+          {teamPerf.map(r=>(
+            <div key={r.user.id} className={`flex items-center gap-4 px-4 py-3 border-b ${tc(dark,"border-slate-700/30","border-slate-100")}`}>
+              <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0 text-sm ${tc(dark,"bg-slate-600","bg-teal-500")}`}>{r.user.name.slice(0,2).toUpperCase()}</div>
+              <div className="flex-1 min-w-0">
+                <p className={`text-sm font-medium ${tc(dark,"text-white","text-slate-800")}`}>{r.user.name}</p>
+                <div className={`h-2 rounded-full mt-1 ${tc(dark,"bg-slate-700","bg-slate-200")}`}>
+                  <div className="h-full rounded-full" style={{width:`${r.rate}%`,background:r.rate>=80?"#10b981":r.rate>=50?"#f59e0b":"#ef4444"}}/>
+                </div>
+              </div>
+              <div className="text-right flex-shrink-0">
+                <p className={`text-sm font-bold ${tc(dark,"text-white","text-slate-800")}`}>{r.done}/{r.total}</p>
+                <p className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{r.rate}% done</p>
+              </div>
+              {r.delayed>0&&<span className="text-xs text-red-400 flex-shrink-0">{r.delayed} delayed</span>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* DOCUMENTS TAB */}
+      {reportTab==="documents"&&(
+        <div className="flex gap-4 flex-col sm:flex-row">
+          <div className={`flex-1 border rounded-xl overflow-hidden ${tc(dark,"border-slate-700/50 bg-[#0c1929]","border-slate-200 bg-white shadow-sm")}`}>
+            <div className={`grid px-4 py-3 text-xs font-medium border-b ${tc(dark,"border-slate-700/50 text-slate-400","border-slate-200 text-slate-500")}`}
+              style={{gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr"}}>
+              <span>Document</span><span>Actions</span><span>Task</span><span>Category</span><span>Send By</span>
+            </div>
+            {allAttachments.length===0 ? (
+              <div className={`text-center py-16 text-sm ${tc(dark,"text-slate-500","text-slate-400")}`}>
+                <div className="text-4xl mb-3">≡</div>
+                <p>No Documents yet.</p>
+                <p className={`text-xs mt-1 ${tc(dark,"text-slate-600","text-slate-400")}`}>All Files Attached To Tasks &amp; Sub-Tasks will show here.</p>
+              </div>
+            ) : allAttachments.map((a,i)=>(
+              <div key={i} className={`grid items-center px-4 py-2.5 border-b text-xs ${tc(dark,"border-slate-700/30 text-slate-300","border-slate-100 text-slate-600")}`}
+                style={{gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr"}}>
+                <span className="truncate font-medium">{a.name}</span>
+                <a href={a.dataUrl} download={a.name} className="text-teal-400 underline hover:text-teal-300">Download</a>
+                <span className="truncate">{a.task?.name||"—"}</span>
+                <span className="truncate">{a.category?.name||"—"}</span>
+                <span className="truncate">{a.sentBy?.name||"—"}</span>
+              </div>
+            ))}
+          </div>
+          {/* Messages panel */}
+          <div className={`w-full sm:w-72 border rounded-xl flex flex-col overflow-hidden ${tc(dark,"border-slate-700/50 bg-[#0c1929]","border-slate-200 bg-white shadow-sm")}`}>
+            <div className="flex-1 p-4 overflow-y-auto" style={{minHeight:200}}>
+              {messages.length===0 ? (
+                <p className={`text-center text-sm mt-8 ${tc(dark,"text-slate-500","text-slate-400")}`}>No Messages Sent in this Project yet.</p>
+              ) : messages.map((m,i)=>(
+                <div key={i} className={`mb-2 text-sm p-2.5 rounded-xl ${tc(dark,"bg-slate-800 text-slate-300","bg-slate-100 text-slate-700")}`}>
+                  <p className={`text-xs font-semibold mb-0.5 ${tc(dark,"text-white","text-slate-800")}`}>{m.by}</p>
+                  <p>{m.text}</p>
+                </div>
+              ))}
+            </div>
+            <div className={`border-t p-2.5 ${tc(dark,"border-slate-700","border-slate-200")}`}>
+              <div className="flex gap-2">
+                <input value={newMessage} onChange={e=>setNewMessage(e.target.value)}
+                  onKeyDown={e=>e.key==="Enter"&&newMessage.trim()&&(setMessages(m=>[...m,{by:currentUser.name,text:newMessage.trim()}]),setNewMessage(""))}
+                  placeholder="Add a new message" className={`flex-1 border rounded-lg px-3 py-2 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white placeholder-slate-500","bg-white border-slate-300 text-slate-800 placeholder-slate-400")}`}/>
+                <Btn size="sm" onClick={()=>newMessage.trim()&&(setMessages(m=>[...m,{by:currentUser.name,text:newMessage.trim()}]),setNewMessage(""))}>Send</Btn>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MESSAGES TAB */}
+      {reportTab==="messages"&&(
+        <div className={`border rounded-xl flex flex-col overflow-hidden ${tc(dark,"border-slate-700/50 bg-[#0c1929]","border-slate-200 bg-white shadow-sm")}`} style={{minHeight:300}}>
+          <div className="flex-1 p-4 overflow-y-auto">
+            {messages.length===0 ? (
+              <p className={`text-center text-sm mt-8 ${tc(dark,"text-slate-500","text-slate-400")}`}>No Messages yet. Start a project conversation.</p>
+            ) : messages.map((m,i)=>(
+              <div key={i} className={`flex gap-2.5 mb-3`}>
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0 text-xs ${tc(dark,"bg-teal-600","bg-teal-500")}`}>{m.by.charAt(0)}</div>
+                <div>
+                  <p className={`text-xs font-semibold mb-0.5 ${tc(dark,"text-white","text-slate-800")}`}>{m.by}</p>
+                  <div className={`text-sm p-2.5 rounded-xl ${tc(dark,"bg-slate-800 text-slate-300","bg-slate-100 text-slate-700")}`}>{m.text}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className={`border-t p-3 ${tc(dark,"border-slate-700","border-slate-200")}`}>
+            <div className="flex gap-2">
+              <input value={newMessage} onChange={e=>setNewMessage(e.target.value)}
+                onKeyDown={e=>e.key==="Enter"&&newMessage.trim()&&(setMessages(m=>[...m,{by:currentUser.name,text:newMessage.trim()}]),setNewMessage(""))}
+                placeholder="Add a new message" className={`flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white placeholder-slate-500","bg-white border-slate-300 text-slate-800 placeholder-slate-400")}`}/>
+              <Btn onClick={()=>newMessage.trim()&&(setMessages(m=>[...m,{by:currentUser.name,text:newMessage.trim()}]),setNewMessage(""))}>Send</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+
 // ── PM GLOBAL DASHBOARD ───────────────────────────────────────
 const PmDashboard = ({pmCategories, pmTasks, pmSubtasks, pmComments, projects, users, currentUser, developer}) => {
   const {dark}=useTheme();
@@ -7676,9 +8416,21 @@ const PmDashboard = ({pmCategories, pmTasks, pmSubtasks, pmComments, projects, u
   const [dateFrom,setDateFrom]=useState("");
   const [dateTo,setDateTo]=useState("");
 
-  const devProjects=projects.filter(p=>p.developerId===currentUser.developerId);
+  const isUser = currentUser.role===ROLES.USER;
+  // Dev Admin sees ALL projects; Users see only their assigned/visible projects
+  const devProjects=projects.filter(p=>{
+    if(p.developerId!==currentUser.developerId) return false;
+    if(!isUser) return true;
+    return p.assignedUserId===currentUser.id || p.userId===currentUser.id || (p.visibleTo||[]).includes(currentUser.id);
+  });
   const devTeam=users.filter(u=>u.developerId===currentUser.developerId&&u.active);
-  const allTasks=pmTasks.filter(t=>t.developerId===currentUser.developerId).map(applyPmDelay);
+  const myProjectIds=new Set(devProjects.map(p=>p.id));
+  // Users see tasks only from their projects; Dev Admin sees all
+  const allTasks=pmTasks.filter(t=>{
+    if(t.developerId!==currentUser.developerId) return false;
+    if(!isUser) return true;
+    return myProjectIds.has(t.projectId);
+  }).map(applyPmDelay);
 
   const filtered=allTasks.filter(t=>{
     if(filterProject!=="all"&&t.projectId!==filterProject) return false;
@@ -8066,8 +8818,8 @@ export default function SolarProApp() {
   // ── PAGE RENDERER ──
   const renderPage = () => {
     // If viewing a project detail
-    if (currentProject && developer) {
-      if (subscriptionLocked) return <LockedPage developer={developer}/>;
+    if (currentProject && (developer || currentUser.role===ROLES.USER)) {
+      if (subscriptionLocked && developer) return <LockedPage developer={developer}/>;
       return (
         <ProjectDetailPage
           project={currentProject} notes={notes} setNotes={setNotes}
@@ -8134,7 +8886,7 @@ export default function SolarProApp() {
         return <PmDashboard pmCategories={pmCategories} pmTasks={pmTasks} pmSubtasks={pmSubtasks} pmComments={pmComments} projects={projects} users={users} currentUser={currentUser} developer={developer}/>;
 
       case "settings":
-        return developer ? <SettingsPage developer={developer} setDevelopers={setDevelopers} dateFormat={dateFormat} setDateFormat={setDateFormat} projects={projects} setProjects={setProjects} deletedItems={deletedItems} setDeletedItems={setDeletedItems}/> : null;
+        return developer ? <SettingsPage developer={developer} setDevelopers={setDevelopers} dateFormat={dateFormat} setDateFormat={setDateFormat} projects={projects} setProjects={setProjects} deletedItems={deletedItems} setDeletedItems={setDeletedItems} pmTemplates={pmTemplates} setPmTemplates={setPmTemplates} pmCategories={pmCategories} pmTasks={pmTasks}/> : null;
 
       // ── TASKS ──
       case "tasks":
