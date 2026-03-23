@@ -4704,6 +4704,8 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
 
   // Safety guard: if project is gone (e.g. deleted), return nothing
   if (!project) return null;
+  // Expose setDocuments so PM comment uploads auto-appear in Documents tab
+  useEffect(()=>{ window.__pmSetDocuments=setDocuments; return()=>{ window.__pmSetDocuments=null; }; },[setDocuments]);
   // Is the current user a "visible" (read-only shared) user on this project?
   const isViewOnly = currentUser.role===ROLES.USER && (project.visibleTo||[]).includes(currentUser.id) && project.assignedUserId!==currentUser.id && project.userId!==currentUser.id;
 
@@ -6914,6 +6916,18 @@ const PmTaskDrawer = ({task:taskSnap, pmTasks, setPmTasks, pmSubtasks, setPmSubt
       createdBy:currentUser.id,createdAt:new Date().toISOString()
     }]);
     setNewComment(""); setCommentMentions([]); setCommentAttachments([]); setShowMentionDropdown(false);
+    // Mirror attachments to project Documents tab
+    if(commentAttachments.length>0 && typeof window.__pmSetDocuments==='function') {
+      commentAttachments.forEach(a=>{
+        window.__pmSetDocuments(ds=>[...ds,{
+          id:`pmDoc${Date.now()}${Math.random().toString(36).slice(2,5)}`,
+          projectId:task.projectId, title:a.name,
+          type:a.type?.startsWith('image')?'image':'document',
+          dataUrl:a.dataUrl, uploadedBy:currentUser.id,
+          uploadedAt:new Date().toISOString(), source:'pm-task-comment'
+        }]);
+      });
+    }
   };
   const handleCommentInput=(e)=>{
     const val=e.target.value;
@@ -7314,10 +7328,19 @@ const PmCategoryColumn = ({cat, tasks, pmSubtasks, users, currentUser, developer
     resetTaskForm(); setShowAddTask(false);
     toast.show({message:`Task "${t.name}" created.`});
   };
-  const deleteTask=(id)=>{
-    setPmTasks(ts=>ts.filter(t=>t.id!==id));
-    setPmSubtasks(ss=>ss.filter(s=>s.taskId!==id));
-    setPmComments(cs=>cs.filter(c=>c.entityId!==id));
+  const deleteTask=(t)=>{
+    if(!window.confirm(`Delete task "${t.name}"?`)) return;
+    const bSubs=pmSubtasks.filter(s=>s.taskId===t.id);
+    const bComs=(pmComments||[]).filter(c=>c.entityId===t.id);
+    setPmTasks(ts=>ts.filter(x=>x.id!==t.id));
+    setPmSubtasks(ss=>ss.filter(s=>s.taskId!==t.id));
+    setPmComments(cs=>cs.filter(c=>c.entityId!==t.id));
+    toast.show({message:`"${t.name}" deleted.`,undoFn:()=>{
+      setPmTasks(ts=>[...ts,t]);
+      setPmSubtasks(ss=>[...ss,...bSubs]);
+      setPmComments(cs=>[...cs,...bComs]);
+      toast.show({message:`Restored "${t.name}".`});
+    }});
   };
 
   const handleTaskDrop=(toId)=>{
@@ -7372,7 +7395,7 @@ const PmCategoryColumn = ({cat, tasks, pmSubtasks, users, currentUser, developer
               onDragEnd={()=>{setTaskDragId(null);setTaskDragOver(null);}}
               style={{opacity:taskDragId===t.id?0.3:1,outline:taskDragOver===t.id?"2px dashed #f59e0b":"none",borderRadius:12,transition:"outline 100ms"}}>
               <PmTaskCard task={t} pmSubtasks={pmSubtasks} users={users} currentUser={currentUser} developer={developer}
-                onClick={()=>onTaskClick(t)} onDelete={()=>deleteTask(t.id)} canManage={canManage} isDragging={taskDragId===t.id}/>
+                onClick={()=>onTaskClick(t)} onDelete={()=>deleteTask(t)} canManage={canManage} isDragging={taskDragId===t.id}/>
             </div>
           ))}
           {tasks.length===0&&(
@@ -7447,6 +7470,7 @@ const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, 
   const toast=useToast();
   const [selectedTask,setSelectedTask]=useState(null);
   const [pmView,setPmView]=useState("kanban"); // kanban|list|gantt|reports
+  const [listAddCatId,setListAddCatId]=useState(null); // catId to show Add Task modal from list view
   const [showCatModal,setShowCatModal]=useState(false);
   const [catForm,setCatForm]=useState({name:"",assignedTo:currentUser.id});
   const [renamingCat,setRenamingCat]=useState(null);
@@ -7493,12 +7517,23 @@ const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, 
     toast.show({message:"Collection created! You can now add categories."});
   };
   const deleteCategory=(id)=>{
-    const taskIds=pmTasks.filter(t=>t.categoryId===id).map(t=>t.id);
+    const cat=pmCategories.find(c=>c.id===id);
+    const catTasks=pmTasks.filter(t=>t.categoryId===id);
+    if(!window.confirm(`Delete category "${cat?.name||''}" and its ${catTasks.length} task(s)?`)) return;
+    const taskIds=catTasks.map(t=>t.id);
+    const bSubs=pmSubtasks.filter(s=>taskIds.includes(s.taskId));
+    const bComs=(pmComments||[]).filter(c=>taskIds.includes(c.entityId));
     setPmCategories(cs=>cs.filter(c=>c.id!==id));
     setPmTasks(ts=>ts.filter(t=>t.categoryId!==id));
     setPmSubtasks(ss=>ss.filter(s=>!taskIds.includes(s.taskId)));
     setPmComments(cs=>cs.filter(c=>!taskIds.includes(c.entityId)));
-    toast.show({message:"Category deleted."});
+    toast.show({message:`"${cat?.name}" deleted.`,undoFn:()=>{
+      if(cat) setPmCategories(cs=>[...cs,cat]);
+      setPmTasks(ts=>[...ts,...catTasks]);
+      setPmSubtasks(ss=>[...ss,...bSubs]);
+      setPmComments(cs=>[...cs,...bComs]);
+      toast.show({message:`Restored "${cat?.name}".`});
+    }});
   };
   const renameCategory=(id,name)=>{
     setPmCategories(cs=>cs.map(c=>c.id===id?{...c,name}:c));
@@ -7686,10 +7721,10 @@ const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, 
         <PmReports cats={cats} pmTasks={pmTasks} pmSubtasks={pmSubtasks} pmComments={pmComments} users={users} currentUser={currentUser} project={project}/>
       )}
       {pmView==="gantt"&&projectCollection&&(
-        <PmGanttChart cats={cats} getTasksForCat={getTasksForCat} pmSubtasks={pmSubtasks} users={users} currentUser={currentUser}/>
+        <PmGanttChart cats={cats} getTasksForCat={getTasksForCat} pmSubtasks={pmSubtasks} users={users} currentUser={currentUser} pmTasks={pmTasks} setPmTasks={setPmTasks} setPmSubtasks={setPmSubtasks} pmComments={pmComments} setPmComments={setPmComments} projects={projects} pmCategories={pmCategories} developer={developer}/>
       )}
       {pmView==="list"&&projectCollection&&(
-        <PmListView cats={cats} getTasksForCat={getTasksForCat} pmSubtasks={pmSubtasks} users={users} currentUser={currentUser} onTaskClick={setSelectedTask} canManage={canManage} setPmTasks={setPmTasks} setPmSubtasks={setPmSubtasks} setPmComments={setPmComments} setPmCategories={setPmCategories} pmCategories={pmCategories} project={project}/>
+        <PmListView cats={cats} getTasksForCat={getTasksForCat} pmSubtasks={pmSubtasks} users={users} currentUser={currentUser} onTaskClick={setSelectedTask} canManage={canManage} setPmTasks={setPmTasks} setPmSubtasks={setPmSubtasks} setPmComments={setPmComments} setPmCategories={setPmCategories} pmCategories={pmCategories} project={project} pmComments={pmComments} onAddTaskForCat={catId=>setListAddCatId(catId)}/>
       )}
       {(pmView==="kanban"||!projectCollection)&&(
       <div>
@@ -7768,6 +7803,22 @@ const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, 
         </Modal>
       )}
 
+      {/* Add Task modal triggered from list view */}
+      {listAddCatId&&(()=>{
+        const lcat=cats.find(c=>c.id===listAddCatId);
+        if(!lcat) return null;
+        return (
+          <PmCategoryColumn key={`lv-add-${lcat.id}`} cat={lcat}
+            tasks={[]} pmSubtasks={[]} users={users} currentUser={currentUser} developer={developer}
+            setPmTasks={setPmTasks} setPmSubtasks={setPmSubtasks} setPmComments={setPmComments}
+            pmComments={pmComments||[]} projects={projects} pmCategories={pmCategories}
+            onTaskClick={setSelectedTask} onDeleteCat={()=>{}} onRenameRequest={()=>{}}
+            catDragId={null} setCatDragId={()=>{}} catDragOver={null} setCatDragOver={()=>{}}
+            onCatDrop={()=>{}} canManage={canManage}
+            _forceShowAddTask _onAddClose={()=>setListAddCatId(null)}/>
+        );
+      })()}
+
       {/* Task detail drawer */}
       {selectedTask&&(
         <PmTaskDrawer
@@ -7786,188 +7837,362 @@ const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, 
 // ═══════════════════════════════════════════════════════════════
 // PM LIST VIEW — matches screenshot 1 (table layout)
 // ═══════════════════════════════════════════════════════════════
-const PmListView = ({cats, getTasksForCat, pmSubtasks, users, currentUser, onTaskClick, canManage, setPmTasks, setPmSubtasks, setPmComments, setPmCategories, pmCategories, project}) => {
+const PmListView = ({cats, getTasksForCat, pmSubtasks, users, currentUser, onTaskClick, canManage, setPmTasks, setPmSubtasks, setPmComments, setPmCategories, pmCategories, project, pmComments, onAddTaskForCat}) => {
   const {dark}=useTheme();
+  const toast=useToast();
   const [collapsedCats,setCollapsedCats]=useState({});
-  const toggle=(id)=>setCollapsedCats(s=>({...s,[id]:!s[id]}));
+  const [pctMenuId,setPctMenuId]=useState(null);
+  const [editCat,setEditCat]=useState(null);
+  const [editNotes,setEditNotes]=useState([]);
+  const [editNoteText,setEditNoteText]=useState('');
   const devTeam=users.filter(u=>u.developerId===currentUser.developerId&&u.active);
 
-  const catProgress=(catId)=>{
-    const tasks=getTasksForCat(catId);
-    const done=tasks.filter(t=>t.status==="Completed").length;
-    return tasks.length ? Math.round(done/tasks.length*100) : 0;
+  useEffect(()=>{
+    if(!pctMenuId) return;
+    const close=()=>setPctMenuId(null);
+    setTimeout(()=>document.addEventListener('click',close),10);
+    return ()=>document.removeEventListener('click',close);
+  },[pctMenuId]);
+
+  const toggle=id=>setCollapsedCats(s=>({...s,[id]:!s[id]}));
+
+  const catPct=catId=>{const t=getTasksForCat(catId);return t.length?Math.round(t.filter(x=>x.status==='Completed').length/t.length*100):0;};
+  const catDates=catId=>{
+    const t=getTasksForCat(catId);
+    const s=t.map(x=>x.startDate).filter(Boolean).sort();
+    const e=t.map(x=>x.dueDate).filter(Boolean).sort();
+    const f=d=>d?new Date(d).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'2-digit'}):'';
+    if(!s.length&&!e.length) return '—';
+    return [f(s[0]),f(e.at(-1))].filter(Boolean).join(' - ');
   };
-  const catDateRange=(catId)=>{
-    const tasks=getTasksForCat(catId);
+  const taskPct=t=>{
+    const subs=pmSubtasks.filter(s=>s.taskId===t.id);
+    return subs.length?Math.round(subs.filter(s=>s.status==='Completed').length/subs.length*100):(t.status==='Completed'?100:0);
+  };
+  const statusStyle=s=>{
+    const m={Completed:{bg:'#10b981',color:'#fff'},'In Progress':{bg:'#22c55e',color:'#fff'},'To Do':{bg:'#e2e8f0',color:'#475569'},'On Hold':{bg:'#f59e0b',color:'#fff'},Delayed:{bg:'#ef4444',color:'#fff'}};
+    return m[s]||{bg:'#e2e8f0',color:'#475569'};
+  };
+
+  const applyPct=(taskId,pct)=>{
+    const now=new Date().toISOString();
+    setPmTasks(ts=>ts.map(t=>{
+      if(t.id!==taskId) return t;
+      const newStatus=pct===100?'Completed':pct>0?'In Progress':'To Do';
+      const subs=pmSubtasks.filter(s=>s.taskId===taskId);
+      if(subs.length){
+        const toMark=Math.round(subs.length*pct/100);
+        let marked=0;
+        setPmSubtasks(ss=>ss.map(s=>s.taskId===taskId?{...s,status:(marked++)<toMark?'Completed':'To Do'}:s));
+      }
+      return {...t,status:newStatus,completedAt:pct===100?now:null};
+    }));
+    setPctMenuId(null);
+    toast.show({message:`Progress → ${pct}%${pct===100?' ✓ Task completed!':''}`});
+  };
+
+  const duplicateCat=cat=>{
+    const tasks=getTasksForCat(cat.id);
+    const newCatId=`pmc${Date.now()}`;
+    const newCat={...cat,id:newCatId,name:`${cat.name} (Copy)`,createdAt:new Date().toISOString()};
+    setPmCategories(cs=>{
+      const others=cs.filter(c=>!(c.projectId===cat.projectId&&c.developerId===cat.developerId));
+      const mine=cs.filter(c=>c.projectId===cat.projectId&&c.developerId===cat.developerId);
+      const idx=mine.findIndex(c=>c.id===cat.id);
+      mine.splice(idx+1,0,newCat);
+      return [...others,...mine.map((c,i)=>({...c,orderIndex:i}))];
+    });
+    tasks.forEach(t=>{
+      const nid=`pmt${Date.now()}${Math.random().toString(36).slice(2,5)}`;
+      setPmTasks(ts=>[...ts,{...t,id:nid,categoryId:newCatId,createdAt:new Date().toISOString()}]);
+      pmSubtasks.filter(s=>s.taskId===t.id).forEach(s=>{
+        setPmSubtasks(ss=>[...ss,{...s,id:`pmst${Date.now()}${Math.random().toString(36).slice(2,5)}`,taskId:nid}]);
+      });
+    });
+    toast.show({message:`"${cat.name}" duplicated with ${tasks.length} task(s).`});
+  };
+
+  const confirmDeleteCat=cat=>{
+    if(!window.confirm(`Delete category "${cat.name}" and its ${getTasksForCat(cat.id).length} task(s)?`)) return;
+    const tasks=getTasksForCat(cat.id);
+    const tids=tasks.map(t=>t.id);
+    const bCat={...cat},bTasks=[...tasks];
+    const bSubs=pmSubtasks.filter(s=>tids.includes(s.taskId));
+    const bComs=(pmComments||[]).filter(c=>tids.includes(c.entityId));
+    setPmCategories(cs=>cs.filter(c=>c.id!==cat.id));
+    setPmTasks(ts=>ts.filter(t=>t.categoryId!==cat.id));
+    setPmSubtasks(ss=>ss.filter(s=>!tids.includes(s.taskId)));
+    if(setPmComments) setPmComments(cs=>cs.filter(c=>!tids.includes(c.entityId)));
+    toast.show({message:`"${cat.name}" deleted.`,undoFn:()=>{
+      setPmCategories(cs=>[...cs,bCat]);
+      setPmTasks(ts=>[...ts,...bTasks]);
+      setPmSubtasks(ss=>[...ss,...bSubs]);
+      if(setPmComments) setPmComments(cs=>[...cs,...bComs]);
+      toast.show({message:`Restored "${cat.name}".`});
+    }});
+  };
+
+  const confirmDeleteTask=t=>{
+    if(!window.confirm(`Delete task "${t.name}"?`)) return;
+    const bSubs=pmSubtasks.filter(s=>s.taskId===t.id);
+    const bComs=(pmComments||[]).filter(c=>c.entityId===t.id);
+    setPmTasks(ts=>ts.filter(x=>x.id!==t.id));
+    setPmSubtasks(ss=>ss.filter(s=>s.taskId!==t.id));
+    if(setPmComments) setPmComments(cs=>cs.filter(c=>c.entityId!==t.id));
+    toast.show({message:`"${t.name}" deleted.`,undoFn:()=>{
+      setPmTasks(ts=>[...ts,t]);
+      setPmSubtasks(ss=>[...ss,...bSubs]);
+      if(setPmComments) setPmComments(cs=>[...cs,...bComs]);
+      toast.show({message:`Restored "${t.name}".`});
+    }});
+  };
+
+  const openEditCat=cat=>{
+    const tasks=getTasksForCat(cat.id);
+    const asgIds=[...new Set(tasks.map(t=>t.assignedTo).filter(Boolean))];
     const starts=tasks.map(t=>t.startDate).filter(Boolean).sort();
     const ends=tasks.map(t=>t.dueDate).filter(Boolean).sort();
-    const fmt=(d)=>d?new Date(d).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"2-digit"}):"";
-    if(!starts.length&&!ends.length) return "—";
-    if(starts[0]&&ends[ends.length-1]) return `${fmt(starts[0])} - ${fmt(ends[ends.length-1])}`;
-    return fmt(starts[0]||ends[0]);
+    setEditCat({...cat,startDate:starts[0]?.slice(0,10)||'',dueDate:ends.at(-1)?.slice(0,10)||'',assigneeIds:asgIds});
+    setEditNotes([]); setEditNoteText('');
   };
 
-  const statusColor=(s)=>{
-    const m={"Completed":"bg-emerald-500 text-white","In Progress":"bg-emerald-400 text-white","To Do":"bg-slate-200 text-slate-600","On Hold":"bg-amber-400 text-white","Delayed":"bg-red-500 text-white","Cancelled":"bg-slate-400 text-white"};
-    return m[s]||"bg-slate-200 text-slate-600";
-  };
-
-  const taskPct=(t)=>{
-    const subs=pmSubtasks.filter(s=>s.taskId===t.id);
-    if(!subs.length) return t.status==="Completed"?100:0;
-    return Math.round(subs.filter(s=>s.status==="Completed").length/subs.length*100);
+  const saveEditCat=()=>{
+    setPmCategories(cs=>cs.map(c=>c.id===editCat.id?{...c,name:editCat.name}:c));
+    setEditCat(null);
+    toast.show({message:'Category updated.'});
   };
 
   return (
-    <div className={`border rounded-xl overflow-hidden ${tc(dark,"border-slate-700/50","border-slate-200 shadow-sm")}`}>
-      {cats.map(cat=>{
-        const tasks=getTasksForCat(cat.id);
-        const pct=catProgress(cat.id);
-        const collapsed=collapsedCats[cat.id];
-        const assigneeIds=[...new Set(tasks.map(t=>t.assignedTo).filter(Boolean))];
-        const assignees=assigneeIds.map(id=>devTeam.find(u=>u.id===id)).filter(Boolean);
-
-        return (
-          <div key={cat.id}>
-            {/* Category row */}
-            <div className={`flex items-center gap-3 px-4 py-3 border-b cursor-pointer ${tc(dark,"border-slate-700/50 bg-slate-800/60 hover:bg-slate-800","border-slate-200 bg-slate-50 hover:bg-slate-100")}`}
-              onClick={()=>toggle(cat.id)}>
-              <button className={`w-5 h-5 flex items-center justify-center ${tc(dark,"text-slate-400","text-slate-500")}`}>
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style={{transform:collapsed?"rotate(-90deg)":"rotate(0deg)",transition:"200ms"}}>
-                  <path d="M2 3l3 4 3-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
-                </svg>
-              </button>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className={`text-sm font-bold ${tc(dark,"text-white","text-slate-800")}`}>{cat.name}</span>
-                  <span className={`text-xs ${tc(dark,"text-slate-500","text-slate-400")}`}>{tasks.length} Task(s)</span>
+    <div>
+      <div className={`border rounded-xl overflow-visible ${tc(dark,'border-slate-700/50','border-slate-200 shadow-sm')}`}>
+        {cats.map(cat=>{
+          const tasks=getTasksForCat(cat.id);
+          const pct=catPct(cat.id);
+          const collapsed=collapsedCats[cat.id];
+          const asgIds=[...new Set(tasks.map(t=>t.assignedTo).filter(Boolean))];
+          const assignees=asgIds.map(id=>devTeam.find(u=>u.id===id)).filter(Boolean);
+          return (
+            <div key={cat.id} className={`border-b ${tc(dark,'border-slate-700/40','border-slate-200')}`}>
+              {/* Category header */}
+              <div className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors ${tc(dark,'bg-slate-800/50 hover:bg-slate-800','bg-slate-50 hover:bg-slate-100')}`}
+                onClick={()=>toggle(cat.id)}>
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className={`flex-shrink-0 transition-transform ${collapsed?'-rotate-90':''} ${tc(dark,'text-slate-400','text-slate-500')}`}><path d="M2 3l3 4 3-4"/></svg>
+                <div className="flex-1 min-w-0">
+                  <span className={`text-sm font-bold ${tc(dark,'text-white','text-slate-800')}`}>{cat.name}</span>
+                  <span className={`text-xs ml-2 ${tc(dark,'text-slate-500','text-slate-400')}`}>{tasks.length} Task(s)</span>
                 </div>
-              </div>
-              {/* Assignee avatars */}
-              <div className="flex -space-x-1">
-                {assignees.slice(0,4).map(u=>(
-                  <div key={u.id} title={u.name} className={`w-7 h-7 rounded-full flex items-center justify-center text-white font-bold border-2 text-xs ${tc(dark,"bg-teal-600 border-slate-800","bg-teal-500 border-white")}`}>
-                    {u.name.slice(0,2).toUpperCase()}
-                  </div>
-                ))}
-              </div>
-              {/* Progress ring */}
-              <div className="relative w-10 h-10 flex-shrink-0">
-                <svg viewBox="0 0 36 36" className="w-10 h-10 -rotate-90">
-                  <circle cx="18" cy="18" r="15.9" fill="none" stroke={dark?"#334155":"#e2e8f0"} strokeWidth="3"/>
-                  <circle cx="18" cy="18" r="15.9" fill="none" stroke="#10b981" strokeWidth="3"
-                    strokeDasharray={`${pct} ${100-pct}`} strokeLinecap="round"/>
-                </svg>
-                <span className={`absolute inset-0 flex items-center justify-center text-xs font-bold ${tc(dark,"text-white","text-slate-800")}`}>{pct}%</span>
-              </div>
-              {/* Date range */}
-              <span className={`text-xs flex-shrink-0 hidden sm:block ${tc(dark,"text-slate-400","text-slate-500")}`}>{catDateRange(cat.id)}</span>
-              {/* Actions */}
-              {canManage&&(
-                <div className="flex gap-1 flex-shrink-0" onClick={e=>e.stopPropagation()}>
-                  <button className={`p-1.5 rounded-lg ${tc(dark,"text-slate-400 hover:bg-slate-700 hover:text-blue-400","text-slate-400 hover:bg-slate-100 hover:text-blue-600")}`} title="Duplicate">
-                    <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="4" y="4" width="8" height="8" rx="1"/><path d="M2 10V3a1 1 0 0 1 1-1h7"/></svg>
-                  </button>
-                  <button className={`p-1.5 rounded-lg ${tc(dark,"text-slate-400 hover:bg-slate-700 hover:text-emerald-400","text-slate-400 hover:bg-slate-100 hover:text-emerald-600")}`} title="Edit">
-                    <Icon name="edit" size={13}/>
-                  </button>
-                  <button onClick={()=>{const ids=tasks.map(t=>t.id);setPmCategories(cs=>cs.filter(c=>c.id!==cat.id));setPmTasks(ts=>ts.filter(t=>t.categoryId!==cat.id));setPmSubtasks(ss=>ss.filter(s=>!ids.includes(s.taskId)));setPmComments(cs=>cs.filter(c=>!ids.includes(c.entityId)));}}
-                    className={`p-1.5 rounded-lg ${tc(dark,"text-slate-400 hover:bg-slate-700 hover:text-red-400","text-slate-400 hover:bg-slate-100 hover:text-red-500")}`} title="Delete">
-                    <Icon name="trash" size={13}/>
-                  </button>
+                <div className="flex -space-x-1.5">
+                  {assignees.slice(0,5).map(u=>(
+                    <div key={u.id} title={u.name} className="w-7 h-7 rounded-full bg-teal-600 border-2 border-white flex items-center justify-center text-white font-bold" style={{fontSize:10}}>{u.name.slice(0,2).toUpperCase()}</div>
+                  ))}
                 </div>
-              )}
-            </div>
-
-            {/* Task rows */}
-            {!collapsed&&(
-              <div>
-                {/* Header */}
-                <div className={`grid px-4 py-2 text-xs font-bold uppercase tracking-wider border-b ${tc(dark,"border-slate-700/50 bg-slate-800/20 text-slate-500","border-slate-100 bg-slate-50 text-slate-400")}`}
-                  style={{gridTemplateColumns:"2fr 80px 160px 160px 200px 40px"}}>
-                  <span>NAME</span><span className="text-center">%</span><span>STATUS</span><span>ASSIGNED</span><span>DUE DATES</span><span/>
+                <div className="relative w-10 h-10 flex-shrink-0">
+                  <svg viewBox="0 0 36 36" className="w-10 h-10 -rotate-90">
+                    <circle cx="18" cy="18" r="15.9" fill="none" stroke={dark?'#334155':'#e2e8f0'} strokeWidth="3"/>
+                    <circle cx="18" cy="18" r="15.9" fill="none" stroke="#10b981" strokeWidth="3" strokeDasharray={`${pct} ${100-pct}`} strokeLinecap="round"/>
+                  </svg>
+                  <span className={`absolute inset-0 flex items-center justify-center font-bold ${tc(dark,'text-white','text-slate-800')}`} style={{fontSize:9}}>{pct}%</span>
                 </div>
-                {tasks.map(t=>{
-                  const assignee=devTeam.find(u=>u.id===t.assignedTo);
-                  const pct=taskPct(t);
-                  const startFmt=t.startDate?new Date(t.startDate).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"2-digit"}):"";
-                  const dueFmt=t.dueDate?new Date(t.dueDate).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"2-digit"}):"";
-                  const dateStr=startFmt&&dueFmt?`${startFmt} - ${dueFmt}`:dueFmt||startFmt||"—";
-                  const overdue=t.dueDate&&new Date(t.dueDate)<new Date()&&t.status!=="Completed";
-                  const subs=pmSubtasks.filter(s=>s.taskId===t.id);
-                  return (
-                    <div key={t.id} className={`grid items-center px-4 py-2.5 border-b cursor-pointer transition-colors ${tc(dark,"border-slate-700/30 hover:bg-slate-800/30","border-slate-100 hover:bg-slate-50")}`}
-                      style={{gridTemplateColumns:"2fr 80px 160px 160px 200px 40px"}}
-                      onClick={()=>onTaskClick(t)}>
-                      {/* Name */}
-                      <div className="flex items-center gap-2 min-w-0">
-                        {t.isMilestone&&<span className="text-amber-400 flex-shrink-0">◆</span>}
-                        {t.isCritical&&<span className="text-red-400 flex-shrink-0">⚡</span>}
-                        {!t.isMilestone&&!t.isCritical&&<span className={`w-3 h-3 rounded-full flex-shrink-0 ${t.status==="Completed"?"bg-emerald-500":"border-2 "+tc(dark,"border-slate-600","border-slate-300")}`}/>}
-                        <span className={`text-sm truncate ${tc(dark,"text-white","text-slate-800")}`}>{t.name}</span>
-                        {subs.length>0&&<span className={`text-xs ml-1 flex-shrink-0 ${tc(dark,"text-slate-500","text-slate-400")}`}>{subs.filter(s=>s.status==="Completed").length}/{subs.length}</span>}
-                      </div>
-                      {/* % progress */}
-                      <div className="flex items-center justify-center">
-                        <div className="relative w-9 h-9">
-                          <svg viewBox="0 0 36 36" className="w-9 h-9 -rotate-90">
-                            <circle cx="18" cy="18" r="15.9" fill="none" stroke={dark?"#334155":"#e2e8f0"} strokeWidth="3"/>
-                            <circle cx="18" cy="18" r="15.9" fill="none" stroke="#10b981" strokeWidth="3"
-                              strokeDasharray={`${pct} ${100-pct}`} strokeLinecap="round"/>
-                          </svg>
-                          <span className={`absolute inset-0 flex items-center justify-center font-bold ${tc(dark,"text-white","text-slate-700")}`} style={{fontSize:8}}>{pct}%</span>
-                        </div>
-                      </div>
-                      {/* Status */}
-                      <div>
-                        <span className={`text-xs px-3 py-1 rounded font-medium ${statusColor(t.status)}`}>{t.status}</span>
-                      </div>
-                      {/* Assigned */}
-                      <div className="flex items-center gap-1.5">
-                        {assignee&&<>
-                          <div className={`w-5 h-5 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0 ${tc(dark,"bg-slate-600","bg-teal-500")}`} style={{fontSize:8}}>{assignee.name.slice(0,2).toUpperCase()}</div>
-                          <span className={`text-xs truncate ${tc(dark,"text-slate-300","text-slate-600")}`}>{assignee.name}</span>
-                        </>}
-                      </div>
-                      {/* Due dates */}
-                      <span className={`text-xs italic ${overdue?tc(dark,"text-red-400","text-red-600"):tc(dark,"text-slate-400","text-slate-500")}`}>{dateStr}</span>
-                      {/* Delete */}
-                      {canManage&&(
-                        <button onClick={e=>{e.stopPropagation();setPmTasks(ts=>ts.filter(x=>x.id!==t.id));setPmSubtasks(ss=>ss.filter(s=>s.taskId!==t.id));setPmComments(cs=>cs.filter(c=>c.entityId!==t.id));}}
-                          className={`p-1 rounded ${tc(dark,"text-slate-600 hover:text-red-400","text-slate-300 hover:text-red-500")}`}>
-                          <Icon name="trash" size={12}/>
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-                {/* Create task row */}
+                <span className={`text-xs hidden sm:block flex-shrink-0 ${tc(dark,'text-slate-400','text-slate-500')}`}>{catDates(cat.id)}</span>
                 {canManage&&(
-                  <div className={`px-4 py-2 border-b ${tc(dark,"border-slate-700/30","border-slate-100")}`}>
-                    <button className={`flex items-center gap-2 text-sm font-medium ${tc(dark,"text-teal-400 hover:text-teal-300","text-teal-600 hover:text-teal-500")}`}
-                      onClick={()=>{}}>
-                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><circle cx="7" cy="7" r="6"/><path d="M7 4v6M4 7h6"/></svg>
-                      CREATE A TASK
+                  <div className="flex gap-1 flex-shrink-0" onClick={e=>e.stopPropagation()}>
+                    <button onClick={()=>duplicateCat(cat)} title="Duplicate"
+                      className={`w-7 h-7 flex items-center justify-center rounded-lg ${tc(dark,'text-blue-400 hover:bg-slate-700','text-blue-500 hover:bg-blue-50')}`}>
+                      <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="4" y="4" width="8" height="8" rx="1"/><path d="M2 10V3a1 1 0 011-1h7"/></svg>
+                    </button>
+                    <button onClick={()=>openEditCat(cat)} title="Edit"
+                      className={`w-7 h-7 flex items-center justify-center rounded-lg ${tc(dark,'text-emerald-400 hover:bg-slate-700','text-emerald-600 hover:bg-emerald-50')}`}>
+                      <Icon name="edit" size={13}/>
+                    </button>
+                    <button onClick={()=>confirmDeleteCat(cat)} title="Delete"
+                      className={`w-7 h-7 flex items-center justify-center rounded-lg ${tc(dark,'text-red-400 hover:bg-slate-700','text-red-500 hover:bg-red-50')}`}>
+                      <Icon name="trash" size={13}/>
                     </button>
                   </div>
                 )}
               </div>
-            )}
+              {!collapsed&&(
+                <div>
+                  <div className={`grid text-xs font-bold uppercase tracking-wider px-4 py-2 border-b ${tc(dark,'bg-slate-900/40 border-slate-700/50 text-slate-500','bg-slate-100 border-slate-200 text-slate-400')}`}
+                    style={{gridTemplateColumns:'1fr 72px 150px 150px 180px 36px'}}>
+                    <span>NAME</span><span className="text-center">%</span><span>STATUS</span><span>ASSIGNED</span><span>DUE DATES</span><span/>
+                  </div>
+                  {tasks.map(t=>{
+                    const assignee=devTeam.find(u=>u.id===t.assignedTo);
+                    const pv=taskPct(t);
+                    const sf=t.startDate?new Date(t.startDate).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'2-digit'}):'';
+                    const ef=t.dueDate?new Date(t.dueDate).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'2-digit'}):'';
+                    const ds=sf&&ef?`${sf} - ${ef}`:ef||sf||'—';
+                    const overdue=t.dueDate&&new Date(t.dueDate)<new Date()&&t.status!=='Completed';
+                    const ss=statusStyle(t.status);
+                    return (
+                      <div key={t.id} className={`grid items-center px-4 py-2.5 border-b transition-colors ${tc(dark,'border-slate-700/30 hover:bg-slate-800/20','border-slate-100 hover:bg-slate-50')}`}
+                        style={{gridTemplateColumns:'1fr 72px 150px 150px 180px 36px'}}>
+                        <div className="flex items-center gap-2 min-w-0 cursor-pointer" onClick={()=>onTaskClick(t)}>
+                          <span className={`w-3 h-3 rounded-full flex-shrink-0 ${t.status==='Completed'?'bg-emerald-500':tc(dark,'border-2 border-slate-600','border-2 border-slate-300')}`}/>
+                          {t.isMilestone&&<span className="text-amber-400 flex-shrink-0 text-xs">◆</span>}
+                          {t.isCritical&&<span className="text-red-400 flex-shrink-0 text-xs">⚡</span>}
+                          <span className={`text-sm truncate ${tc(dark,'text-white','text-slate-800')}`}>{t.name}</span>
+                        </div>
+                        {/* % clickable */}
+                        <div className="relative flex justify-center">
+                          <button className="relative w-9 h-9 hover:scale-110 transition-transform" onClick={e=>{e.stopPropagation();setPctMenuId(pctMenuId===t.id?null:t.id);}}>
+                            <svg viewBox="0 0 36 36" className="w-9 h-9 -rotate-90">
+                              <circle cx="18" cy="18" r="15.9" fill="none" stroke={dark?'#334155':'#e2e8f0'} strokeWidth="3"/>
+                              <circle cx="18" cy="18" r="15.9" fill="none" stroke="#10b981" strokeWidth="3" strokeDasharray={`${pv} ${100-pv}`} strokeLinecap="round"/>
+                            </svg>
+                            <span className={`absolute inset-0 flex items-center justify-center font-bold ${tc(dark,'text-white','text-slate-700')}`} style={{fontSize:8}}>{pv}%</span>
+                          </button>
+                          {pctMenuId===t.id&&(
+                            <div className={`absolute top-10 left-1/2 -translate-x-1/2 z-50 w-44 border rounded-xl shadow-2xl overflow-hidden ${tc(dark,'bg-slate-800 border-slate-600','bg-white border-slate-200')}`}
+                              onClick={e=>e.stopPropagation()}>
+                              <div className={`px-3 py-2 text-xs font-bold border-b ${tc(dark,'border-slate-700 text-slate-400','border-slate-200 text-slate-500')}`}>Set Progress</div>
+                              {[0,25,50,75,100].map(v=>(
+                                <button key={v} onClick={()=>applyPct(t.id,v)}
+                                  className={`w-full flex items-center gap-2 px-3 py-2.5 text-sm transition-colors ${pv===v?tc(dark,'bg-teal-600 text-white','bg-teal-500 text-white'):tc(dark,'text-white hover:bg-slate-700','text-slate-700 hover:bg-slate-50')}`}>
+                                  <div className={`flex-1 h-1.5 rounded-full ${tc(dark,'bg-slate-700','bg-slate-200')}`}>
+                                    <div style={{width:`${v}%`,height:'100%',background:'#10b981',borderRadius:'9999px'}}/>
+                                  </div>
+                                  <span className="font-semibold w-9 text-right">{v}%</span>
+                                  {v===100&&<span className="text-emerald-400 text-xs">✓</span>}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div><span className="text-xs px-3 py-1 rounded font-medium" style={{background:ss.bg,color:ss.color}}>{t.status}</span></div>
+                        <div className="flex items-center gap-1.5">
+                          {assignee&&<>
+                            <div className="w-5 h-5 rounded-full bg-teal-500 flex items-center justify-center text-white font-bold flex-shrink-0" style={{fontSize:8}}>{assignee.name.slice(0,2).toUpperCase()}</div>
+                            <span className={`text-xs truncate ${tc(dark,'text-slate-300','text-slate-600')}`}>{assignee.name}</span>
+                          </>}
+                        </div>
+                        <span className={`text-xs italic ${overdue?tc(dark,'text-red-400','text-red-600'):tc(dark,'text-slate-400','text-slate-500')}`}>{ds}</span>
+                        {canManage&&(
+                          <button onClick={e=>{e.stopPropagation();confirmDeleteTask(t);}}
+                            className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${tc(dark,'text-slate-600 hover:text-red-400 hover:bg-slate-700','text-slate-300 hover:text-red-500 hover:bg-red-50')}`}>
+                            <Icon name="trash" size={12}/>
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {canManage&&(
+                    <div className={`px-4 py-3 ${tc(dark,'border-slate-700/30','border-slate-100')}`}>
+                      <button onClick={e=>{e.stopPropagation();onAddTaskForCat&&onAddTaskForCat(cat.id);}}
+                        className={`flex items-center gap-2 text-sm font-semibold transition-colors ${tc(dark,'text-teal-400 hover:text-teal-300','text-teal-600 hover:text-teal-500')}`}>
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><circle cx="7" cy="7" r="6"/><path d="M7 4v6M4 7h6"/></svg>
+                        CREATE A TASK
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* EDIT CATEGORY MODAL */}
+      {editCat&&(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={()=>setEditCat(null)}>
+          <div className="w-full max-w-4xl mx-4 flex rounded-2xl overflow-hidden shadow-2xl" style={{maxHeight:'90vh',background:'white'}} onClick={e=>e.stopPropagation()}>
+            <div className="flex-1 overflow-y-auto p-7" style={{background:'white'}}>
+              <h2 className="text-xl font-black text-slate-800 mb-6 uppercase">{editCat.name}</h2>
+              <div className="mb-5">
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Category Name</label>
+                <input value={editCat.name} onChange={e=>setEditCat(c=>({...c,name:e.target.value}))}
+                  className="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-teal-500 text-slate-800"/>
+              </div>
+              <div className="grid grid-cols-2 gap-4 mb-5">
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Due Start</label>
+                  <input type="date" value={editCat.startDate||''} onChange={e=>setEditCat(c=>({...c,startDate:e.target.value}))}
+                    className="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-teal-500 text-slate-800"/>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Deadline</label>
+                  <input type="date" value={editCat.dueDate||''} onChange={e=>setEditCat(c=>({...c,dueDate:e.target.value}))}
+                    className="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-teal-500 text-slate-800"/>
+                </div>
+              </div>
+              <div className="flex gap-3 mb-7">
+                <button onClick={saveEditCat} className="flex items-center gap-2 px-6 py-2.5 bg-teal-600 hover:bg-teal-500 text-white rounded-lg font-bold text-sm">
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><circle cx="7" cy="7" r="6"/><path d="M7 4v6M4 7h6"/></svg>
+                  UPDATE CATEGORY
+                </button>
+                <button onClick={()=>setEditCat(null)} className="flex items-center gap-2 px-6 py-2.5 bg-red-500 hover:bg-red-400 text-white rounded-lg font-bold text-sm">
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M2 2l10 10M12 2L2 12"/></svg>
+                  CLOSE
+                </button>
+              </div>
+              <p className="text-sm font-bold text-slate-700 mb-3">Users Heading This Category</p>
+              <div className="space-y-2 mb-4">
+                {(editCat.assigneeIds||[]).map(uid=>{
+                  const u=devTeam.find(x=>x.id===uid);
+                  return u?(
+                    <div key={uid} className="flex items-center gap-3 p-3 border-l-4 border-teal-500 bg-slate-50 rounded-r-xl">
+                      <div className="w-10 h-10 rounded-full bg-slate-400 flex items-center justify-center text-white font-bold flex-shrink-0">{u.name.charAt(0)}</div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-slate-800">{u.name}</p>
+                        <p className="text-xs text-slate-500">{u.email||''}</p>
+                      </div>
+                      <button onClick={()=>setEditCat(c=>({...c,assigneeIds:c.assigneeIds.filter(id=>id!==uid)}))} className="text-red-400 hover:text-red-600 text-xl leading-none font-bold">×</button>
+                    </div>
+                  ):null;
+                })}
+              </div>
+              <select onChange={e=>{const v=e.target.value;if(!v||(editCat.assigneeIds||[]).includes(v)) return;setEditCat(c=>({...c,assigneeIds:[...(c.assigneeIds||[]),v]}));e.target.value='';}}
+                className="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none text-slate-600">
+                <option value="">+ Add user to category…</option>
+                {devTeam.filter(u=>!(editCat.assigneeIds||[]).includes(u.id)).map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </div>
+            <div className="w-72 border-l border-slate-200 flex flex-col" style={{background:'#f8fafc'}}>
+              <div className="px-5 py-4 border-b border-slate-200"><p className="text-sm font-bold text-slate-700">Notes And Attachments</p></div>
+              <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                {editNotes.length===0?(
+                  <div className="text-center py-10">
+                    <div className="w-14 h-16 bg-slate-700 rounded-lg mx-auto mb-3 flex items-center justify-center">
+                      <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="white" strokeWidth="1.5"><path d="M4 2h9l5 5v13H4z"/><path d="M13 2v5h5" strokeLinecap="round"/></svg>
+                    </div>
+                    <p className="text-xs text-slate-400">Notes You Add Will Appear Here.</p>
+                  </div>
+                ):editNotes.map((n,i)=>(
+                  <div key={i} className="bg-white border border-slate-200 rounded-xl p-3">
+                    <p className="text-sm text-slate-700">{n}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="border-t border-slate-200 p-4">
+                <p className="text-xs font-bold text-slate-500 mb-2 tracking-wider">ADD NOTE</p>
+                <div className="flex gap-2">
+                  <input value={editNoteText} onChange={e=>setEditNoteText(e.target.value)}
+                    onKeyDown={e=>e.key==='Enter'&&editNoteText.trim()&&(setEditNotes(n=>[...n,editNoteText.trim()]),setEditNoteText(''))}
+                    placeholder="Type a note…"
+                    className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-teal-500"/>
+                  <button onClick={()=>editNoteText.trim()&&(setEditNotes(n=>[...n,editNoteText.trim()]),setEditNoteText(''))}
+                    className="px-3 py-2 bg-teal-600 hover:bg-teal-500 text-white rounded-lg text-xs font-bold">Add</button>
+                </div>
+              </div>
+            </div>
           </div>
-        );
-      })}
+        </div>
+      )}
     </div>
   );
 };
 
+
 // ═══════════════════════════════════════════════════════════════
 // PM GANTT CHART — matches screenshot 2
 // ═══════════════════════════════════════════════════════════════
-const PmGanttChart = ({cats, getTasksForCat, pmSubtasks, users, currentUser}) => {
+const PmGanttChart = ({cats, getTasksForCat, pmSubtasks, users, currentUser, pmTasks, setPmTasks, setPmSubtasks, pmComments, setPmComments, projects, pmCategories, developer}) => {
   const {dark}=useTheme();
   const [ganttView,setGanttView]=useState("week"); // day|week|month
   const [startDate,setStartDate]=useState(()=>{const d=new Date();d.setDate(d.getDate()-3);return d;});
   const [collapsedCats,setCollapsedCats]=useState({});
+  const [ganttTask,setGanttTask]=useState(null); // task opened from gantt click
   const toggle=(id)=>setCollapsedCats(s=>({...s,[id]:!s[id]}));
 
   const COLS = ganttView==="day" ? 14 : ganttView==="week" ? 10 : 31;
@@ -8099,13 +8324,13 @@ const PmGanttChart = ({cats, getTasksForCat, pmSubtasks, users, currentUser}) =>
                         {todayIdx>=0&&<div className="absolute top-0 bottom-0 border-r border-dashed border-emerald-500/60 z-10" style={{left:todayIdx*COL_W}}/>}
                         {bar&&!isMilestone&&(
                           <div className="absolute top-1/2 -translate-y-1/2 rounded-full flex items-center justify-center px-2 cursor-pointer hover:opacity-80 transition-opacity"
-                            style={{left:bar.left,width:bar.width,height:22,background:barColor,border:t.status==="To Do"?`2px solid ${barColor}`:"none",backgroundColor:t.status==="To Do"?barColor+"30":barColor}}>
+                            onClick={()=>setGanttTask(t)} style={{left:bar.left,width:bar.width,height:22,background:barColor,border:t.status==="To Do"?`2px solid ${barColor}`:"none",backgroundColor:t.status==="To Do"?barColor+"30":barColor,cursor:"pointer"}}>
                             <span className="text-white font-medium truncate" style={{fontSize:10,color:t.status==="To Do"?barColor:"white"}}>{t.name}</span>
                           </div>
                         )}
                         {bar&&isMilestone&&(
                           <div className="absolute top-1/2 -translate-y-1/2 cursor-pointer"
-                            style={{left:bar.left+(bar.width/2)-8,width:16,height:16,background:"#10b981",transform:"rotate(45deg) translateY(-50%)"}}>
+                            onClick={()=>setGanttTask(t)} style={{left:bar.left+(bar.width/2)-8,width:16,height:16,background:"#10b981",transform:"rotate(45deg) translateY(-50%)",cursor:"pointer"}}>
                           </div>
                         )}
                       </div>
@@ -8124,6 +8349,15 @@ const PmGanttChart = ({cats, getTasksForCat, pmSubtasks, users, currentUser}) =>
           <button onClick={()=>navigate(1)} className={`px-3 py-1 rounded text-xs ${tc(dark,"text-slate-400 hover:bg-slate-700","text-slate-500 hover:bg-slate-100")}`}>Next ›</button>
         </div>
       </div>
+
+      {ganttTask&&pmTasks&&(
+        <PmTaskDrawer task={ganttTask} pmTasks={pmTasks} setPmTasks={setPmTasks}
+          pmSubtasks={pmSubtasks} setPmSubtasks={setPmSubtasks}
+          pmComments={pmComments||[]} setPmComments={setPmComments||(()=>{})}
+          users={users} currentUser={currentUser} developer={developer}
+          projects={projects||[]} pmCategories={pmCategories||[]}
+          onClose={()=>setGanttTask(null)}/>
+      )}
     </div>
   );
 };
@@ -8819,13 +9053,14 @@ export default function SolarProApp() {
   const renderPage = () => {
     // If viewing a project detail
     if (currentProject && (developer || currentUser.role===ROLES.USER)) {
-      if (subscriptionLocked && developer) return <LockedPage developer={developer}/>;
+      const effDev = developer || developers.find(d=>d.id===currentProject.developerId) || null;
+      if (subscriptionLocked && effDev) return <LockedPage developer={effDev}/>;
       return (
         <ProjectDetailPage
           project={currentProject} notes={notes} setNotes={setNotes}
           documents={documents} setDocuments={setDocuments}
           proposals={proposals} setProposals={setProposals}
-          templates={templates} developer={developer}
+          templates={templates} developer={effDev}
           currentUser={currentUser} onBack={() => pushNav("projects", null)}
           setProjects={setProjects} users={users}
           tasks={tasks} setTasks={setTasks}
