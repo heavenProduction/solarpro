@@ -9066,54 +9066,84 @@ const PmReports = ({cats, pmTasks, pmSubtasks, pmComments, users, currentUser, p
 
 
 // ── PM GLOBAL DASHBOARD ───────────────────────────────────────
-const PmDashboard = ({pmCategories, pmTasks, pmSubtasks, pmComments, projects, users, currentUser, developer}) => {
+const PmDashboard = ({pmCategories, pmTasks, pmSubtasks, pmComments, projects, users, currentUser, developer, onOpenProject}) => {
   const {dark}=useTheme();
   const [filterProject,setFilterProject]=useState("all");
   const [filterStatus,setFilterStatus]=useState("all");
   const [filterUser,setFilterUser]=useState("all");
   const [dateFrom,setDateFrom]=useState("");
   const [dateTo,setDateTo]=useState("");
+  const [projectIdSearch,setProjectIdSearch]=useState("");
+  const [taskPageSize,setTaskPageSize]=useState(10);
+  const [taskPage,setTaskPage]=useState(1);
+  const [showCompleted,setShowCompleted]=useState(false);
+  const [activeCard,setActiveCard]=useState(null); // "completed"|"inProgress"|"delayed"|"overdue"|"dCompleted"|null
 
   const isUser = currentUser.role===ROLES.USER;
-  // Dev Admin sees ALL projects; Users see only their assigned/visible projects
+  const prefix = developer?.projectPrefix||"SP";
+
   const devProjects=projects.filter(p=>{
     if(p.developerId!==currentUser.developerId) return false;
     if(!isUser) return true;
-    return p.assignedUserId===currentUser.id || p.userId===currentUser.id || (p.visibleTo||[]).includes(currentUser.id);
+    return p.assignedUserId===currentUser.id||p.userId===currentUser.id||(p.visibleTo||[]).includes(currentUser.id);
   });
   const devTeam=users.filter(u=>u.developerId===currentUser.developerId&&u.active);
   const myProjectIds=new Set(devProjects.map(p=>p.id));
-  // Users see tasks only from their projects; Dev Admin sees all
   const allTasks=pmTasks.filter(t=>{
     if(t.developerId!==currentUser.developerId) return false;
     if(!isUser) return true;
     return myProjectIds.has(t.projectId);
   }).map(applyPmDelay);
 
-  const filtered=allTasks.filter(t=>{
+  const now=new Date();
+  const stats={
+    total:allTasks.length,
+    completed:allTasks.filter(t=>t.status==="Completed"&&!t.isDelayedCompleted).length,
+    dCompleted:allTasks.filter(t=>t.isDelayedCompleted).length,
+    inProgress:allTasks.filter(t=>t.status==="In Progress").length,
+    delayed:allTasks.filter(t=>t.isDelayed||t.status==="Delayed").length,
+    overdue:allTasks.filter(t=>t.dueDate&&new Date(t.dueDate)<now&&t.status!=="Completed"&&!t.isDelayedCompleted).length,
+  };
+
+  // Card click → filter task table
+  const cardFilter=(t)=>{
+    if(activeCard==="completed") return t.status==="Completed"&&!t.isDelayedCompleted;
+    if(activeCard==="dCompleted") return !!t.isDelayedCompleted;
+    if(activeCard==="inProgress") return t.status==="In Progress";
+    if(activeCard==="delayed")    return t.isDelayed||t.status==="Delayed";
+    if(activeCard==="overdue")    return t.dueDate&&new Date(t.dueDate)<now&&t.status!=="Completed"&&!t.isDelayedCompleted;
+    return true;
+  };
+
+  const baseFiltered=allTasks.filter(t=>{
     if(filterProject!=="all"&&t.projectId!==filterProject) return false;
     if(filterStatus!=="all"&&t.status!==filterStatus) return false;
     if(filterUser!=="all"&&t.assignedTo!==filterUser) return false;
     if(dateFrom&&t.dueDate&&t.dueDate<dateFrom) return false;
     if(dateTo&&t.dueDate&&t.dueDate>dateTo) return false;
-    return true;
+    if(projectIdSearch.trim()){
+      const proj=devProjects.find(p=>p.id===t.projectId);
+      const pid=(proj?.projectId||"").toLowerCase();
+      if(!pid.includes(projectIdSearch.trim().toLowerCase())) return false;
+    }
+    return cardFilter(t);
   });
 
-  const now=new Date();
-  const stats={
-    total:allTasks.length, completed:allTasks.filter(t=>t.status==="Completed").length,
-    inProgress:allTasks.filter(t=>t.status==="In Progress").length, delayed:allTasks.filter(t=>t.isDelayed||t.status==="Delayed").length,
-    overdue:allTasks.filter(t=>t.dueDate&&new Date(t.dueDate)<now&&t.status!=="Completed").length,
-  };
+  // Task table: hide completed unless showCompleted toggle is on
+  const filteredForTable=showCompleted?baseFiltered:baseFiltered.filter(t=>t.status!=="Completed"&&!t.isDelayedCompleted);
 
+  const totalPages=Math.ceil(filteredForTable.length/taskPageSize);
+  const pagedTasks=filteredForTable.slice((taskPage-1)*taskPageSize, taskPage*taskPageSize);
+
+  // Project Summary: only In Progress, max 5 shown, scrollable if more
   const projectStats=devProjects.map(p=>{
     const pts=allTasks.filter(t=>t.projectId===p.id);
-    const done=pts.filter(t=>t.status==="Completed").length;
+    const done=pts.filter(t=>t.status==="Completed"||t.isDelayedCompleted).length;
     const delayed=pts.filter(t=>t.isDelayed||t.status==="Delayed").length;
     const pct=pts.length?Math.round(done/pts.length*100):0;
     const status=pts.length===0?"No Tasks":done===pts.length&&pts.length>0?"Completed":delayed>0?"Delayed":pct>=75?"On Track":"In Progress";
     return {project:p, total:pts.length, done, delayed, pct, status};
-  }).filter(r=>r.total>0);
+  }).filter(r=>r.total>0&&r.status!=="Completed").slice(0,20); // only in-progress projects
 
   const statusBadge=(s)=>{
     const map={"Completed":"bg-emerald-500/20 text-emerald-400","Delayed":"bg-red-500/20 text-red-400","On Track":"bg-sky-500/20 text-sky-400","In Progress":"bg-amber-500/20 text-amber-400","No Tasks":"bg-slate-500/20 text-slate-400"};
@@ -9122,72 +9152,88 @@ const PmDashboard = ({pmCategories, pmTasks, pmSubtasks, pmComments, projects, u
 
   const inp=`border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`;
 
+  const cardDef=[
+    {key:"total",      label:"Total Tasks",   val:stats.total,      color:"slate",  click:null},
+    {key:"completed",  label:"Completed",     val:stats.completed,  color:"emerald",click:"completed"},
+    {key:"dCompleted", label:"D-Completed",   val:stats.dCompleted, color:"orange", click:"dCompleted"},
+    {key:"inProgress", label:"In Progress",   val:stats.inProgress, color:"sky",    click:"inProgress"},
+    {key:"delayed",    label:"Delayed",       val:stats.delayed,    color:"red",    click:"delayed"},
+    {key:"overdue",    label:"Overdue",       val:stats.overdue,    color:"yellow", click:"overdue"},
+  ];
+
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-5">
         <div>
-          <h1 className={`text-xl font-bold ${tc(dark,"text-white","text-slate-800")}`}>Project Management</h1>
+          <h1 className={`text-xl font-bold ${tc(dark,"text-white","text-slateate-800")}`}>Project Management Dashboard</h1>
           <p className={`text-sm ${tc(dark,"text-slate-400","text-slate-500")}`}>Across {devProjects.length} projects</p>
         </div>
       </div>
 
-      {/* Top metrics */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-5">
-        {[
-          {label:"Total Tasks",val:stats.total,color:"slate"},
-          {label:"Completed",val:stats.completed,color:"emerald"},
-          {label:"In Progress",val:stats.inProgress,color:"sky"},
-          {label:"Delayed",val:stats.delayed,color:"red"},
-          {label:"Overdue",val:stats.overdue,color:"orange"},
-        ].map(s=>(
-          <div key={s.label} className={`border rounded-xl p-3 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+      {/* ── METRIC CARDS ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
+        {cardDef.map(s=>(
+          <button key={s.key} onClick={()=>setActiveCard(activeCard===s.click?null:s.click)}
+            className={`border rounded-xl p-3 text-left transition-all hover:shadow-md ${activeCard===s.click&&s.click?tc(dark,"ring-2 ring-offset-1 ring-"+s.color+"-400 bg-[#0c1929] border-"+s.color+"-500/50","ring-2 ring-offset-1 ring-"+s.color+"-400 bg-white border-"+s.color+"-200"):tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
             <p className={`text-xs mb-0.5 ${tc(dark,"text-slate-400","text-slate-500")}`}>{s.label}</p>
-            <p className={`text-2xl font-black text-${s.color}-${dark?"400":"600"}`}>{s.val}</p>
-          </div>
+            <p className={`text-2xl font-black`} style={{color:s.color==="orange"?"#f97316":s.color==="yellow"?"#f59e0b":undefined}} className2={s.color!=="orange"&&s.color!=="yellow"?`text-${s.color}-${dark?"400":"600"}`:""}>{s.val}</p>
+          </button>
         ))}
       </div>
 
-      {/* Filters */}
+      {/* ── FILTERS ── */}
       <div className={`border rounded-xl p-3 mb-5 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
         <div className="flex flex-wrap gap-2 items-center">
-          <select value={filterProject} onChange={e=>setFilterProject(e.target.value)} className={inp}>
+          <select value={filterProject} onChange={e=>{setFilterProject(e.target.value);setTaskPage(1);}} className={inp}>
             <option value="all">All Projects</option>
             {devProjects.map(p=><option key={p.id} value={p.id}>{p.customerName}</option>)}
           </select>
-          <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} className={inp}>
+          <select value={filterStatus} onChange={e=>{setFilterStatus(e.target.value);setTaskPage(1);}} className={inp}>
             <option value="all">All Status</option>
             {PM_STATUS.map(s=><option key={s}>{s}</option>)}
           </select>
-          <select value={filterUser} onChange={e=>setFilterUser(e.target.value)} className={inp}>
+          <select value={filterUser} onChange={e=>{setFilterUser(e.target.value);setTaskPage(1);}} className={inp}>
             <option value="all">All Users</option>
             {devTeam.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
           </select>
-          <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} className={`${inp} min-w-[130px]`}/>
-          <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)} className={`${inp} min-w-[130px]`}/>
-          {(filterProject!=="all"||filterStatus!=="all"||filterUser!=="all"||dateFrom||dateTo)&&(
-            <button onClick={()=>{setFilterProject("all");setFilterStatus("all");setFilterUser("all");setDateFrom("");setDateTo("");}} className="text-xs text-amber-400 underline">Clear</button>
+          <input type="date" value={dateFrom} onChange={e=>{setDateFrom(e.target.value);setTaskPage(1);}} className={`${inp} min-w-[130px]`}/>
+          <input type="date" value={dateTo}   onChange={e=>{setDateTo(e.target.value);setTaskPage(1);}} className={`${inp} min-w-[130px]`}/>
+          {/* Project ID search with fixed prefix */}
+          <div className={`flex items-center border rounded-lg overflow-hidden ${tc(dark,"bg-slate-800 border-slate-600","bg-white border-slate-300")}`}>
+            <span className={`px-2 py-1.5 text-xs font-mono font-bold border-r flex-shrink-0 ${tc(dark,"bg-slate-700 border-slate-600 text-amber-400","bg-slate-100 border-slate-200 text-amber-600")}`}>{prefix}-</span>
+            <input value={projectIdSearch} onChange={e=>{setProjectIdSearch(e.target.value);setTaskPage(1);}}
+              placeholder="ID…" className={`px-2 py-1.5 text-xs w-20 focus:outline-none bg-transparent ${tc(dark,"text-white placeholder-slate-500","text-slate-800 placeholder-slate-400")}`}/>
+          </div>
+          {(filterProject!=="all"||filterStatus!=="all"||filterUser!=="all"||dateFrom||dateTo||projectIdSearch||activeCard)&&(
+            <button onClick={()=>{setFilterProject("all");setFilterStatus("all");setFilterUser("all");setDateFrom("");setDateTo("");setProjectIdSearch("");setActiveCard(null);setTaskPage(1);}} className="text-xs text-amber-400 underline">Clear All</button>
           )}
         </div>
       </div>
 
-      {/* Project table */}
+      {/* ── PROJECT SUMMARY (In-Progress only, max 5 shown, scrollable) ── */}
       <div className={`border rounded-xl overflow-hidden mb-5 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
         <div className="flex items-center justify-between px-4 py-3 border-b" style={{borderColor:dark?"rgba(51,65,85,0.5)":"#e2e8f0"}}>
-          <h3 className={`font-bold text-sm ${tc(dark,"text-white","text-slate-800")}`}>Project Summary</h3>
+          <h3 className={`font-bold text-sm ${tc(dark,"text-white","text-slate-800")}`}>Project Summary <span className={`font-normal text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>(In Progress — {projectStats.length})</span></h3>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm" style={{minWidth:640}}>
-            <thead>
-              <tr className={`border-b ${tc(dark,"border-slate-700 bg-slate-800/30","border-slate-200 bg-slate-50")}`}>
-                {["Project","Total","Done","Delayed","Progress","Status"].map(h=>(
+        <div className="overflow-x-auto" style={{maxHeight:projectStats.length>5?280:undefined,overflowY:projectStats.length>5?"auto":undefined}}>
+          <table className="w-full text-sm" style={{minWidth:700}}>
+            <thead className={`sticky top-0 ${tc(dark,"bg-slate-800","bg-slate-50")}`}>
+              <tr className={`border-b ${tc(dark,"border-slate-700","border-slate-200")}`}>
+                {["Project ID","Project","Total","Done","Delayed","Progress","Status"].map(h=>(
                   <th key={h} className={`text-left px-4 py-3 text-xs font-medium ${tc(dark,"text-slate-400","text-slate-500")}`}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {projectStats.length===0&&<tr><td colSpan={6} className={`text-center py-8 text-sm ${tc(dark,"text-slate-500","text-slate-400")}`}>No project tasks yet</td></tr>}
+              {projectStats.length===0&&<tr><td colSpan={7} className={`text-center py-8 text-sm ${tc(dark,"text-slate-500","text-slate-400")}`}>No in-progress projects with tasks</td></tr>}
               {projectStats.map(r=>(
                 <tr key={r.project.id} className={`border-b ${tc(dark,"border-slate-700/30 hover:bg-slate-800/30","border-slate-100 hover:bg-slate-50")}`}>
+                  <td className="px-4 py-3">
+                    <button onClick={()=>onOpenProject&&onOpenProject(r.project.id)}
+                      className="text-xs font-mono font-semibold text-teal-400 hover:text-teal-300 hover:underline transition-colors">
+                      {r.project.projectId||"—"}
+                    </button>
+                  </td>
                   <td className={`px-4 py-3 font-medium ${tc(dark,"text-white","text-slate-800")}`}>{r.project.customerName}</td>
                   <td className={`px-4 py-3 ${tc(dark,"text-slate-300","text-slate-600")}`}>{r.total}</td>
                   <td className="px-4 py-3 text-emerald-400 font-medium">{r.done}</td>
@@ -9208,34 +9254,60 @@ const PmDashboard = ({pmCategories, pmTasks, pmSubtasks, pmComments, projects, u
         </div>
       </div>
 
-      {/* Filtered task list */}
+      {/* ── TASK TABLE ── */}
       <div className={`border rounded-xl overflow-hidden ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
-        <div className={`px-4 py-3 border-b ${tc(dark,"border-slate-700/50","border-slate-200")}`}>
-          <h3 className={`font-bold text-sm ${tc(dark,"text-white","text-slate-800")}`}>Tasks ({filtered.length})</h3>
+        <div className={`flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b ${tc(dark,"border-slate-700/50","border-slate-200")}`}>
+          <div className="flex items-center gap-3">
+            <h3 className={`font-bold text-sm ${tc(dark,"text-white","text-slate-800")}`}>
+              Tasks ({filteredForTable.length})
+              {activeCard&&<span className={`ml-2 text-xs font-normal px-2 py-0.5 rounded-full ${tc(dark,"bg-slate-700 text-slate-300","bg-slate-100 text-slate-500")}`}>{activeCard}</span>}
+            </h3>
+            {/* Show completed toggle */}
+            <label className={`flex items-center gap-1.5 cursor-pointer text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>
+              <div onClick={()=>{setShowCompleted(v=>!v);setTaskPage(1);}} className={`w-8 h-4 rounded-full transition-colors relative cursor-pointer ${showCompleted?tc(dark,"bg-teal-600","bg-teal-500"):tc(dark,"bg-slate-700","bg-slate-300")}`}>
+                <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${showCompleted?"translate-x-4":"translate-x-0.5"}`}/>
+              </div>
+              Show completed
+            </label>
+          </div>
+          {/* Page size selector */}
+          <div className="flex items-center gap-2">
+            <span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>Show:</span>
+            <select value={taskPageSize} onChange={e=>{setTaskPageSize(Number(e.target.value));setTaskPage(1);}} className={inp}>
+              {[10,20,30,40,50].map(n=><option key={n} value={n}>{n}</option>)}
+            </select>
+          </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm" style={{minWidth:700}}>
+          <table className="w-full text-sm" style={{minWidth:750}}>
             <thead>
               <tr className={`border-b ${tc(dark,"border-slate-700 bg-slate-800/30","border-slate-200 bg-slate-50")}`}>
-                {["Task","Category","Project","Priority","Status","Assigned","Due"].map(h=>(
+                {["Task","Project ID","Category","Project","Priority","Status","Assigned","Due"].map(h=>(
                   <th key={h} className={`text-left px-4 py-3 text-xs font-medium ${tc(dark,"text-slate-400","text-slate-500")}`}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {filtered.length===0&&<tr><td colSpan={7} className={`text-center py-8 text-sm ${tc(dark,"text-slate-500","text-slate-400")}`}>No tasks match filters</td></tr>}
-              {filtered.slice(0,50).map(t=>{
+              {pagedTasks.length===0&&<tr><td colSpan={8} className={`text-center py-8 text-sm ${tc(dark,"text-slate-500","text-slate-400")}`}>No tasks match filters</td></tr>}
+              {pagedTasks.map(t=>{
                 const proj=devProjects.find(p=>p.id===t.projectId);
                 const cat=pmCategories.find(c=>c.id===t.categoryId);
                 const user=devTeam.find(u=>u.id===t.assignedTo);
                 const overdue=t.dueDate&&new Date(t.dueDate)<now&&t.status!=="Completed";
+                const statusLabel=t.isDelayedCompleted?"D-Completed":t.status;
                 return (
                   <tr key={t.id} className={`border-b ${tc(dark,"border-slate-700/30 hover:bg-slate-800/30","border-slate-100 hover:bg-slate-50")}`}>
                     <td className={`px-4 py-2.5 font-medium ${tc(dark,"text-white","text-slate-800")}`}>{t.name}</td>
+                    <td className="px-4 py-2.5">
+                      <button onClick={()=>onOpenProject&&onOpenProject(t.projectId)}
+                        className="text-xs font-mono font-semibold text-teal-400 hover:text-teal-300 hover:underline transition-colors">
+                        {proj?.projectId||"—"}
+                      </button>
+                    </td>
                     <td className={`px-4 py-2.5 text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{cat?.name||"—"}</td>
                     <td className={`px-4 py-2.5 text-xs ${tc(dark,"text-amber-400","text-amber-600")}`}>{proj?.customerName||"—"}</td>
                     <td className="px-4 py-2.5"><PmBadge label={t.priority} type="priority"/></td>
-                    <td className="px-4 py-2.5"><PmBadge label={t.status}/></td>
+                    <td className="px-4 py-2.5"><PmBadge label={statusLabel}/></td>
                     <td className={`px-4 py-2.5 text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{user?.name||"—"}</td>
                     <td className={`px-4 py-2.5 text-xs ${overdue?tc(dark,"text-red-400","text-red-600"):tc(dark,"text-slate-400","text-slate-500")}`}>{t.dueDate?new Date(t.dueDate).toLocaleDateString("en-IN",{day:"numeric",month:"short"}):"—"}{overdue&&" ⚠"}</td>
                   </tr>
@@ -9244,6 +9316,23 @@ const PmDashboard = ({pmCategories, pmTasks, pmSubtasks, pmComments, projects, u
             </tbody>
           </table>
         </div>
+        {/* Pagination */}
+        {totalPages>1&&(
+          <div className={`flex items-center justify-between px-4 py-3 border-t ${tc(dark,"border-slate-700/50","border-slate-200")}`}>
+            <span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>Page {taskPage} of {totalPages} · {filteredForTable.length} tasks</span>
+            <div className="flex gap-1">
+              <button onClick={()=>setTaskPage(1)} disabled={taskPage===1} className={`px-2 py-1 rounded text-xs ${taskPage===1?tc(dark,"text-slate-600","text-slate-300"):tc(dark,"text-slate-400 hover:bg-slate-700","text-slate-500 hover:bg-slate-100")}`}>«</button>
+              <button onClick={()=>setTaskPage(p=>Math.max(1,p-1))} disabled={taskPage===1} className={`px-2 py-1 rounded text-xs ${taskPage===1?tc(dark,"text-slate-600","text-slate-300"):tc(dark,"text-slate-400 hover:bg-slate-700","text-slate-500 hover:bg-slate-100")}`}>‹</button>
+              {Array.from({length:Math.min(5,totalPages)},(_,i)=>{
+                let p=taskPage<=3?i+1:taskPage>=totalPages-2?totalPages-4+i:taskPage-2+i;
+                if(p<1||p>totalPages) return null;
+                return <button key={p} onClick={()=>setTaskPage(p)} className={`w-7 py-1 rounded text-xs ${p===taskPage?tc(dark,"bg-teal-600 text-white","bg-teal-500 text-white"):tc(dark,"text-slate-400 hover:bg-slate-700","text-slate-500 hover:bg-slate-100")}`}>{p}</button>;
+              })}
+              <button onClick={()=>setTaskPage(p=>Math.min(totalPages,p+1))} disabled={taskPage===totalPages} className={`px-2 py-1 rounded text-xs ${taskPage===totalPages?tc(dark,"text-slate-600","text-slate-300"):tc(dark,"text-slate-400 hover:bg-slate-700","text-slate-500 hover:bg-slate-100")}`}>›</button>
+              <button onClick={()=>setTaskPage(totalPages)} disabled={taskPage===totalPages} className={`px-2 py-1 rounded text-xs ${taskPage===totalPages?tc(dark,"text-slate-600","text-slate-300"):tc(dark,"text-slate-400 hover:bg-slate-700","text-slate-500 hover:bg-slate-100")}`}>»</button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -9542,7 +9631,7 @@ export default function SolarProApp() {
 
       // ── DEV ADMIN: SETTINGS ──
       case "pm-dashboard":
-        return <PmDashboard pmCategories={pmCategories} pmTasks={pmTasks} pmSubtasks={pmSubtasks} pmComments={pmComments} projects={projects} users={users} currentUser={currentUser} developer={developer}/>;
+        return <PmDashboard pmCategories={pmCategories} pmTasks={pmTasks} pmSubtasks={pmSubtasks} pmComments={pmComments} projects={projects} users={users} currentUser={currentUser} developer={developer} onOpenProject={(id)=>pushNav("projects",id)}/>;
 
       case "settings":
         return developer ? <SettingsPage developer={developer} setDevelopers={setDevelopers} dateFormat={dateFormat} setDateFormat={setDateFormat} projects={projects} setProjects={setProjects} deletedItems={deletedItems} setDeletedItems={setDeletedItems} pmTemplates={pmTemplates} setPmTemplates={setPmTemplates} pmCategories={pmCategories} pmTasks={pmTasks}/> : null;
