@@ -1464,7 +1464,7 @@ const SuperAdminDashboard = ({ developers, users, projects, invoices, proposals 
           <h3 className={`font-bold mb-3 text-sm ${tc(dark,"text-white","text-slate-800")}`}>Developer Accounts</h3>
           {developers.map(d=>(
             <div key={d.id} className={`flex items-center justify-between py-2 border-b last:border-0 ${tc(dark,"border-slate-700/30","border-slate-100")}`}>
-              <div><div className={`text-sm font-medium ${tc(dark,"text-white","text-slate-800")}`}>{d.companyName}</div><div className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{d.plan} · {d.usedSeats}/{d.seats} seats · until {fmtDate(d.subscriptionEnd)}</div></div>
+              <div><div className={`text-sm font-medium ${tc(dark,"text-white","text-slate-800")}`}>{d.companyName}</div><div className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{d.plan} · {users.filter(u=>u.developerId===d.id&&u.role!==ROLES.SUPER_ADMIN&&u.active).length}/{d.seats} seats · until {fmtDate(d.subscriptionEnd)}</div></div>
               <span className={`text-xs px-2 py-0.5 rounded-full ${statusColor(d.paused?"Paused":d.active?"Active":"Inactive",dark)}`}>{d.paused?"Paused":d.active?"Active":"Inactive"}</span>
             </div>
           ))}
@@ -1517,7 +1517,7 @@ const DevDashboard = ({ developer, projects, users, proposals, invoices }) => {
         <StatCard label="Total Projects" value={devProjects.length} icon="folder" color="amber"/>
         <StatCard label="Active Projects" value={devProjects.filter(p=>p.status==="Active").length} icon="zap" color="emerald"/>
         <StatCard label="Team Members" value={devUsers.length} icon="users" color="sky"/>
-        <StatCard label="Seats Used" value={`${developer.usedSeats}/${developer.seats}`} icon="key" color="purple"/>
+        <StatCard label="Seats Used" value={`${users.filter(u=>u.developerId===developer.id&&u.role!==ROLES.SUPER_ADMIN&&u.active).length}/${developer.seats}`} icon="key" color="purple"/>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1634,7 +1634,7 @@ const DevelopersPage = ({ developers, setDevelopers, users, setUsers, invoices, 
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mb-3">
-              <DevCardRow label="Seats" value={`${dev.usedSeats}/${dev.seats}`}/>
+              <DevCardRow label="Seats" value={`${users.filter(u=>u.developerId===dev.id&&u.role!==ROLES.SUPER_ADMIN&&u.active).length}/${dev.seats}`}/>
               <DevCardRow label="Duration" value={dev.planDuration}/>
               <DevCardRow label="Start" value={fmtDate(dev.subscriptionStart)}/>
               <DevCardRow label="End" value={fmtDate(dev.subscriptionEnd)}/>
@@ -1709,7 +1709,7 @@ const DevelopersPage = ({ developers, setDevelopers, users, setUsers, invoices, 
             <div><h2 className={`text-lg font-bold ${tc(dark,"text-white","text-slate-800")}`}>{viewDev.companyName}</h2><p className={`text-sm ${tc(dark,"text-slate-400","text-slate-500")}`}>{viewDev.email} · {viewDev.phone}</p></div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm mb-4">
-            {[["Plan",viewDev.plan],["Duration",viewDev.planDuration],["Seats",`${viewDev.usedSeats}/${viewDev.seats}`],["Sub Start",fmtDate(viewDev.subscriptionStart)],["Sub End",fmtDate(viewDev.subscriptionEnd)],["GSTIN",viewDev.gstIn||"—"],["Elec Price",`₹${viewDev.electricityPrice}/kWh`],["Cost/kW",fmtINR(viewDev.costPerKW)]].map(([k,v])=>(
+            {[["Plan",viewDev.plan],["Duration",viewDev.planDuration],["Seats",`${users.filter(u=>u.developerId===viewDev.id&&u.role!==ROLES.SUPER_ADMIN&&u.active).length}/${viewDev.seats}`],["Sub Start",fmtDate(viewDev.subscriptionStart)],["Sub End",fmtDate(viewDev.subscriptionEnd)],["GSTIN",viewDev.gstIn||"—"],["Elec Price",`₹${viewDev.electricityPrice}/kWh`],["Cost/kW",fmtINR(viewDev.costPerKW)]].map(([k,v])=>(
               <div key={k} className={`rounded-lg p-2.5 ${tc(dark,"bg-slate-800/50","bg-slate-50")}`}><div className={`text-xs mb-0.5 ${tc(dark,"text-slate-400","text-slate-500")}`}>{k}</div><div className={`font-medium text-sm ${tc(dark,"text-white","text-slate-800")}`}>{v}</div></div>
             ))}
           </div>
@@ -4682,6 +4682,26 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
     setShowGen(false); setViewProposal(np);
   };
 
+  const devTeam = users ? users.filter(u=>u.developerId===project?.developerId && u.active) : [];
+  const devLanes = developer?.lanes?.filter(l=>!l.disabled).sort((a,b)=>a.order-b.order) || [];
+  const currentLane = devLanes.find(l=>l.id===project?.laneId);
+  const assignedUser = devTeam.find(u=>u.id===((project?.assignedUserId)||project?.userId));
+
+  // Is the current user a "visible" (read-only shared) user on this project?
+  const isViewOnly = !!project && currentUser.role===ROLES.USER && (project.visibleTo||[]).includes(currentUser.id) && project.assignedUserId!==currentUser.id && project.userId!==currentUser.id;
+
+  // Expose setDocuments so PM comment uploads auto-appear in Documents tab
+  // Must be BEFORE any conditional returns (React Rules of Hooks)
+  useEffect(()=>{ window.__pmSetDocuments=setDocuments; return()=>{ window.__pmSetDocuments=null; }; },[setDocuments]);
+
+  const quickUpdate = (changes) => {
+    if (!setProjects) return;
+    setProjects(ps=>ps.map(p=>p.id===project.id?{...p,...changes}:p));
+  };
+
+  // Safety guard: if project is gone (e.g. deleted), return nothing
+  if (!project) return null;
+
   const tabs = ["info","pm","tasks","notes","documents","proposal","activity"].filter(t=>{
     if (t==="info") return true; // always visible
     if (t==="pm")        return hasPerm(currentUser,"projects.view");
@@ -4692,22 +4712,6 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
     if (t==="activity")  return hasPerm(currentUser,"activity.view");
     return true;
   });
-  const devTeam = users ? users.filter(u=>u.developerId===project.developerId && u.active) : [];
-  const devLanes = developer?.lanes?.filter(l=>!l.disabled).sort((a,b)=>a.order-b.order) || [];
-  const currentLane = devLanes.find(l=>l.id===project.laneId);
-  const assignedUser = devTeam.find(u=>u.id===(project.assignedUserId||project.userId));
-
-  const quickUpdate = (changes) => {
-    if (!setProjects) return;
-    setProjects(ps=>ps.map(p=>p.id===project.id?{...p,...changes}:p));
-  };
-
-  // Safety guard: if project is gone (e.g. deleted), return nothing
-  if (!project) return null;
-  // Expose setDocuments so PM comment uploads auto-appear in Documents tab
-  useEffect(()=>{ window.__pmSetDocuments=setDocuments; return()=>{ window.__pmSetDocuments=null; }; },[setDocuments]);
-  // Is the current user a "visible" (read-only shared) user on this project?
-  const isViewOnly = currentUser.role===ROLES.USER && (project.visibleTo||[]).includes(currentUser.id) && project.assignedUserId!==currentUser.id && project.userId!==currentUser.id;
 
   return (
     <div>
