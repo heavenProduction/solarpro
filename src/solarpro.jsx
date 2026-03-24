@@ -7497,6 +7497,102 @@ const PmCategoryColumn = ({cat, tasks, pmSubtasks, users, currentUser, developer
   );
 };
 
+// ── PM EXPORT TO EXCEL ───────────────────────────────────────
+const exportPmToExcel = (cats, getTasksForCat, pmSubtasks, pmComments, users, project) => {
+  const fmt = d => {
+    if(!d) return '-';
+    try { return new Date(d).toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric'}).replace(/\//g,'-'); }
+    catch { return '-'; }
+  };
+  const getUserNames = (ids) => {
+    if(!ids||!ids.length) return '-';
+    const arr = Array.isArray(ids)?ids:[ids];
+    return arr.map(id=>users.find(u=>u.id===id)?.name||id).filter(Boolean).join(', ');
+  };
+
+  const headers = ['No.','Category','Category Members','Category Assigned To','Category Due At',
+    'Category Due From','Task Name','Task Assigned To','Task Due From','Task Due To',
+    'Is Milestone?','Task Members','Task Created At','Task Status','Task Progress','No Of Sub Tasks'];
+
+  const rows = [headers];
+  let taskNum = 1;
+
+  cats.forEach(cat => {
+    const tasks = getTasksForCat(cat.id);
+    const catMembers = getUserNames(cat.assigneeIds||[]);
+    const catAssigned = users.find(u=>u.id===cat.assigneeIds?.[0])?.name||'-';
+    const allStarts = tasks.map(t=>t.startDate).filter(Boolean).sort();
+    const allEnds   = tasks.map(t=>t.dueDate).filter(Boolean).sort();
+    const catDueFrom = allStarts[0]?fmt(allStarts[0]):'-';
+    const catDueAt   = allEnds.at(-1)?fmt(allEnds.at(-1)):'-';
+
+    tasks.forEach(t => {
+      const subs = pmSubtasks.filter(s=>s.taskId===t.id);
+      const pct  = typeof t.progress==='number'?t.progress:(t.status==='Completed'?100:0);
+      const taskMembers = getUserNames([t.assignedTo,...(t.collaborators||[])]);
+      rows.push([
+        String(taskNum),
+        cat.name,
+        catMembers,
+        catAssigned,
+        catDueAt,
+        catDueFrom,
+        t.name,
+        users.find(u=>u.id===t.assignedTo)?.name||'-',
+        fmt(t.startDate),
+        fmt(t.dueDate),
+        t.isMilestone?'Yes':'No',
+        taskMembers,
+        fmt(t.createdAt),
+        t.status,
+        pct+'%',
+        subs.length?String(subs.length):'',
+      ]);
+      // Subtasks as 1.1, 1.2 ...
+      subs.forEach((s,si) => {
+        rows.push([
+          `${taskNum}.${si+1}`,
+          cat.name,
+          catMembers,
+          catAssigned,
+          catDueAt,
+          catDueFrom,
+          s.name,
+          users.find(u=>u.id===s.assignedTo)?.name||'-',
+          fmt(s.startDate),
+          fmt(s.dueDate),
+          'No',
+          users.find(u=>u.id===s.assignedTo)?.name||'-',
+          fmt(s.createdAt||t.createdAt),
+          s.status,
+          s.status==='Completed'?'100%':'0%',
+          '',
+        ]);
+      });
+      taskNum++;
+    });
+  });
+
+  // Build CSV string
+  const escape = v => {
+    if(v===null||v===undefined) return '';
+    const s = String(v);
+    if(s.includes(',') || s.includes('"') || s.includes('\n')) return '"' + s.replace(/"/g,'""') + '"';
+    return s;
+  };
+  const csv = rows.map(r=>r.map(escape).join(',')).join('\n');
+  const BOM = '﻿';
+  const blob = new Blob([BOM+csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${project?.customerName||'Project'}_PM_${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
 // ── PROJECT MANAGEMENT TAB ────────────────────────────────────
 const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, setPmTasks, pmSubtasks, setPmSubtasks, pmComments, setPmComments, pmTemplates, setPmTemplates, pmCollections, setPmCollections, users, currentUser, developer, projects, isViewOnly}) => {
   const {dark}=useTheme();
@@ -7718,25 +7814,28 @@ const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, 
               {showPmMenu&&(
                 <>
                   <div className="fixed inset-0 z-40" onClick={()=>setShowPmMenu(false)}/>
-                  <div className={`absolute right-0 top-10 z-50 w-64 rounded-xl border shadow-2xl overflow-hidden ${tc(dark,"bg-slate-800 border-slate-700","bg-white border-slate-200")}`}>
-                    {[
-                      {icon:"edit",   label:"Edit Project",           action:null},
-                      {icon:"task",   label:"Save As Template",       action:()=>{setShowTemplateModal(true);setShowPmMenu(false);}},
-                      {icon:"trash",  label:"Delete Collection",      action:deleteCollection, danger:true},
-                      {icon:"file",   label:"Enforce Sequential Categories", action:null},
-                      {icon:"link",   label:"Connect to customer dashboard", action:null},
-                      {icon:"upload", label:"Export to Excel",        action:null},
-                    ].map((item,i)=>(
-                      <button key={i}
-                        onClick={item.label==="Edit Project"?()=>setShowPmMenu(false):item.label==="Delete Collection"?item.action:item.action?item.action:()=>setShowPmMenu(false)}
-                        className={`w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors border-b last:border-0 ${item.danger?tc(dark,"border-slate-700 text-red-400 hover:bg-red-500/10","border-slate-100 text-red-500 hover:bg-red-50"):tc(dark,"border-slate-700 text-slate-300 hover:bg-slate-700","border-slate-100 text-slate-600 hover:bg-slate-50")}`}>
-                        <Icon name={item.icon} size={15}/>
-                        {item.label}
-                      </button>
-                    ))}
-                    {/* Edit Collection as its own item with teal highlight */}
+                  <div className={`absolute right-0 top-10 z-50 w-56 rounded-xl border shadow-2xl overflow-hidden ${tc(dark,"bg-slate-800 border-slate-700","bg-white border-slate-200")}`}>
+                    {/* Save As Project */}
+                    <button onClick={()=>{setShowTemplateModal(true);setShowPmMenu(false);}}
+                      className={`w-full flex items-center gap-3 px-4 py-3 text-sm border-b transition-colors ${tc(dark,"border-slate-700 text-slate-300 hover:bg-slate-700","border-slate-100 text-slate-600 hover:bg-slate-50")}`}>
+                      <span className="text-base leading-none">📄</span>
+                      Save As Project
+                    </button>
+                    {/* Delete Collection */}
+                    <button onClick={deleteCollection}
+                      className={`w-full flex items-center gap-3 px-4 py-3 text-sm border-b transition-colors ${tc(dark,"border-slate-700 text-red-400 hover:bg-red-500/10","border-slate-100 text-red-500 hover:bg-red-50")}`}>
+                      <Icon name="trash" size={15}/>
+                      Delete Collection
+                    </button>
+                    {/* Export to Excel */}
+                    <button onClick={()=>{exportPmToExcel(cats,getTasksForCat,pmSubtasks,pmComments,users,project);setShowPmMenu(false);}}
+                      className={`w-full flex items-center gap-3 px-4 py-3 text-sm border-b transition-colors ${tc(dark,"border-slate-700 text-slate-300 hover:bg-slate-700","border-slate-100 text-slate-600 hover:bg-slate-50")}`}>
+                      <span className="text-base leading-none">📊</span>
+                      Export to Excel
+                    </button>
+                    {/* Edit Collection */}
                     <button onClick={openEditCollection}
-                      className={`w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors border-t ${tc(dark,"border-slate-700 text-teal-400 hover:bg-teal-500/10","border-slate-200 text-teal-600 hover:bg-teal-50")}`}>
+                      className={`w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors ${tc(dark,"text-teal-400 hover:bg-teal-500/10","text-teal-600 hover:bg-teal-50")}`}>
                       <Icon name="edit" size={15}/>
                       Edit Collection
                     </button>
