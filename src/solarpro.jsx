@@ -5820,7 +5820,18 @@ const TaskDetailModal = ({task: taskSnapshot, tasks, setTasks, users, projects, 
   const task = tasks.find(t=>t.id===taskSnapshot.id) || taskSnapshot;
   const project = projects.find(p=>p.id===task.projectId);
   const assignees = (task.assignedTo||[]).map(id=>users.find(u=>u.id===id)).filter(Boolean);
-  const canEdit = canEditTask(task, currentUser);
+  const taskCategory=(pmCategories||[]).find(c=>c.id===task.categoryId);
+  const accessLevel=projectCollection?.accessLevel||'Task-Level';
+  const inCategoryHeadings=(taskCategory?.assigneeIds||[]).includes(currentUser.id);
+  // Access Level logic:
+  // Category-Level: users assigned to the category can edit ALL tasks in it
+  // Task-Level: only edit tasks directly assigned to you
+  // Full Access / Project-Level: devAdmin rules apply (already handled by canEditTask)
+  const isAssignedToTask=(task.assignedTo||[]).includes(currentUser.id)||(task.collaborators||[]).includes(currentUser.id);
+  const canEdit = canEditTask(task, currentUser) ||
+    (accessLevel==='Category-Level' && inCategoryHeadings) ||
+    (accessLevel==='Task-Level' && isAssignedToTask) ||
+    (accessLevel==='Full Access');
   const overdue = task.dueDate && new Date()>new Date(task.dueDate) && task.status!=="Completed"&&task.status!=="Cancelled";
 
   if (editing) {
@@ -6876,7 +6887,7 @@ const ProgressBar = ({done,total,size="sm"}) => {
 };
 
 // ── PM TASK DETAIL DRAWER ─────────────────────────────────────
-const PmTaskDrawer = ({task:taskSnap, pmTasks, setPmTasks, pmSubtasks, setPmSubtasks, pmComments, setPmComments, users, currentUser, developer, projects, pmCategories, onClose}) => {
+const PmTaskDrawer = ({task:taskSnap, pmTasks, setPmTasks, pmSubtasks, setPmSubtasks, pmComments, setPmComments, users, currentUser, developer, projects, pmCategories, onClose, projectCollection}) => {
   const {dark}=useTheme();
   const toast=useToast();
   const task = pmTasks.find(t=>t.id===taskSnap.id)||taskSnap;
@@ -7330,6 +7341,8 @@ const PmCategoryColumn = ({cat, tasks, pmSubtasks, users, currentUser, developer
 
   const addTask=()=>{
     if(!taskForm.name.trim()) return;
+    if(!taskForm.startDate) { alert('Due From date is required.'); return; }
+    if(!taskForm.dueDate)   { alert('Due Till date is required.'); return; }
     const t={
       id:`pmt${Date.now()}`,projectId:cat.projectId,categoryId:cat.id,
       name:taskForm.name.trim(),description:"",
@@ -7463,18 +7476,18 @@ const PmCategoryColumn = ({cat, tasks, pmSubtasks, users, currentUser, developer
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
           <div>
-            <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Due From</label>
+            <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Due From <span className="text-red-400">*</span></label>
             <input type="date" value={taskForm.startDate} onChange={e=>setTaskForm(f=>({...f,startDate:e.target.value}))}
               className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")} focus:border-teal-500`}/>
           </div>
           <div>
-            <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Due Till</label>
+            <label className={`block text-sm font-medium mb-1.5 ${tc(dark,"text-slate-300","text-slate-700")}`}>Due Till <span className="text-red-400">*</span></label>
             <input type="date" value={taskForm.dueDate} onChange={e=>setTaskForm(f=>({...f,dueDate:e.target.value}))}
               className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")} focus:border-teal-500`}/>
           </div>
         </div>
-        <button onClick={addTask} disabled={!taskForm.name.trim()}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-all ${taskForm.name.trim()?"bg-teal-600 hover:bg-teal-500 text-white":"bg-teal-600/40 text-white/50 cursor-not-allowed"}`}>
+        <button onClick={addTask} disabled={!taskForm.name.trim()||!taskForm.startDate||!taskForm.dueDate}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-all ${taskForm.name.trim()&&taskForm.startDate&&taskForm.dueDate?"bg-teal-600 hover:bg-teal-500 text-white":"bg-teal-600/40 text-white/50 cursor-not-allowed"}`}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 5v6M5 8h6"/></svg>
           CREATE TASK
         </button>
@@ -7766,7 +7779,7 @@ const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, 
         <PmGanttChart cats={cats} getTasksForCat={getTasksForCat} pmSubtasks={pmSubtasks} users={users} currentUser={currentUser} pmTasks={pmTasks} setPmTasks={setPmTasks} setPmSubtasks={setPmSubtasks} pmComments={pmComments} setPmComments={setPmComments} projects={projects} pmCategories={pmCategories} developer={developer}/>
       )}
       {pmView==="list"&&projectCollection&&(
-        <PmListView cats={cats} getTasksForCat={getTasksForCat} pmSubtasks={pmSubtasks} users={users} currentUser={currentUser} onTaskClick={setSelectedTask} canManage={canManage} setPmTasks={setPmTasks} setPmSubtasks={setPmSubtasks} setPmComments={setPmComments} setPmCategories={setPmCategories} pmCategories={pmCategories} project={project} pmComments={pmComments} onAddTaskForCat={catId=>setListAddCatId(catId)}/>
+        <PmListView cats={cats} getTasksForCat={getTasksForCat} pmSubtasks={pmSubtasks} pmTasks={pmTasks} users={users} currentUser={currentUser} onTaskClick={setSelectedTask} canManage={canManage} setPmTasks={setPmTasks} setPmSubtasks={setPmSubtasks} setPmComments={setPmComments} setPmCategories={setPmCategories} pmCategories={pmCategories} project={project} pmComments={pmComments} onAddTaskForCat={catId=>setListAddCatId(catId)}/>
       )}
       {(pmView==="kanban"||!projectCollection)&&(
       <div>
@@ -7869,6 +7882,7 @@ const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, 
           pmComments={pmComments} setPmComments={setPmComments}
           users={users} currentUser={currentUser} developer={developer}
           projects={projects} pmCategories={pmCategories}
+          projectCollection={projectCollection}
           onClose={()=>setSelectedTask(null)}/>
       )}
     </div>
@@ -7879,7 +7893,7 @@ const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, 
 // ═══════════════════════════════════════════════════════════════
 // PM LIST VIEW — matches screenshot 1 (table layout)
 // ═══════════════════════════════════════════════════════════════
-const PmListView = ({cats, getTasksForCat, pmSubtasks, users, currentUser, onTaskClick, canManage, setPmTasks, setPmSubtasks, setPmComments, setPmCategories, pmCategories, project, pmComments, onAddTaskForCat}) => {
+const PmListView = ({cats, getTasksForCat, pmSubtasks, pmTasks, users, currentUser, onTaskClick, canManage, setPmTasks, setPmSubtasks, setPmComments, setPmCategories, pmCategories, project, pmComments, onAddTaskForCat}) => {
   const {dark}=useTheme();
   const toast=useToast();
   const [collapsedCats,setCollapsedCats]=useState({});
@@ -7908,8 +7922,11 @@ const PmListView = ({cats, getTasksForCat, pmSubtasks, users, currentUser, onTas
     return [f(s[0]),f(e.at(-1))].filter(Boolean).join(' - ');
   };
   const taskPct=t=>{
+    // Manual override takes priority for tasks without subtasks
     const subs=pmSubtasks.filter(s=>s.taskId===t.id);
-    return subs.length?Math.round(subs.filter(s=>s.status==='Completed').length/subs.length*100):(t.status==='Completed'?100:0);
+    if(subs.length) return Math.round(subs.filter(s=>s.status==='Completed').length/subs.length*100);
+    if(typeof t.progress==='number') return t.progress;
+    return t.status==='Completed'?100:t.isDelayedCompleted?100:0;
   };
   const statusStyle=(t)=>{
     // Check isDelayedCompleted first for D-Completed orange
@@ -7932,7 +7949,7 @@ const PmListView = ({cats, getTasksForCat, pmSubtasks, users, currentUser, onTas
       }));
     }
     const newStatus=pct===100?'Completed':pct>0?'In Progress':'To Do';
-    setPmTasks(ts=>ts.map(t=>t.id===taskId?{...t,status:newStatus,completedAt:pct===100?now:null,isDelayedCompleted:pct===100&&!!t.dueDate&&new Date(t.dueDate)<new Date(now)}:t));
+    setPmTasks(ts=>ts.map(t=>t.id===taskId?{...t,status:newStatus,progress:pct,completedAt:pct===100?now:null,isDelayedCompleted:pct===100&&!!t.dueDate&&new Date(t.dueDate)<new Date(now)}:t));
     setPctMenuId(null);
     toast.show({message:`Progress → ${pct}%${pct===100?' ✓ Task completed!':''}`});
   };
@@ -8090,7 +8107,7 @@ const PmListView = ({cats, getTasksForCat, pmSubtasks, users, currentUser, onTas
                           <button className="relative w-9 h-9 hover:scale-110 transition-transform" onClick={e=>{e.stopPropagation();setPctMenuId(pctMenuId===t.id?null:t.id);}}>
                             <svg viewBox="0 0 36 36" className="w-9 h-9 -rotate-90">
                               <circle cx="18" cy="18" r="15.9" fill="none" stroke={dark?'#334155':'#e2e8f0'} strokeWidth="3"/>
-                              <circle cx="18" cy="18" r="15.9" fill="none" stroke="#10b981" strokeWidth="3" strokeDasharray={`${pv} ${100-pv}`} strokeLinecap="round"/>
+                              <circle cx="18" cy="18" r="15.9" fill="none" stroke={t.isDelayedCompleted?"#f97316":t.status==="Delayed"?"#ef4444":"#10b981"} strokeWidth="3" strokeDasharray={`${pv} ${100-pv}`} strokeLinecap="round"/>
                             </svg>
                             <span className={`absolute inset-0 flex items-center justify-center font-bold ${tc(dark,'text-white','text-slate-700')}`} style={{fontSize:8}}>{pv}%</span>
                           </button>
@@ -8100,12 +8117,13 @@ const PmListView = ({cats, getTasksForCat, pmSubtasks, users, currentUser, onTas
                               <div className={`px-3 py-2 text-xs font-bold border-b ${tc(dark,'border-slate-700 text-slate-400','border-slate-200 text-slate-500')}`}>Set Progress</div>
                               {[0,25,50,75,100].map(v=>(
                                 <button key={v} onClick={()=>applyPct(t.id,v)}
-                                  className={`w-full flex items-center gap-2 px-3 py-2.5 text-sm transition-colors ${pv===v?tc(dark,'bg-teal-600 text-white','bg-teal-500 text-white'):tc(dark,'text-white hover:bg-slate-700','text-slate-700 hover:bg-slate-50')}`}>
-                                  <div className={`flex-1 h-1.5 rounded-full ${tc(dark,'bg-slate-700','bg-slate-200')}`}>
-                                    <div style={{width:`${v}%`,height:'100%',background:'#10b981',borderRadius:'9999px'}}/>
+                                  className={`w-full flex items-center gap-2 px-3 py-2.5 text-sm transition-colors ${pv===v?'bg-teal-600 text-white':tc(dark,'text-white hover:bg-slate-700','text-slate-700 hover:bg-slate-50')}`}>
+                                  <div className={`flex-1 h-1.5 rounded-full ${pv===v?'bg-white/30':tc(dark,'bg-slate-700','bg-slate-200')}`}>
+                                    <div style={{width:`${v}%`,height:'100%',background:pv===v?'white':'#10b981',borderRadius:'9999px'}}/>
                                   </div>
                                   <span className="font-semibold w-9 text-right">{v}%</span>
-                                  {v===100&&<span className="text-emerald-400 text-xs">✓</span>}
+                                  {v===100&&<span className={pv===v?"text-white text-xs":"text-emerald-400 text-xs"}>✓</span>}
+                                  {pv===v&&<span className="text-white text-xs ml-0.5">←</span>}
                                 </button>
                               ))}
                             </div>
@@ -8147,8 +8165,8 @@ const PmListView = ({cats, getTasksForCat, pmSubtasks, users, currentUser, onTas
       {/* EDIT CATEGORY MODAL */}
       {editCat&&(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={()=>setEditCat(null)}>
-          <div className="w-full max-w-4xl mx-4 flex rounded-2xl overflow-hidden shadow-2xl" style={{maxHeight:'90vh',background:'white'}} onClick={e=>e.stopPropagation()}>
-            <div className="flex-1 overflow-y-auto p-7" style={{background:'white'}}>
+          <div className="w-full max-w-4xl mx-4 flex rounded-2xl shadow-2xl" style={{maxHeight:'92vh',height:'92vh',background:'white',overflow:'hidden'}} onClick={e=>e.stopPropagation()}>
+            <div className="flex-1 overflow-y-auto p-6 min-h-0" style={{background:'white'}}>
               <h2 className="text-xl font-black text-slate-800 mb-6 uppercase">{editCat.name}</h2>
               <div className="mb-5">
                 <label className="block text-sm font-semibold text-slate-700 mb-2">Category Name</label>
@@ -8200,41 +8218,61 @@ const PmListView = ({cats, getTasksForCat, pmSubtasks, users, currentUser, onTas
               </select>
             </div>
             <div className="w-72 border-l border-slate-200 flex flex-col overflow-hidden" style={{background:'#f8fafc',minHeight:0}}>
-              <div className="px-5 py-4 border-b border-slate-200 flex-shrink-0"><p className="text-sm font-bold text-slate-700">Notes And Attachments</p></div>
-              <div className="flex-1 overflow-y-auto p-4 space-y-2 min-h-0">
-                {editNotes.length===0?(
-                  <div className="text-center py-10">
-                    <div className="w-14 h-16 bg-slate-700 rounded-lg mx-auto mb-3 flex items-center justify-center">
-                      <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="white" strokeWidth="1.5"><path d="M4 2h9l5 5v13H4z"/><path d="M13 2v5h5" strokeLinecap="round"/></svg>
-                    </div>
-                    <p className="text-xs text-slate-400">Notes You Add Will Appear Here.</p>
-                  </div>
-                ):editNotes.map((n,i)=>(
-                  <div key={i} className="bg-white border border-slate-200 rounded-xl p-3 flex items-start gap-2">
-                    {n.type==='file'?(
-                      <>
-                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#0d9488" strokeWidth="1.5" className="flex-shrink-0 mt-0.5"><path d="M3 2h5l3 3v7H3z"/><path d="M8 2v3h3" strokeLinecap="round"/></svg>
-                        <div className="flex-1 min-w-0">
-                          {n.fileType?.startsWith('image')?<img src={n.dataUrl} alt={n.name} className="max-h-20 rounded mb-1"/>:null}
-                          <a href={n.dataUrl} download={n.name} className="text-xs text-teal-600 hover:underline truncate block">{n.name}</a>
-                        </div>
-                      </>
-                    ):(
-                      <p className="text-sm text-slate-700">{n.content||n}</p>
-                    )}
-                    <button onClick={()=>setEditNotes(ns=>ns.filter((_,j)=>j!==i))} className="text-slate-300 hover:text-red-400 flex-shrink-0 text-xs">×</button>
-                  </div>
-                ))}
+              <div className="px-5 py-4 border-b border-slate-200 flex-shrink-0">
+                <p className="text-sm font-bold text-slate-700">Notes And Attachments</p>
+                <p className="text-xs text-slate-400 mt-0.5">From all tasks in this category</p>
               </div>
-              <div className="border-t border-slate-200 p-4 flex-shrink-0">
+              <div className="flex-1 overflow-y-auto p-3 space-y-2 min-h-0">
+                {(()=>{
+                  // Collect all comments+attachments from tasks in this category
+                  const catTaskIds=(pmTasks||[]).filter(t=>t.categoryId===editCat.id).map(t=>t.id);
+                  const catComments=(pmComments||[]).filter(c=>catTaskIds.includes(c.entityId));
+                  const catAttachments=catComments.flatMap(c=>(c.attachments||[]).map(a=>({...a,taskId:c.entityId,commenter:users.find(u=>u.id===c.createdBy),date:c.createdAt})));
+                  const allItems=[
+                    ...catComments.map(c=>({kind:'comment',text:c.text,author:users.find(u=>u.id===c.createdBy)?.name||'?',date:c.createdAt,taskName:(pmTasks||[]).find(t=>t.id===c.entityId)?.name||''})),
+                    ...catAttachments.map(a=>({kind:'file',name:a.name,dataUrl:a.dataUrl,fileType:a.type,author:a.commenter?.name||'?',date:a.date,taskName:(pmTasks||[]).find(t=>t.id===a.taskId)?.name||''})),
+                    ...editNotes.map((n,i)=>({kind:n.type||'text',text:n.content||n,name:n.name,dataUrl:n.dataUrl,fileType:n.fileType,author:'You',date:null,idx:i,isOwn:true})),
+                  ].sort((a,b)=>a.date&&b.date?new Date(b.date)-new Date(a.date):0);
+                  if(!allItems.length) return (
+                    <div className="text-center py-8">
+                      <div className="w-12 h-14 bg-slate-700 rounded-lg mx-auto mb-3 flex items-center justify-center">
+                        <svg width="20" height="20" viewBox="0 0 22 22" fill="none" stroke="white" strokeWidth="1.5"><path d="M4 2h9l5 5v13H4z"/><path d="M13 2v5h5" strokeLinecap="round"/></svg>
+                      </div>
+                      <p className="text-xs text-slate-400">Notes You Add Will Appear Here.</p>
+                    </div>
+                  );
+                  return allItems.map((item,i)=>(
+                    <div key={i} className="bg-white border border-slate-200 rounded-xl p-3">
+                      {item.taskName&&<p className="text-xs font-semibold text-teal-600 mb-1 truncate">📌 {item.taskName}</p>}
+                      {item.kind==='file'?(
+                        <div className="flex items-start gap-2">
+                          <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="#0d9488" strokeWidth="1.5" className="flex-shrink-0 mt-0.5"><path d="M3 2h5l3 3v7H3z"/><path d="M8 2v3h3" strokeLinecap="round"/></svg>
+                          <div className="flex-1 min-w-0">
+                            {item.fileType?.startsWith('image')?<img src={item.dataUrl} alt={item.name} className="max-h-16 rounded mb-1 w-full object-cover"/>:null}
+                            <a href={item.dataUrl} download={item.name} className="text-xs text-teal-600 hover:underline truncate block">{item.name}</a>
+                          </div>
+                          {item.isOwn&&<button onClick={()=>setEditNotes(ns=>ns.filter((_,j)=>j!==item.idx))} className="text-slate-300 hover:text-red-400 flex-shrink-0 text-xs">×</button>}
+                        </div>
+                      ):(
+                        <p className="text-xs text-slate-700 leading-relaxed">{item.text}</p>
+                      )}
+                      <div className="flex items-center justify-between mt-1.5">
+                        <span className="text-xs text-slate-400">{item.author}</span>
+                        {item.date&&<span className="text-xs text-slate-400">{new Date(item.date).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</span>}
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
+              <div className="border-t border-slate-200 p-3 flex-shrink-0">
                 <p className="text-xs font-bold text-slate-500 mb-2 tracking-wider">ADD NOTE</p>
                 <div className="flex gap-2 mb-2">
                   <input value={editNoteText} onChange={e=>setEditNoteText(e.target.value)}
                     onKeyDown={e=>e.key==='Enter'&&editNoteText.trim()&&(setEditNotes(n=>[...n,{type:'text',content:editNoteText.trim()}]),setEditNoteText(''))}
                     placeholder="Type a note…"
-                    className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-teal-500"/>
+                    className="flex-1 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-teal-500 min-w-0"/>
                   <button onClick={()=>editNoteText.trim()&&(setEditNotes(n=>[...n,{type:'text',content:editNoteText.trim()}]),setEditNoteText(''))}
-                    className="px-3 py-2 bg-teal-600 hover:bg-teal-500 text-white rounded-lg text-xs font-bold">Add</button>
+                    className="flex-shrink-0 px-3 py-1.5 bg-teal-600 hover:bg-teal-500 text-white rounded-lg text-xs font-bold whitespace-nowrap">Add</button>
                 </div>
                 <label className="flex items-center gap-1.5 cursor-pointer text-xs text-slate-500 hover:text-teal-600 transition-colors">
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 8V4a3 3 0 016 0v5a1.5 1.5 0 01-3 0V4"/></svg>
@@ -8433,6 +8471,7 @@ const PmGanttChart = ({cats, getTasksForCat, pmSubtasks, users, currentUser, pmT
           pmComments={pmComments||[]} setPmComments={setPmComments||(()=>{})}
           users={users} currentUser={currentUser} developer={developer}
           projects={projects||[]} pmCategories={pmCategories||[]}
+          projectCollection={pmCollections&&pmCollections.find?.(c=>c.projectId===cats[0]?.projectId)||null}
           onClose={()=>setGanttTask(null)}/>
       )}
     </div>
