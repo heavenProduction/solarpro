@@ -7815,11 +7815,11 @@ const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, 
                 <>
                   <div className="fixed inset-0 z-40" onClick={()=>setShowPmMenu(false)}/>
                   <div className={`absolute right-0 top-10 z-50 w-56 rounded-xl border shadow-2xl overflow-hidden ${tc(dark,"bg-slate-800 border-slate-700","bg-white border-slate-200")}`}>
-                    {/* Save As Project */}
+                    {/* Save As Template */}
                     <button onClick={()=>{setShowTemplateModal(true);setShowPmMenu(false);}}
                       className={`w-full flex items-center gap-3 px-4 py-3 text-sm border-b transition-colors ${tc(dark,"border-slate-700 text-slate-300 hover:bg-slate-700","border-slate-100 text-slate-600 hover:bg-slate-50")}`}>
                       <span className="text-base leading-none">📄</span>
-                      Save As Project
+                      Save As Template
                     </button>
                     {/* Delete Collection */}
                     <button onClick={deleteCollection}
