@@ -7504,6 +7504,10 @@ const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, 
   const [selectedTask,setSelectedTask]=useState(null);
   const [pmView,setPmView]=useState("kanban"); // kanban|list|gantt|reports
   const [listAddCatId,setListAddCatId]=useState(null); // catId to show Add Task modal from list view
+  const [showPmMenu,setShowPmMenu]=useState(false);         // 3-dot menu
+  const [showEditCollModal,setShowEditCollModal]=useState(false); // Edit Collection modal
+  const [editCollForm,setEditCollForm]=useState(null);       // form state for edit collection
+  const [selectedCollUser,setSelectedCollUser]=useState(''); // user to add to collection
   const [showCatModal,setShowCatModal]=useState(false);
   const [catForm,setCatForm]=useState({name:"",assignedTo:currentUser.id});
   const [renamingCat,setRenamingCat]=useState(null);
@@ -7544,10 +7548,69 @@ const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, 
     toast.show({message:`Category "${c.name}" created.`});
   };
   const createCollection=()=>{
-    const coll={id:`pmcoll${Date.now()}`,projectId:project.id,developerId:currentUser.developerId,assignedTo:collForm.assignedTo,accessLevel:collForm.accessLevel,dateAccessLevel:collForm.dateAccessLevel,createdAt:new Date().toISOString()};
+    const coll={id:`pmcoll${Date.now()}`,projectId:project.id,developerId:currentUser.developerId,assignedTo:collForm.assignedTo,accessLevel:collForm.accessLevel,dateAccessLevel:collForm.dateAccessLevel,createdAt:new Date().toISOString(),users:[collForm.assignedTo]};
     setPmCollections(cs=>[...cs,coll]);
     setShowCollectionModal(false);
     toast.show({message:"Collection created! You can now add categories."});
+  };
+
+  const openEditCollection=()=>{
+    if(!projectCollection) return;
+    // Calculate date range from all tasks in this project's PM
+    const pts=allProjTasks;
+    const starts=pts.map(t=>t.startDate).filter(Boolean).sort();
+    const ends=pts.map(t=>t.dueDate).filter(Boolean).sort();
+    setEditCollForm({
+      ...projectCollection,
+      dueDateDisplay:starts[0]?.slice(0,10)||'',
+      dueTillDisplay:ends.at(-1)?.slice(0,10)||'',
+      preponeBy:'',
+      postponeBy:'',
+    });
+    setShowEditCollModal(true);
+    setShowPmMenu(false);
+  };
+
+  const saveEditCollection=()=>{
+    if(!editCollForm) return;
+    const prepone=parseInt(editCollForm.preponeBy)||0;
+    const postpone=parseInt(editCollForm.postponeBy)||0;
+    const shift=postpone-prepone; // positive = postpone, negative = prepone
+    if(shift!==0){
+      // Shift all PM task dates for this project
+      setPmTasks(ts=>ts.map(t=>{
+        if(t.projectId!==project.id) return t;
+        const shiftDate=d=>{
+          if(!d) return d;
+          const dt=new Date(d);
+          dt.setDate(dt.getDate()+shift);
+          return dt.toISOString().slice(0,10);
+        };
+        return {...t,startDate:shiftDate(t.startDate),dueDate:shiftDate(t.dueDate)};
+      }));
+    }
+    // Update collection settings
+    setPmCollections(cs=>cs.map(c=>c.id===projectCollection.id?{...c,
+      accessLevel:editCollForm.accessLevel,
+      dateAccessLevel:editCollForm.dateAccessLevel,
+      users:editCollForm.users||[],
+    }:c));
+    setShowEditCollModal(false);
+    toast.show({message:shift!==0?`Collection updated. All task dates ${shift>0?'postponed':'preponed'} by ${Math.abs(shift)} day(s).`:'Collection updated.'});
+  };
+
+  const deleteCollection=()=>{
+    if(!projectCollection) return;
+    if(!window.confirm('Delete the PM collection for this project? This will remove all categories and tasks in Project Management. This cannot be undone.')) return;
+    const catIds=cats.map(c=>c.id);
+    const taskIds=allProjTasks.map(t=>t.id);
+    setPmCollections(cs=>cs.filter(c=>c.id!==projectCollection.id));
+    setPmCategories(cs=>cs.filter(c=>!catIds.includes(c.id)));
+    setPmTasks(ts=>ts.filter(t=>!taskIds.includes(t.id)));
+    setPmSubtasks(ss=>ss.filter(s=>!taskIds.includes(s.taskId)));
+    setPmComments(cmts=>cmts.filter(c=>!taskIds.includes(c.entityId)));
+    setShowPmMenu(false);
+    toast.show({message:'PM Collection deleted.'});
   };
   const deleteCategory=(id)=>{
     const cat=pmCategories.find(c=>c.id===id);
@@ -7641,10 +7704,47 @@ const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, 
           ))}
         </div>
         <div className="flex-1"/>
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
           {canManage&&<Btn size="sm" variant={dark?"ghost":"ghostL"} onClick={()=>setShowTemplateModal(true)}>Templates</Btn>}
           {canManage&&projectCollection&&<Btn size="sm" onClick={()=>setShowCatModal(true)} style={{backgroundColor:"#0d9488"}} className="text-white"><Icon name="plus" size={14}/>Add Category</Btn>}
           {canManage&&!projectCollection&&<Btn size="sm" onClick={()=>setShowCollectionModal(true)} style={{backgroundColor:"#0d9488"}} className="text-white"><Icon name="plus" size={14}/>Create Collection</Btn>}
+          {/* 3-dot menu */}
+          {canManage&&projectCollection&&(
+            <div className="relative">
+              <button onClick={()=>setShowPmMenu(m=>!m)}
+                className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${tc(dark,"text-slate-400 hover:bg-slate-700 hover:text-white","text-slate-500 hover:bg-slate-100 hover:text-slate-800")}`}>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="3" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="8" cy="13" r="1.5"/></svg>
+              </button>
+              {showPmMenu&&(
+                <>
+                  <div className="fixed inset-0 z-40" onClick={()=>setShowPmMenu(false)}/>
+                  <div className={`absolute right-0 top-10 z-50 w-64 rounded-xl border shadow-2xl overflow-hidden ${tc(dark,"bg-slate-800 border-slate-700","bg-white border-slate-200")}`}>
+                    {[
+                      {icon:"edit",   label:"Edit Project",           action:null},
+                      {icon:"task",   label:"Save As Template",       action:()=>{setShowTemplateModal(true);setShowPmMenu(false);}},
+                      {icon:"trash",  label:"Delete Collection",      action:deleteCollection, danger:true},
+                      {icon:"file",   label:"Enforce Sequential Categories", action:null},
+                      {icon:"link",   label:"Connect to customer dashboard", action:null},
+                      {icon:"upload", label:"Export to Excel",        action:null},
+                    ].map((item,i)=>(
+                      <button key={i}
+                        onClick={item.label==="Edit Project"?()=>setShowPmMenu(false):item.label==="Delete Collection"?item.action:item.action?item.action:()=>setShowPmMenu(false)}
+                        className={`w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors border-b last:border-0 ${item.danger?tc(dark,"border-slate-700 text-red-400 hover:bg-red-500/10","border-slate-100 text-red-500 hover:bg-red-50"):tc(dark,"border-slate-700 text-slate-300 hover:bg-slate-700","border-slate-100 text-slate-600 hover:bg-slate-50")}`}>
+                        <Icon name={item.icon} size={15}/>
+                        {item.label}
+                      </button>
+                    ))}
+                    {/* Edit Collection as its own item with teal highlight */}
+                    <button onClick={openEditCollection}
+                      className={`w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors border-t ${tc(dark,"border-slate-700 text-teal-400 hover:bg-teal-500/10","border-slate-200 text-teal-600 hover:bg-teal-50")}`}>
+                      <Icon name="edit" size={15}/>
+                      Edit Collection
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
       {pmView!=="reports"&&(
@@ -7874,6 +7974,114 @@ const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, 
         );
       })()}
 
+      {/* EDIT COLLECTION MODAL */}
+      {showEditCollModal&&editCollForm&&(
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 backdrop-blur-sm pt-8 px-4 overflow-y-auto" onClick={()=>setShowEditCollModal(false)}>
+          <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl mb-8" onClick={e=>e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-7 py-5 border-b border-slate-200">
+              <h2 className="text-xl font-black text-slate-800 uppercase tracking-wide">EDIT COLLECTION</h2>
+              <button onClick={()=>setShowEditCollModal(false)} className="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
+            </div>
+            <div className="p-7">
+              {/* Access Level */}
+              <div className="mb-5">
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Access Level</label>
+                <select value={editCollForm.accessLevel} onChange={e=>setEditCollForm(f=>({...f,accessLevel:e.target.value}))}
+                  className="w-full border border-slate-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-teal-500 text-slate-800">
+                  {["Category-Level","Task-Level","Project-Level","Full Access"].map(v=><option key={v}>{v}</option>)}
+                </select>
+              </div>
+              {/* Date Access Level */}
+              <div className="mb-5">
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Date Access Level</label>
+                <select value={editCollForm.dateAccessLevel} onChange={e=>setEditCollForm(f=>({...f,dateAccessLevel:e.target.value}))}
+                  className="w-full border border-slate-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-teal-500 text-slate-800">
+                  {["Project-Level","Category-Level","Task-Level","All Dates"].map(v=><option key={v}>{v}</option>)}
+                </select>
+              </div>
+              {/* Due dates — read-only */}
+              <div className="grid grid-cols-2 gap-4 mb-5">
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Due From <span className="text-xs font-normal text-slate-400">(from tasks)</span></label>
+                  <input type="date" value={editCollForm.dueDateDisplay||''} readOnly disabled
+                    className="w-full border border-slate-200 rounded-lg px-4 py-3 text-sm text-slate-400 bg-slate-100 cursor-not-allowed"/>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Due Till <span className="text-xs font-normal text-slate-400">(from tasks)</span></label>
+                  <input type="date" value={editCollForm.dueTillDisplay||''} readOnly disabled
+                    className="w-full border border-slate-200 rounded-lg px-4 py-3 text-sm text-slate-400 bg-slate-100 cursor-not-allowed"/>
+                </div>
+              </div>
+              {/* Prepone / Postpone */}
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Prepone by (Days):</label>
+                  <input type="number" min="0" value={editCollForm.preponeBy} onChange={e=>setEditCollForm(f=>({...f,preponeBy:e.target.value,postponeBy:e.target.value?'':f.postponeBy}))}
+                    placeholder="e.g. 3"
+                    className="w-full border border-slate-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-teal-500 text-slate-800"/>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Postpone by (Days):</label>
+                  <input type="number" min="0" value={editCollForm.postponeBy} onChange={e=>setEditCollForm(f=>({...f,postponeBy:e.target.value,preponeBy:e.target.value?'':f.preponeBy}))}
+                    placeholder="e.g. 3"
+                    className="w-full border border-slate-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-teal-500 text-slate-800"/>
+                </div>
+              </div>
+              {(editCollForm.preponeBy||editCollForm.postponeBy)&&(
+                <div className="mb-5 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700">
+                  ⚠ Saving will shift <strong>all task dates</strong> in this project's PM board by {editCollForm.preponeBy?`${editCollForm.preponeBy} day(s) earlier`:`${editCollForm.postponeBy} day(s) later`}.
+                </div>
+              )}
+              {/* Buttons */}
+              <div className="flex gap-3 mb-7">
+                <button onClick={saveEditCollection}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-teal-600 hover:bg-teal-500 text-white rounded-lg font-bold text-sm transition-colors">
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><circle cx="7" cy="7" r="6"/><path d="M7 4v6M4 7h6"/></svg>
+                  UPDATE COLLECTION
+                </button>
+                <button onClick={()=>setShowEditCollModal(false)}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-red-500 hover:bg-red-400 text-white rounded-lg font-bold text-sm transition-colors">
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M2 2l10 10M12 2L2 12"/></svg>
+                  CLOSE
+                </button>
+              </div>
+              {/* Users Heading This Project */}
+              <p className="text-sm font-bold text-slate-700 mb-3">Users Heading This Project</p>
+              <div className="space-y-2 mb-4">
+                {(editCollForm.users||[]).map(uid=>{
+                  const u=devTeam.find(x=>x.id===uid);
+                  return u?(
+                    <div key={uid} className="flex items-center gap-3 p-3 border-l-4 border-teal-500 bg-slate-50 rounded-r-xl">
+                      <div className="w-10 h-10 rounded-full bg-slate-400 flex items-center justify-center text-white font-bold flex-shrink-0">{u.name.charAt(0)}</div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-slate-800">{u.name}</p>
+                        <p className="text-xs text-slate-500">{u.email||''}</p>
+                      </div>
+                      <button onClick={()=>setEditCollForm(f=>({...f,users:(f.users||[]).filter(id=>id!==uid)}))}
+                        className="text-red-400 hover:text-red-600 text-xl leading-none font-bold">×</button>
+                    </div>
+                  ):null;
+                })}
+              </div>
+              {/* Add user dropdown */}
+              <select value={selectedCollUser} onChange={e=>setSelectedCollUser(e.target.value)}
+                className="w-full border border-slate-300 rounded-lg px-4 py-3 text-sm focus:outline-none text-slate-600 mb-3">
+                <option value="">Select a user…</option>
+                {devTeam.filter(u=>!(editCollForm.users||[]).includes(u.id)).map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+              <button onClick={()=>{
+                if(!selectedCollUser) return;
+                setEditCollForm(f=>({...f,users:[...(f.users||[]),selectedCollUser]}));
+                setSelectedCollUser('');
+              }} className="w-full py-3 bg-teal-600 hover:bg-teal-500 text-white rounded-lg font-bold text-sm text-center transition-colors">
+                ADD SELECTED USER TO PROJECT
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Task detail drawer */}
       {selectedTask&&(
         <PmTaskDrawer
@@ -7922,11 +8130,12 @@ const PmListView = ({cats, getTasksForCat, pmSubtasks, pmTasks, users, currentUs
     return [f(s[0]),f(e.at(-1))].filter(Boolean).join(' - ');
   };
   const taskPct=t=>{
-    // Manual override takes priority for tasks without subtasks
+    // t.progress is the explicitly set value (from applyPct) — always takes priority
+    if(typeof t.progress==='number') return t.progress;
+    // Fall back to subtask completion % if no manual progress set
     const subs=pmSubtasks.filter(s=>s.taskId===t.id);
     if(subs.length) return Math.round(subs.filter(s=>s.status==='Completed').length/subs.length*100);
-    if(typeof t.progress==='number') return t.progress;
-    return t.status==='Completed'?100:t.isDelayedCompleted?100:0;
+    return t.status==='Completed'||t.isDelayedCompleted?100:0;
   };
   const statusStyle=(t)=>{
     // Check isDelayedCompleted first for D-Completed orange
