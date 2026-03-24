@@ -6373,6 +6373,7 @@ const TasksPage = ({tasks, setTasks, projects, users, currentUser, developer}) =
   const [filterStatus, setFilterStatus]     = useState("all");
   const [filterPriority, setFilterPriority] = useState("all");
   const [searchQ, setSearchQ]   = useState("");
+  const [filterQuick, setFilterQuick]       = useState(null); // "today"|"overdue"|null
 
   // ── DRAG STATE ──────────────────────────────────────────────
   const [dragTaskId, setDragTaskId]     = useState(null);
@@ -6458,6 +6459,8 @@ const TasksPage = ({tasks, setTasks, projects, users, currentUser, developer}) =
     if (filterUser!=="all"&&!(t.assignedTo||[]).includes(filterUser)) return false;
     if (filterStatus!=="all"&&t.status!==filterStatus) return false;
     if (filterPriority!=="all"&&t.priority!==filterPriority) return false;
+    if (filterQuick==="today") { const td=new Date().toISOString().slice(0,10); if(!t.dueDate||t.dueDate.slice(0,10)!==td) return false; }
+    if (filterQuick==="overdue") { if(!t.dueDate||new Date(t.dueDate)>=new Date()||t.status==="Completed"||t.status==="Cancelled") return false; }
     if (searchQ){
       const q=searchQ.toLowerCase();
       const proj=projects.find(p=>p.id===t.projectId);
@@ -6633,8 +6636,16 @@ const TasksPage = ({tasks, setTasks, projects, users, currentUser, developer}) =
           {label:"Overdue",val:stats.overdue,color:"orange"},
           {label:"Due Today",val:stats.today,color:"amber"},
         ].map(s=>(
-          <button key={s.label} onClick={()=>s.label==="In Progress"?setFilterStatus("In Progress"):s.label==="Delayed"?setFilterStatus("Delayed"):s.label==="Completed"?setFilterStatus("Completed"):setFilterStatus("all")}
-            className={`border rounded-xl p-3 text-left transition-all hover:shadow-md ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
+          <button key={s.label} onClick={()=>{
+            setFilterQuick(null);
+            if(s.label==="In Progress") setFilterStatus("In Progress");
+            else if(s.label==="Delayed") setFilterStatus("Delayed");
+            else if(s.label==="Completed") setFilterStatus("Completed");
+            else if(s.label==="Due Today"){setFilterStatus("all");setFilterQuick("today");}
+            else if(s.label==="Overdue"){setFilterStatus("all");setFilterQuick("overdue");}
+            else setFilterStatus("all");
+          }}
+            className={`border rounded-xl p-3 text-left transition-all hover:shadow-md ${(s.label==="Due Today"&&filterQuick==="today")||(s.label==="Overdue"&&filterQuick==="overdue")?tc(dark,"ring-2 ring-amber-400 bg-[#0c1929] border-slate-700/50","ring-2 ring-amber-400 bg-white border-slate-200 shadow-sm"):tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
             <p className={`text-xs mb-0.5 ${tc(dark,"text-slate-400","text-slate-500")}`}>{s.label}</p>
             <p className={`text-xl font-black text-${s.color}-${dark?"400":"600"}`}>{s.val}</p>
           </button>
@@ -6654,7 +6665,7 @@ const TasksPage = ({tasks, setTasks, projects, users, currentUser, developer}) =
             <option value="all">All Projects</option>
             {devProjects.map(p=><option key={p.id} value={p.id}>{p.customerName}</option>)}
           </select>
-          <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} className={inp}>
+          <select value={filterStatus} onChange={e=>{setFilterStatus(e.target.value);setFilterQuick(null);}} className={inp}>
             <option value="all">All Status</option>
             {getTaskStatuses(developer).map(s=><option key={s.name}>{s.name}</option>)}
           </select>
@@ -6667,7 +6678,7 @@ const TasksPage = ({tasks, setTasks, projects, users, currentUser, developer}) =
             {devTeam.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
           </select>
           {(filterProject!=="all"||filterStatus!=="all"||filterPriority!=="all"||filterUser!=="all"||searchQ)&&(
-            <button onClick={()=>{setFilterProject("all");setFilterStatus("all");setFilterPriority("all");setFilterUser("all");setSearchQ("");}} className="text-xs text-amber-400 underline">Clear</button>
+            <button onClick={()=>{setFilterProject("all");setFilterStatus("all");setFilterPriority("all");setFilterUser("all");setSearchQ("");setFilterQuick(null);}} className="text-xs text-amber-400 underline">Clear</button>
           )}
         </div>
       </div>
@@ -6813,12 +6824,12 @@ const SEED_PM_COLLECTIONS = [
 // ── PM CONSTANTS ──────────────────────────────────────────────
 const PM_STATUS  = ["To Do","In Progress","On Hold","Completed","Delayed"];
 const PM_PRIORITY= ["Low","Medium","High","Urgent"];
-const PM_STATUS_HEX = {"To Do":"#64748b","In Progress":"#0ea5e9","On Hold":"#f59e0b","Completed":"#10b981","Delayed":"#ef4444","Cancelled":"#475569"};
+const PM_STATUS_HEX = {"To Do":"#64748b","In Progress":"#0ea5e9","On Hold":"#f59e0b","Completed":"#10b981","Delayed":"#ef4444","Cancelled":"#475569","D-Completed":"#f97316"};
 
 const pmStatusBg = (s,dark) => {
   const map = dark
-    ? {"To Do":"bg-slate-500/20 text-slate-300","In Progress":"bg-sky-500/20 text-sky-300","On Hold":"bg-amber-500/20 text-amber-300","Completed":"bg-emerald-500/20 text-emerald-300","Delayed":"bg-red-500/20 text-red-300"}
-    : {"To Do":"bg-slate-100 text-slate-600","In Progress":"bg-sky-100 text-sky-700","On Hold":"bg-amber-100 text-amber-700","Completed":"bg-emerald-100 text-emerald-700","Delayed":"bg-red-100 text-red-700"};
+    ? {"To Do":"bg-slate-500/20 text-slate-300","In Progress":"bg-sky-500/20 text-sky-300","On Hold":"bg-amber-500/20 text-amber-300","Completed":"bg-emerald-500/20 text-emerald-300","Delayed":"bg-red-500/20 text-red-300","D-Completed":"bg-orange-500/20 text-orange-300"}
+    : {"To Do":"bg-slate-100 text-slate-600","In Progress":"bg-sky-100 text-sky-700","On Hold":"bg-amber-100 text-amber-700","Completed":"bg-emerald-100 text-emerald-700","Delayed":"bg-red-100 text-red-700","D-Completed":"bg-orange-100 text-orange-700"};
   return map[s] || (dark?"bg-slate-700 text-slate-300":"bg-slate-100 text-slate-600");
 };
 const pmPriBg = (p,dark) => {
@@ -6830,7 +6841,14 @@ const pmPriBg = (p,dark) => {
 
 // ── AUTO DELAY ────────────────────────────────────────────────
 const applyPmDelay = (task) => {
-  if (task.status==="Completed"||task.status==="Cancelled") return task;
+  if (task.status==="Cancelled") return task;
+  if (task.status==="Completed") {
+    // Check if completed after due date
+    if(task.completedAt&&task.dueDate&&new Date(task.completedAt)>new Date(task.dueDate)) {
+      return {...task,isDelayedCompleted:true};
+    }
+    return task;
+  }
   const now=new Date(), due=task.dueDate?new Date(task.dueDate):null;
   if (due&&now>due) return {...task,isDelayed:true,status:"Delayed"};
   return task;
@@ -7269,7 +7287,7 @@ const PmTaskCard = ({task, pmSubtasks, users, currentUser, developer, onClick, o
       <div className="flex items-start justify-between gap-2 mb-1.5">
         <div className="flex flex-wrap gap-1">
           <PmBadge label={task.priority} type="priority"/>
-          <PmBadge label={task.status}/>
+          <PmBadge label={task.isDelayedCompleted?"D-Completed":task.status}/>
         </div>
         {canManage&&<button onClick={e=>{e.stopPropagation();onDelete();}} className={`p-0.5 rounded ${tc(dark,"text-slate-600 hover:text-red-400","text-slate-300 hover:text-red-500")}`}><Icon name="trash" size={12}/></button>}
       </div>
@@ -7295,11 +7313,13 @@ const PmTaskCard = ({task, pmSubtasks, users, currentUser, developer, onClick, o
 };
 
 // ── PM CATEGORY COLUMN ────────────────────────────────────────
-const PmCategoryColumn = ({cat, tasks, pmSubtasks, users, currentUser, developer, setPmTasks, setPmSubtasks, setPmComments, pmComments, projects, pmCategories, onTaskClick, onDeleteCat, onRenameRequest, catDragId, setCatDragId, catDragOver, setCatDragOver, onCatDrop, canManage}) => {
+const PmCategoryColumn = ({cat, tasks, pmSubtasks, users, currentUser, developer, setPmTasks, setPmSubtasks, setPmComments, pmComments, projects, pmCategories, onTaskClick, onDeleteCat, onRenameRequest, catDragId, setCatDragId, catDragOver, setCatDragOver, onCatDrop, canManage, _forceShowAddTask, _onAddClose}) => {
   const {dark}=useTheme();
   const toast=useToast();
   const [collapsed,setCollapsed]=useState(false);
-  const [showAddTask,setShowAddTask]=useState(false);
+  const [showAddTask,setShowAddTask]=useState(!!_forceShowAddTask);
+  // When _forceShowAddTask changes, sync state
+  useEffect(()=>{if(_forceShowAddTask) setShowAddTask(true);},[_forceShowAddTask]);
   const [taskForm,setTaskForm]=useState({name:"",assignedTo:currentUser.id,isMilestone:false,isCritical:false,startDate:"",dueDate:"",priority:"Medium"});
   const [taskDragId,setTaskDragId]=useState(null);
   const [taskDragOver,setTaskDragOver]=useState(null);
@@ -7325,7 +7345,7 @@ const PmCategoryColumn = ({cat, tasks, pmSubtasks, users, currentUser, developer
       collaborators:[],createdAt:new Date().toISOString(),developerId:cat.developerId
     };
     setPmTasks(ts=>[...ts,t]);
-    resetTaskForm(); setShowAddTask(false);
+    resetTaskForm(); setShowAddTask(false); if(_onAddClose) _onAddClose();
     toast.show({message:`Task "${t.name}" created.`});
   };
   const deleteTask=(t)=>{
@@ -7413,7 +7433,7 @@ const PmCategoryColumn = ({cat, tasks, pmSubtasks, users, currentUser, developer
     </div>
     {/* ADD TASK MODAL — matches screenshot 3 */}
     {showAddTask&&(
-      <Modal title="ADD TASK" onClose={()=>{setShowAddTask(false);resetTaskForm();}}>
+      <Modal title="ADD TASK" onClose={()=>{setShowAddTask(false);resetTaskForm();if(_onAddClose) _onAddClose();}}>
         <div className={`flex items-center gap-3 p-3 mb-4 rounded-xl border ${tc(dark,"border-slate-700 bg-slate-800/30","border-slate-200 bg-slate-50")}`}>
           <input type="checkbox" id={`ms-${cat.id}`} checked={taskForm.isMilestone}
             onChange={e=>setTaskForm(f=>({...f,isMilestone:e.target.checked}))}
@@ -7567,6 +7587,7 @@ const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, 
 
   const applyTemplate=(tpl)=>{
     const catMap={};
+    const today=new Date().toISOString().slice(0,10);
     tpl.categories.forEach(c=>{
       const newId=`pmc${Date.now()}${Math.random().toString(36).slice(2,6)}`;
       catMap[c.id]=newId;
@@ -7574,9 +7595,16 @@ const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, 
     });
     tpl.tasks.forEach(t=>{
       const newId=`pmt${Date.now()}${Math.random().toString(36).slice(2,6)}`;
-      setPmTasks(ts=>[...ts,{...t,id:newId,projectId:project.id,categoryId:catMap[t.categoryId]||t.categoryId,assignedTo:currentUser.id,createdBy:currentUser.id,developerId:currentUser.developerId,createdAt:new Date().toISOString(),status:"To Do",completedAt:null,isDelayed:false,isDelayedCompleted:false}]);
+      // Shift task dates to start from today
+      const origStart=t.startDate?new Date(t.startDate):null;
+      const origEnd=t.dueDate?new Date(t.dueDate):null;
+      const todayDate=new Date(today);
+      const duration=origStart&&origEnd?Math.max(0,Math.round((origEnd-origStart)/(1000*60*60*24))):0;
+      const newStart=today;
+      const newEnd=duration>0?new Date(todayDate.getTime()+duration*24*60*60*1000).toISOString().slice(0,10):"";
+      setPmTasks(ts=>[...ts,{...t,id:newId,projectId:project.id,categoryId:catMap[t.categoryId]||t.categoryId,assignedTo:currentUser.id,createdBy:currentUser.id,developerId:currentUser.developerId,createdAt:new Date().toISOString(),status:"To Do",completedAt:null,isDelayed:false,isDelayedCompleted:false,startDate:newStart,dueDate:newEnd}]);
     });
-    toast.show({message:`Template "${tpl.name}" applied.`});
+    toast.show({message:`Template "${tpl.name}" applied. Task dates start from today.`});
   };
 
   const inp=`border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none ${tc(dark,"bg-slate-800 border-slate-600 text-white","bg-white border-slate-300 text-slate-800")}`;
@@ -7616,11 +7644,25 @@ const ProjectManagementTab = ({project, pmCategories, setPmCategories, pmTasks, 
         <div className={`border rounded-xl p-4 mb-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
           <div className="flex items-center justify-between mb-2">
             <span className={`text-xs font-medium ${tc(dark,"text-slate-400","text-slate-500")}`}>Overall Progress</span>
-            <span className={`text-xs font-bold ${tc(dark,"text-white","text-slate-800")}`}>{Math.round(totalDone/allProjTasks.length*100)}%</span>
+            <span className={`text-xs font-bold ${tc(dark,"text-white","text-slate-800")}`}>{Math.round((allProjTasks.filter(t=>t.status==="Completed"||t.isDelayedCompleted).length)/Math.max(1,allProjTasks.length)*100)}%</span>
           </div>
-          <ProgressBar done={totalDone} total={allProjTasks.length} size="md"/>
+          {(()=>{
+            const total=allProjTasks.length||1;
+            const doneN=allProjTasks.filter(t=>t.status==="Completed"&&!t.isDelayedCompleted).length;
+            const dCompN=allProjTasks.filter(t=>t.isDelayedCompleted).length;
+            const inPrN=allProjTasks.filter(t=>t.status==="In Progress").length;
+            const delN=allProjTasks.filter(t=>t.isDelayed||t.status==="Delayed").length;
+            return (
+              <div className={`h-3 rounded-full overflow-hidden flex ${tc(dark,"bg-slate-700","bg-slate-200")}`}>
+                <div style={{width:`${doneN/total*100}%`,background:"#10b981",transition:"width 300ms"}}/>
+                <div style={{width:`${dCompN/total*100}%`,background:"#f97316",transition:"width 300ms"}}/>
+                <div style={{width:`${inPrN/total*100}%`,background:"#0ea5e9",transition:"width 300ms"}}/>
+                <div style={{width:`${delN/total*100}%`,background:"#ef4444",transition:"width 300ms"}}/>
+              </div>
+            );
+          })()}
           <div className="flex gap-4 mt-3 flex-wrap">
-            {[["Completed",totalDone,"#10b981"],["In Progress",allProjTasks.filter(t=>t.status==="In Progress").length,"#0ea5e9"],["Delayed",totalDelayed,"#ef4444"],["To Do",allProjTasks.filter(t=>t.status==="To Do").length,"#64748b"]].map(([l,v,c])=>(
+            {(()=>{const dComp=allProjTasks.filter(t=>t.isDelayedCompleted).length;return [["Completed",totalDone,"#10b981"],["D-Completed",dComp,"#f97316"],["In Progress",allProjTasks.filter(t=>t.status==="In Progress").length,"#0ea5e9"],["Delayed",totalDelayed,"#ef4444"],["To Do",allProjTasks.filter(t=>t.status==="To Do").length,"#64748b"]];})().map(([l,v,c])=>(
               <div key={l} className="flex items-center gap-1.5">
                 <span style={{width:8,height:8,borderRadius:"50%",background:c,flexShrink:0,display:"inline-block"}}/>
                 <span className={`text-xs ${tc(dark,"text-slate-400","text-slate-500")}`}>{l}: <strong className={tc(dark,"text-white","text-slate-700")}>{v}</strong></span>
@@ -7869,24 +7911,28 @@ const PmListView = ({cats, getTasksForCat, pmSubtasks, users, currentUser, onTas
     const subs=pmSubtasks.filter(s=>s.taskId===t.id);
     return subs.length?Math.round(subs.filter(s=>s.status==='Completed').length/subs.length*100):(t.status==='Completed'?100:0);
   };
-  const statusStyle=s=>{
-    const m={Completed:{bg:'#10b981',color:'#fff'},'In Progress':{bg:'#22c55e',color:'#fff'},'To Do':{bg:'#e2e8f0',color:'#475569'},'On Hold':{bg:'#f59e0b',color:'#fff'},Delayed:{bg:'#ef4444',color:'#fff'}};
+  const statusStyle=(t)=>{
+    // Check isDelayedCompleted first for D-Completed orange
+    if(typeof t==='object'&&t.isDelayedCompleted) return {bg:'#f97316',color:'#fff'};
+    const s=typeof t==='object'?t.status:t;
+    const m={Completed:{bg:'#10b981',color:'#fff'},'In Progress':{bg:'#22c55e',color:'#fff'},'To Do':{bg:'#e2e8f0',color:'#475569'},'On Hold':{bg:'#f59e0b',color:'#fff'},Delayed:{bg:'#ef4444',color:'#fff'},'D-Completed':{bg:'#f97316',color:'#fff'},Cancelled:{bg:'#64748b',color:'#fff'}};
     return m[s]||{bg:'#e2e8f0',color:'#475569'};
   };
 
   const applyPct=(taskId,pct)=>{
     const now=new Date().toISOString();
-    setPmTasks(ts=>ts.map(t=>{
-      if(t.id!==taskId) return t;
-      const newStatus=pct===100?'Completed':pct>0?'In Progress':'To Do';
-      const subs=pmSubtasks.filter(s=>s.taskId===taskId);
-      if(subs.length){
-        const toMark=Math.round(subs.length*pct/100);
-        let marked=0;
-        setPmSubtasks(ss=>ss.map(s=>s.taskId===taskId?{...s,status:(marked++)<toMark?'Completed':'To Do'}:s));
-      }
-      return {...t,status:newStatus,completedAt:pct===100?now:null};
-    }));
+    // Compute subtask states OUTSIDE of setState callbacks to avoid closure bugs
+    const subs=pmSubtasks.filter(s=>s.taskId===taskId);
+    const toMark=Math.round(subs.length*pct/100);
+    if(subs.length>0){
+      const subIds=subs.map((s,i)=>({id:s.id,done:i<toMark}));
+      setPmSubtasks(ss=>ss.map(s=>{
+        const entry=subIds.find(x=>x.id===s.id);
+        return entry?{...s,status:entry.done?'Completed':'To Do'}:s;
+      }));
+    }
+    const newStatus=pct===100?'Completed':pct>0?'In Progress':'To Do';
+    setPmTasks(ts=>ts.map(t=>t.id===taskId?{...t,status:newStatus,completedAt:pct===100?now:null,isDelayedCompleted:pct===100&&!!t.dueDate&&new Date(t.dueDate)<new Date(now)}:t));
     setPctMenuId(null);
     toast.show({message:`Progress → ${pct}%${pct===100?' ✓ Task completed!':''}`});
   };
@@ -7949,15 +7995,18 @@ const PmListView = ({cats, getTasksForCat, pmSubtasks, users, currentUser, onTas
 
   const openEditCat=cat=>{
     const tasks=getTasksForCat(cat.id);
-    const asgIds=[...new Set(tasks.map(t=>t.assignedTo).filter(Boolean))];
+    // Use saved assigneeIds if present; otherwise derive from tasks
+    const savedIds=cat.assigneeIds||[];
+    const taskIds=[...new Set(tasks.map(t=>t.assignedTo).filter(Boolean))];
+    const asgIds=savedIds.length>0?savedIds:taskIds;
     const starts=tasks.map(t=>t.startDate).filter(Boolean).sort();
     const ends=tasks.map(t=>t.dueDate).filter(Boolean).sort();
     setEditCat({...cat,startDate:starts[0]?.slice(0,10)||'',dueDate:ends.at(-1)?.slice(0,10)||'',assigneeIds:asgIds});
-    setEditNotes([]); setEditNoteText('');
+    setEditNotes(cat.notes||[]); setEditNoteText('');
   };
 
   const saveEditCat=()=>{
-    setPmCategories(cs=>cs.map(c=>c.id===editCat.id?{...c,name:editCat.name}:c));
+    setPmCategories(cs=>cs.map(c=>c.id===editCat.id?{...c,name:editCat.name,assigneeIds:editCat.assigneeIds||[],notes:editNotes}:c));
     setEditCat(null);
     toast.show({message:'Category updated.'});
   };
@@ -7969,7 +8018,9 @@ const PmListView = ({cats, getTasksForCat, pmSubtasks, users, currentUser, onTas
           const tasks=getTasksForCat(cat.id);
           const pct=catPct(cat.id);
           const collapsed=collapsedCats[cat.id];
-          const asgIds=[...new Set(tasks.map(t=>t.assignedTo).filter(Boolean))];
+          const savedCatIds=cat.assigneeIds||[];
+          const taskAsgIds=[...new Set(tasks.map(t=>t.assignedTo).filter(Boolean))];
+          const asgIds=savedCatIds.length>0?savedCatIds:taskAsgIds;
           const assignees=asgIds.map(id=>devTeam.find(u=>u.id===id)).filter(Boolean);
           return (
             <div key={cat.id} className={`border-b ${tc(dark,'border-slate-700/40','border-slate-200')}`}>
@@ -8024,7 +8075,7 @@ const PmListView = ({cats, getTasksForCat, pmSubtasks, users, currentUser, onTas
                     const ef=t.dueDate?new Date(t.dueDate).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'2-digit'}):'';
                     const ds=sf&&ef?`${sf} - ${ef}`:ef||sf||'—';
                     const overdue=t.dueDate&&new Date(t.dueDate)<new Date()&&t.status!=='Completed';
-                    const ss=statusStyle(t.status);
+                    const ss=statusStyle(t);
                     return (
                       <div key={t.id} className={`grid items-center px-4 py-2.5 border-b transition-colors ${tc(dark,'border-slate-700/30 hover:bg-slate-800/20','border-slate-100 hover:bg-slate-50')}`}
                         style={{gridTemplateColumns:'1fr 72px 150px 150px 180px 36px'}}>
@@ -8060,7 +8111,7 @@ const PmListView = ({cats, getTasksForCat, pmSubtasks, users, currentUser, onTas
                             </div>
                           )}
                         </div>
-                        <div><span className="text-xs px-3 py-1 rounded font-medium" style={{background:ss.bg,color:ss.color}}>{t.status}</span></div>
+                        <div><span className="text-xs px-3 py-1 rounded font-medium" style={{background:ss.bg,color:ss.color}}>{t.isDelayedCompleted?'D-Completed':t.status}</span></div>
                         <div className="flex items-center gap-1.5">
                           {assignee&&<>
                             <div className="w-5 h-5 rounded-full bg-teal-500 flex items-center justify-center text-white font-bold flex-shrink-0" style={{fontSize:8}}>{assignee.name.slice(0,2).toUpperCase()}</div>
@@ -8106,14 +8157,14 @@ const PmListView = ({cats, getTasksForCat, pmSubtasks, users, currentUser, onTas
               </div>
               <div className="grid grid-cols-2 gap-4 mb-5">
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Due Start</label>
-                  <input type="date" value={editCat.startDate||''} onChange={e=>setEditCat(c=>({...c,startDate:e.target.value}))}
-                    className="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-teal-500 text-slate-800"/>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Due Start <span className="text-xs font-normal text-slate-400">(from tasks)</span></label>
+                  <input type="date" value={editCat.startDate||''} readOnly disabled
+                    className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-400 bg-slate-100 cursor-not-allowed"/>
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Deadline</label>
-                  <input type="date" value={editCat.dueDate||''} onChange={e=>setEditCat(c=>({...c,dueDate:e.target.value}))}
-                    className="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-teal-500 text-slate-800"/>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Deadline <span className="text-xs font-normal text-slate-400">(from tasks)</span></label>
+                  <input type="date" value={editCat.dueDate||''} readOnly disabled
+                    className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-400 bg-slate-100 cursor-not-allowed"/>
                 </div>
               </div>
               <div className="flex gap-3 mb-7">
@@ -8148,9 +8199,9 @@ const PmListView = ({cats, getTasksForCat, pmSubtasks, users, currentUser, onTas
                 {devTeam.filter(u=>!(editCat.assigneeIds||[]).includes(u.id)).map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             </div>
-            <div className="w-72 border-l border-slate-200 flex flex-col" style={{background:'#f8fafc'}}>
-              <div className="px-5 py-4 border-b border-slate-200"><p className="text-sm font-bold text-slate-700">Notes And Attachments</p></div>
-              <div className="flex-1 overflow-y-auto p-4 space-y-2">
+            <div className="w-72 border-l border-slate-200 flex flex-col overflow-hidden" style={{background:'#f8fafc',minHeight:0}}>
+              <div className="px-5 py-4 border-b border-slate-200 flex-shrink-0"><p className="text-sm font-bold text-slate-700">Notes And Attachments</p></div>
+              <div className="flex-1 overflow-y-auto p-4 space-y-2 min-h-0">
                 {editNotes.length===0?(
                   <div className="text-center py-10">
                     <div className="w-14 h-16 bg-slate-700 rounded-lg mx-auto mb-3 flex items-center justify-center">
@@ -8159,21 +8210,42 @@ const PmListView = ({cats, getTasksForCat, pmSubtasks, users, currentUser, onTas
                     <p className="text-xs text-slate-400">Notes You Add Will Appear Here.</p>
                   </div>
                 ):editNotes.map((n,i)=>(
-                  <div key={i} className="bg-white border border-slate-200 rounded-xl p-3">
-                    <p className="text-sm text-slate-700">{n}</p>
+                  <div key={i} className="bg-white border border-slate-200 rounded-xl p-3 flex items-start gap-2">
+                    {n.type==='file'?(
+                      <>
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#0d9488" strokeWidth="1.5" className="flex-shrink-0 mt-0.5"><path d="M3 2h5l3 3v7H3z"/><path d="M8 2v3h3" strokeLinecap="round"/></svg>
+                        <div className="flex-1 min-w-0">
+                          {n.fileType?.startsWith('image')?<img src={n.dataUrl} alt={n.name} className="max-h-20 rounded mb-1"/>:null}
+                          <a href={n.dataUrl} download={n.name} className="text-xs text-teal-600 hover:underline truncate block">{n.name}</a>
+                        </div>
+                      </>
+                    ):(
+                      <p className="text-sm text-slate-700">{n.content||n}</p>
+                    )}
+                    <button onClick={()=>setEditNotes(ns=>ns.filter((_,j)=>j!==i))} className="text-slate-300 hover:text-red-400 flex-shrink-0 text-xs">×</button>
                   </div>
                 ))}
               </div>
-              <div className="border-t border-slate-200 p-4">
+              <div className="border-t border-slate-200 p-4 flex-shrink-0">
                 <p className="text-xs font-bold text-slate-500 mb-2 tracking-wider">ADD NOTE</p>
-                <div className="flex gap-2">
+                <div className="flex gap-2 mb-2">
                   <input value={editNoteText} onChange={e=>setEditNoteText(e.target.value)}
-                    onKeyDown={e=>e.key==='Enter'&&editNoteText.trim()&&(setEditNotes(n=>[...n,editNoteText.trim()]),setEditNoteText(''))}
+                    onKeyDown={e=>e.key==='Enter'&&editNoteText.trim()&&(setEditNotes(n=>[...n,{type:'text',content:editNoteText.trim()}]),setEditNoteText(''))}
                     placeholder="Type a note…"
                     className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-teal-500"/>
-                  <button onClick={()=>editNoteText.trim()&&(setEditNotes(n=>[...n,editNoteText.trim()]),setEditNoteText(''))}
+                  <button onClick={()=>editNoteText.trim()&&(setEditNotes(n=>[...n,{type:'text',content:editNoteText.trim()}]),setEditNoteText(''))}
                     className="px-3 py-2 bg-teal-600 hover:bg-teal-500 text-white rounded-lg text-xs font-bold">Add</button>
                 </div>
+                <label className="flex items-center gap-1.5 cursor-pointer text-xs text-slate-500 hover:text-teal-600 transition-colors">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 8V4a3 3 0 016 0v5a1.5 1.5 0 01-3 0V4"/></svg>
+                  Attach file
+                  <input type="file" className="hidden" onChange={e=>{
+                    const f=e.target.files[0]; if(!f) return;
+                    const reader=new FileReader();
+                    reader.onload=ev=>setEditNotes(n=>[...n,{type:'file',name:f.name,dataUrl:ev.target.result,fileType:f.type}]);
+                    reader.readAsDataURL(f); e.target.value='';
+                  }} accept="image/*,.pdf,.doc,.docx,.xlsx,.xls,.txt"/>
+                </label>
               </div>
             </div>
           </div>
@@ -8236,11 +8308,16 @@ const PmGanttChart = ({cats, getTasksForCat, pmSubtasks, users, currentUser, pmT
     <div>
       {/* Controls */}
       <div className="flex items-center gap-2 mb-3 flex-wrap">
-        <button className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border ${tc(dark,"border-teal-500/50 text-teal-400 hover:bg-teal-500/10","border-teal-500 text-teal-600 hover:bg-teal-50")}`}
-          onClick={()=>setCollapsedCats({})}>
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 4l4 4 4-4"/></svg>
-          COLLAPSE CATEGORIES
-        </button>
+        {(()=>{
+          const allCollapsed=cats.every(c=>collapsedCats[c.id]);
+          return (
+            <button className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border ${tc(dark,"border-teal-500/50 text-teal-400 hover:bg-teal-500/10","border-teal-500 text-teal-600 hover:bg-teal-50")}`}
+              onClick={()=>allCollapsed?setCollapsedCats({}):setCollapsedCats(Object.fromEntries(cats.map(c=>[c.id,true])))}>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" style={{transform:allCollapsed?"rotate(-90deg)":"rotate(0deg)"}}><path d="M2 4l4 4 4-4"/></svg>
+              {allCollapsed?"EXPAND ALL CATEGORIES":"COLLAPSE CATEGORIES"}
+            </button>
+          );
+        })()}
         <div className="flex-1"/>
         <div className={`flex rounded-lg border overflow-hidden ${tc(dark,"border-slate-700","border-slate-200")}`}>
           {["Day","Week","Month"].map(v=>(
@@ -8311,7 +8388,7 @@ const PmGanttChart = ({cats, getTasksForCat, pmSubtasks, users, currentUser, pmT
                   const bar=getBarStyle(t.startDate,t.dueDate);
                   const isMilestone=t.isMilestone||(t.startDate&&t.dueDate&&t.startDate===t.dueDate);
                   const isCurrent=t.status==="In Progress"||t.status==="To Do";
-                  const barColor=t.status==="Completed"?"#10b981":t.status==="Delayed"?"#ef4444":isCurrent?"#06b6d4":"#64748b";
+                  const barColor=t.isDelayedCompleted?"#f97316":t.status==="Completed"?"#10b981":t.status==="Delayed"?"#ef4444":isCurrent?"#06b6d4":"#64748b";
                   return (
                     <div key={t.id} className="flex" style={{minWidth:LEFT_W+COLS*COL_W,height:ROW_H}}>
                       <div style={{width:LEFT_W,flexShrink:0,paddingLeft:24}} className={`flex items-center border-b border-r px-3 ${tc(dark,"border-slate-700/50 text-slate-300","border-slate-100 text-slate-600")}`}>
