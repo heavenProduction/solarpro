@@ -2517,9 +2517,6 @@ const SettingsPage = (props) => {
 
       {settingsTab==="projects"&&(()=>{
         const myTemplates=(props.pmTemplates||[]).filter(t=>t.developerId===developer.id);
-        const [viewTpl,setViewTpl]=useState(null);
-        const [editTpl,setEditTpl]=useState(null);
-        const [editTplName,setEditTplName]=useState("");
         if(myTemplates.length===0) return null;
         return (
           <div className={`border rounded-xl p-4 mt-4 ${tc(dark,"bg-[#0c1929] border-slate-700/50","bg-white border-slate-200 shadow-sm")}`}>
@@ -6905,7 +6902,18 @@ const PmTaskDrawer = ({task:taskSnap, pmTasks, setPmTasks, pmSubtasks, setPmSubt
   const [mentionQuery,setMentionQuery]=useState("");
   const [commentAttachments,setCommentAttachments]=useState([]);
   const commentFileRef=useRef();
-  const canEdit = currentUser.role===ROLES.DEV_ADMIN||currentUser.role===ROLES.SUPER_ADMIN||task.assignedTo===currentUser.id||(task.collaborators||[]).includes(currentUser.id);
+  // Access-level-aware canEdit for PM tasks
+  const pmAccessLevel = projectCollection?.accessLevel || 'Task-Level';
+  const inCatHeadings = (category?.assigneeIds||[]).includes(currentUser.id);
+  const isDirectlyAssigned = task.assignedTo===currentUser.id || (task.collaborators||[]).includes(currentUser.id);
+  const canEdit =
+    currentUser.role===ROLES.DEV_ADMIN ||
+    currentUser.role===ROLES.SUPER_ADMIN ||
+    (pmAccessLevel==='Category-Level' && inCatHeadings) ||  // heading the category → edit all its tasks
+    (pmAccessLevel==='Task-Level' && isDirectlyAssigned) ||  // task level → only your tasks
+    pmAccessLevel==='Full Access' ||
+    pmAccessLevel==='Project-Level' ||
+    isDirectlyAssigned; // fallback: always allow editing your own assigned tasks
   const devTeam=users.filter(u=>u.developerId===task.developerId&&u.active);
   const project=projects?.find(p=>p.id===task.projectId);
   const category=pmCategories?.find(c=>c.id===task.categoryId);
