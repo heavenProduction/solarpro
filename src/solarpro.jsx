@@ -2307,516 +2307,838 @@ const UsersPage = ({ users, setUsers, currentUser, developers, projects, setProj
 };
 
 // ── TEMPLATES PAGE ─────────────────────────────────────────────
-// ── VARIABLE EVALUATOR ──────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════
+// PROPOSAL CANVAS ENGINE — Free-position drag/resize canvas editor
+// Matches exact UI from training video: solarladder.com/proposal-editor
+// ══════════════════════════════════════════════════════════════════
+
+// ── FORMULA EVALUATOR ────────────────────────────────────────────
 const evaluateFormula = (formula, values) => {
   try {
-    const clean = formula.replace(/[a-zA-Z_][a-zA-Z0-9_]*/g, m => {
-      const v = values[m];
-      return v !== undefined && v !== "" ? Number(v) : "0";
-    });
+    const clean = formula.replace(/[a-zA-Z_][a-zA-Z0-9_]*/g, m =>
+      values[m] !== undefined && values[m] !== "" ? Number(values[m]) || 0 : 0);
     const result = Function('"use strict"; return (' + clean + ')')();
-    if(isNaN(result)||!isFinite(result)) return 0;
+    if (isNaN(result) || !isFinite(result)) return 0;
     return Math.round(result * 100) / 100;
   } catch { return 0; }
 };
 
-const resolveVariables = (variables, inputValues, project, developer) => {
-  const vals = {};
-  // Source: project fields
-  if(project) {
-    vals.project_size = project.projectSize||0;
-    vals.customer_name = project.customerName||"";
-    vals.customer_email = project.customerEmail||"";
-    vals.customer_phone = project.customerPhone||"";
-    vals.customer_address = (project.customerAddress||"")+(project.customerCity?", "+project.customerCity:"");
-    vals.project_type = project.customerType||"";
+const resolveVars = (variables, inputs, project, developer) => {
+  const v = {};
+  if (project) {
+    v.customerName = project.customerName || "";
+    v.customerPhone = project.customerPhone || "";
+    v.customerEmail = project.customerEmail || "";
+    v.customerAddress = (project.customerAddress || "") + (project.customerCity ? ", " + project.customerCity : "");
+    v.projectSize = project.projectSize || 0;
+    v.projectType = project.customerType || "";
+    v.projectId = project.projectId || "";
   }
-  // Source: developer fields
-  if(developer) {
-    vals.company_name = developer.companyName||"";
-    vals.company_email = developer.email||"";
-    vals.company_phone = developer.phone||"";
-    vals.current_tariff = developer.electricityPrice||8;
-    vals.cost_per_kw = developer.costPerKW||50000;
-    vals.solar_gen_factor = developer.solarGenerationFactor||1350;
+  if (developer) {
+    v.companyName = developer.companyName || "";
+    v.companyEmail = developer.email || "";
+    v.companyPhone = developer.phone || "";
+    v.currentTariff = developer.electricityPrice || 8;
+    v.costPerKW = developer.costPerKW || 50000;
+    v.solarGenFactor = developer.solarGenerationFactor || 1350;
   }
-  // Misc
-  vals.proposal_date = new Date().toLocaleDateString("en-IN",{day:"numeric",month:"long",year:"numeric"});
-  // Manual input overrides
-  Object.assign(vals, inputValues||{});
-  // Auto-compute derived numeric variables
-  variables.filter(v=>v.source==="developer.electricityPrice").forEach(v=>{ if(developer) vals[v.identifier]=developer.electricityPrice||8; });
-  variables.filter(v=>v.source==="developer.costPerKW").forEach(v=>{ if(developer) vals[v.identifier]=developer.costPerKW||50000; });
-  // Monthly generation default if not overridden
-  if(!vals.monthly_generation) vals.monthly_generation = (vals.project_size||0)*(vals.solar_gen_factor||1350)/12;
-  // Resolve formula variables (topological - run twice to handle deps)
-  for(let pass=0;pass<3;pass++) {
-    variables.filter(v=>v.type==="formula"&&v.formula).forEach(v=>{
-      vals[v.identifier] = evaluateFormula(v.formula, vals);
+  v.proposalDate = new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+  Object.assign(v, inputs || {});
+  if (!v.monthlyGeneration) v.monthlyGeneration = (v.projectSize || 0) * (v.solarGenFactor || 1350) / 12;
+  // Resolve formula vars (3 passes for chained deps)
+  for (let pass = 0; pass < 3; pass++) {
+    (variables || []).filter(x => x.type === "formula" && x.formula).forEach(x => {
+      v[x.identifier] = evaluateFormula(x.formula, v);
     });
   }
-  return vals;
+  return v;
 };
 
-const substituteTemplate = (text, vals) => {
-  return (text||"").replace(/\{\{(\w+)\}\}/g, (_, key) => {
-    const v = vals[key];
-    if(v === undefined) return "{{"+key+"}}";
-    if(typeof v === "number") return v % 1 === 0 ? v.toLocaleString("en-IN") : v.toFixed(2);
-    return String(v);
+// Substitute $varName in text
+const subVars = (text, vals) =>
+  (text || "").replace(/\$([a-zA-Z_][a-zA-Z0-9_]*)/g, (_, k) => {
+    const val = vals[k];
+    if (val === undefined) return "$" + k;
+    if (typeof val === "number") return val % 1 === 0 ? val.toLocaleString("en-IN") : val.toFixed(2);
+    return String(val);
   });
+
+// ── BRAND IMAGE PLACEHOLDERS ─────────────────────────────────────
+const BRAND_IMAGES = {
+  panel: [
+    { name: "Adani Solar", color: "#1a5276" }, { name: "Waaree", color: "#117a65" },
+    { name: "Tata Power Solar", color: "#1f618d" }, { name: "Vikram Solar", color: "#6c3483" },
+    { name: "Jinko Solar", color: "#922b21" }, { name: "LONGi Solar", color: "#145a32" },
+    { name: "Canadian Solar", color: "#7d6608" }, { name: "REC Group", color: "#0b5345" },
+    { name: "SunPower", color: "#784212" }, { name: "Luminous", color: "#1a237e" },
+  ],
+  inverter: [
+    { name: "Growatt", color: "#0e6655" }, { name: "Sungrow", color: "#1a5276" },
+    { name: "SMA", color: "#6e2f1a" }, { name: "ABB", color: "#922b21" },
+    { name: "Huawei", color: "#c0392b" }, { name: "Fronius", color: "#117864" },
+    { name: "Delta", color: "#1f618d" }, { name: "Havells", color: "#76448a" },
+    { name: "Goodwe", color: "#0b5345" }, { name: "Enphase", color: "#7d6608" },
+  ],
+  cable: [
+    { name: "Polycab", color: "#1a237e" }, { name: "Finolex", color: "#004d40" },
+    { name: "KEI", color: "#880e4f" }, { name: "Havells", color: "#e65100" },
+    { name: "Sterlite", color: "#1b5e20" },
+  ],
 };
 
-// ── BLOCK RENDERER ──────────────────────────────────────────────
-const ProposalBlockRenderer = ({block, vals, dark}) => {
-  const sub = t => substituteTemplate(t, vals);
-  if(block.type==="header") return (
-    <div className="py-6 px-4 text-center" style={{textAlign:block.align||"center"}}>
-      {sub(block.content).split("\n").map((line,i)=>(
-        <div key={i} style={{fontSize:(block.fontSize||28)-(i*6),fontWeight:i===0?"900":"600",color:i===0?(block.color||"#f59e0b"):"#94a3b8",lineHeight:1.2}}>
-          {line}
-        </div>
-      ))}
-    </div>
-  );
-  if(block.type==="divider") return <div className="border-t border-slate-200 my-3"/>;
-  if(block.type==="heading") return (
-    <div style={{fontSize:block.fontSize||16,fontWeight:"700",color:"#1e293b",marginBottom:8,borderLeft:"3px solid #f59e0b",paddingLeft:10}}>
-      {sub(block.content)}
-    </div>
-  );
-  if(block.type==="text") return (
-    <div style={{fontSize:13,lineHeight:1.7,color:"#475569",whiteSpace:"pre-line",marginBottom:8}}>
-      {sub(block.content)}
-    </div>
-  );
-  if(block.type==="metric_row") return (
-    <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(block.metrics?.length||2,4)},1fr)`,gap:12,marginBottom:16}}>
-      {(block.metrics||[]).map((m,i)=>(
-        <div key={i} style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"12px 14px",textAlign:"center"}}>
-          <div style={{fontSize:11,color:"#94a3b8",marginBottom:4}}>{sub(m.label||"")}</div>
-          <div style={{fontSize:18,fontWeight:"800",color:"#f59e0b"}}>{sub(m.value||"")}</div>
-        </div>
-      ))}
-    </div>
-  );
-  if(block.type==="image") return (
-    block.src ? <img src={block.src} alt={block.alt||""} style={{maxWidth:"100%",borderRadius:8,marginBottom:12}}/> : null
-  );
-  if(block.type==="table") return (
-    <table style={{width:"100%",borderCollapse:"collapse",marginBottom:16,fontSize:12}}>
-      <thead>
-        <tr style={{background:"#f1f5f9"}}>{(block.headers||[]).map((h,i)=>(
-          <th key={i} style={{padding:"8px 12px",textAlign:"left",fontWeight:600,color:"#475569",borderBottom:"1px solid #e2e8f0"}}>{sub(h)}</th>
-        ))}</tr>
-      </thead>
-      <tbody>
-        {(block.rows||[]).map((row,ri)=>(
-          <tr key={ri} style={{borderBottom:"1px solid #f1f5f9"}}>
-            {row.map((cell,ci)=>(
-              <td key={ci} style={{padding:"7px 12px",color:"#334155"}}>{sub(cell)}</td>
-            ))}
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
+const BrandLogo = ({ name, color, w = 80, h = 50 }) => (
+  <div style={{ width: w, height: h, background: color, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+    <span style={{ color: "white", fontSize: Math.max(8, Math.min(11, w / 7)), fontWeight: 700, textAlign: "center", padding: "2px 4px", lineHeight: 1.2 }}>{name}</span>
+  </div>
+);
+
+// ── CANVAS ELEMENT RENDERER ──────────────────────────────────────
+const CanvasElement = ({ el, selected, onSelect, onPointerDown, mode, vals, previewMode, selectedBrands }) => {
+  const baseStyle = {
+    position: "absolute", left: el.x, top: el.y, width: el.w, height: el.h,
+    zIndex: el.zIndex || 1,
+    boxSizing: "border-box",
+    cursor: mode === "move" && !previewMode ? "grab" : "default",
+    outline: selected && !previewMode ? "2px solid #0d9488" : "none",
+    outlineOffset: 1,
+  };
+
+  const handlePointerDown = (e) => {
+    if (previewMode) return;
+    e.stopPropagation();
+    onSelect(el.id);
+    onPointerDown(e, el.id, "move");
+  };
+
+  if (el.type === "text") {
+    const displayContent = el.fieldType === "fill_later"
+      ? (el.fieldName || "Text Field")
+      : subVars(el.content || "", vals);
+    return (
+      <div style={{
+        ...baseStyle,
+        fontSize: (el.fontSize || 14) + "px",
+        fontFamily: el.fontFamily === "Default" ? "inherit" : el.fontFamily,
+        fontWeight: el.fontWeight || "normal",
+        color: el.fontColor || "#000000",
+        backgroundColor: el.bgColor === "none" || !el.bgColor ? "transparent" : el.bgColor,
+        textAlign: el.textAlign || "left",
+        wordSpacing: (el.wordSpacing || 0) + "px",
+        lineHeight: el.lineHeight || 1,
+        borderColor: el.borderColor || "transparent",
+        borderWidth: (el.borderWidth || 0) + "px",
+        borderStyle: el.borderStyle || "none",
+        borderRadius: (el.borderRadius || 0) + "px",
+        overflow: "hidden",
+        display: "flex", alignItems: "center",
+        padding: "4px 6px",
+        whiteSpace: "pre-wrap", wordBreak: "break-word",
+      }} onPointerDown={handlePointerDown}>
+        {el.fieldType === "fill_later" && !previewMode
+          ? <span style={{ color: "#0d9488", fontStyle: "italic", fontSize: "0.85em" }}>📝 {displayContent}</span>
+          : displayContent || (selected && !previewMode ? <span style={{ opacity: 0.3 }}>Click to edit...</span> : "")}
+      </div>
+    );
+  }
+
+  if (el.type === "rect") {
+    return (
+      <div style={{
+        ...baseStyle,
+        backgroundColor: el.bgColor === "none" || !el.bgColor ? "transparent" : el.bgColor,
+        borderColor: el.borderColor || "transparent",
+        borderWidth: (el.borderWidth || 0) + "px",
+        borderStyle: el.borderStyle || "solid",
+        borderRadius: (el.borderRadius || 0) + "px",
+      }} onPointerDown={handlePointerDown}/>
+    );
+  }
+
+  if (el.type === "image") {
+    return (
+      <div style={{
+        ...baseStyle,
+        borderColor: el.borderColor || "transparent",
+        borderWidth: (el.borderWidth || 1) + "px",
+        borderStyle: el.borderStyle || "solid",
+        overflow: "hidden",
+      }} onPointerDown={handlePointerDown}>
+        {el.src
+          ? <img src={el.src} alt="" style={{ width: "100%", height: "100%", objectFit: el.imageFit || "contain" }}/>
+          : <div style={{ width: "100%", height: "100%", background: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 4 }}>
+              <span style={{ fontSize: 20 }}>🖼</span>
+              <span style={{ fontSize: 10, color: "#94a3b8" }}>{el.dataType === "placeholder" ? (el.fieldName || "Placeholder") : el.dataType === "dynamic" ? "Dynamic Image" : "Image"}</span>
+            </div>}
+      </div>
+    );
+  }
+
+  if (el.type === "imagegrid") {
+    const brands = (BRAND_IMAGES[el.gridType || "panel"] || []).slice(0, el.maxCount || 5);
+    const iw = el.imageWidth || 100, ih = el.imageHeight || 50, im = el.imageMargin || 4;
+    return (
+      <div style={{ ...baseStyle, display: "flex", flexWrap: "wrap", gap: im, padding: 4, alignContent: "flex-start", overflow: "hidden" }} onPointerDown={handlePointerDown}>
+        {brands.map((b, i) => <BrandLogo key={i} name={b.name} color={b.color} w={iw} h={ih}/>)}
+      </div>
+    );
+  }
+
+  if (el.type === "graph") {
+    return (
+      <div style={{ ...baseStyle, background: "#f8fafc", border: "2px dashed #cbd5e1", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 4 }} onPointerDown={handlePointerDown}>
+        <span style={{ fontSize: 24 }}>📊</span>
+        <span style={{ fontSize: 11, color: "#94a3b8" }}>Graph Placeholder</span>
+      </div>
+    );
+  }
+
+  if (el.type === "paneldesign") {
+    return (
+      <div style={{ ...baseStyle, background: "linear-gradient(135deg,#1e293b,#334155)", border: "none", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 4 }} onPointerDown={handlePointerDown}>
+        <span style={{ fontSize: 24 }}>🎨</span>
+        <span style={{ fontSize: 11, color: "#94a3b8" }}>Panel Design</span>
+      </div>
+    );
+  }
+
   return null;
 };
 
-// ── CANVAS TEMPLATE BUILDER ─────────────────────────────────────
-const TemplateBuilder = ({template, onSave, onClose, variables, dark}) => {
-  const [blocks, setBlocks] = useState(template?.blocks||[]);
-  const [tname, setTname] = useState(template?.name||"New Template");
-  const [tdesc, setTdesc] = useState(template?.description||"");
-  const [editing, setEditing] = useState(null); // blockId
-  const [editVal, setEditVal] = useState({});
-  const [showVarPicker, setShowVarPicker] = useState(false);
-  const [insertTargetId, setInsertTargetId] = useState(null);
-  const [previewMode, setPreviewMode] = useState(false);
-  const previewVals = {};
-  variables.forEach(v => { previewVals[v.identifier] = v.defaultValue||v.name; });
-  previewVals.company_name = "SunPower Solutions";
-  previewVals.customer_name = "Robert Kim";
-  previewVals.project_size = 5;
-  previewVals.monthly_generation = 600;
-  previewVals.current_tariff = 8;
-  previewVals.monthly_savings = 4800;
-  previewVals.total_cost = 275000;
-  previewVals.annual_savings = 57600;
-  previewVals.payback_period = 4.8;
-  previewVals.proposal_date = new Date().toLocaleDateString("en-IN",{day:"numeric",month:"long",year:"numeric"});
-
-  const BLOCK_TYPES = [
-    {type:"header",label:"Header/Title",icon:"🏷"},
-    {type:"heading",label:"Section Heading",icon:"📌"},
-    {type:"text",label:"Text Block",icon:"📝"},
-    {type:"metric_row",label:"Metric Cards Row",icon:"📊"},
-    {type:"divider",label:"Divider",icon:"—"},
-    {type:"table",label:"Table",icon:"📋"},
-    {type:"image",label:"Image",icon:"🖼"},
+// ── RESIZE HANDLES ───────────────────────────────────────────────
+const ResizeHandles = ({ onPointerDown }) => {
+  const handles = [
+    { id: "se", style: { right: -5, bottom: -5, cursor: "se-resize" } },
+    { id: "sw", style: { left: -5, bottom: -5, cursor: "sw-resize" } },
+    { id: "ne", style: { right: -5, top: -5, cursor: "ne-resize" } },
+    { id: "nw", style: { left: -5, top: -5, cursor: "nw-resize" } },
+    { id: "e",  style: { right: -5, top: "50%", transform: "translateY(-50%)", cursor: "e-resize" } },
+    { id: "w",  style: { left: -5, top: "50%", transform: "translateY(-50%)", cursor: "w-resize" } },
+    { id: "s",  style: { bottom: -5, left: "50%", transform: "translateX(-50%)", cursor: "s-resize" } },
+    { id: "n",  style: { top: -5, left: "50%", transform: "translateX(-50%)", cursor: "n-resize" } },
   ];
+  return (
+    <>
+      {handles.map(h => (
+        <div key={h.id} onPointerDown={e => { e.stopPropagation(); onPointerDown(e, h.id); }}
+          style={{ position: "absolute", width: 10, height: 10, background: "white", border: "2px solid #0d9488", borderRadius: 2, zIndex: 9999, ...h.style }}/>
+      ))}
+    </>
+  );
+};
 
-  const addBlock = (type, afterId=null) => {
-    const defaults = {
-      header:{content:"{{company_name}}\nSolar Proposal",fontSize:28,bold:true,color:"#f59e0b",align:"center"},
-      heading:{content:"Section Title",fontSize:16,bold:true},
-      text:{content:"Enter your text here. Use {{variable_name}} to insert variables."},
-      metric_row:{metrics:[{label:"Metric",value:"{{project_size}} kW"},{label:"Cost",value:"₹{{total_cost}}"},{label:"Savings",value:"₹{{monthly_savings}}"},{label:"Payback",value:"{{payback_period}} yrs"}]},
-      divider:{},
-      table:{headers:["Item","Value"],rows:[["System Size","{{project_size}} kW"],["Monthly Savings","₹{{monthly_savings}}"]]},
-      image:{src:"",alt:""},
-    };
-    const newBlock = {id:`b${Date.now()}`, type, ...(defaults[type]||{})};
-    setBlocks(bs => {
-      if(!afterId) return [...bs, newBlock];
-      const idx = bs.findIndex(b=>b.id===afterId);
-      const nb = [...bs];
-      nb.splice(idx+1,0,newBlock);
-      return nb;
-    });
-    setEditing(newBlock.id);
-    setEditVal(newBlock);
-  };
+// ── PROPERTIES PANEL ─────────────────────────────────────────────
+const PropertiesPanel = ({ el, updateEl, dark, variables }) => {
+  if (!el) return (
+    <div className={`p-4 ${dark ? "text-slate-500" : "text-slate-400"} text-sm text-center pt-10`}>
+      <div className="text-3xl mb-2">👆</div>
+      Select a component to inspect its properties.
+    </div>
+  );
 
-  const updateBlock = (id, changes) => {
-    setBlocks(bs=>bs.map(b=>b.id===id?{...b,...changes}:b));
-    setEditVal(v=>({...v,...changes}));
-  };
+  const inp = `w-full border rounded px-2 py-1 text-xs focus:outline-none ${dark ? "bg-slate-700 border-slate-600 text-white" : "bg-white border-slate-300 text-slate-800"}`;
+  const sel = inp + " cursor-pointer";
+  const Row = ({ label, children }) => (
+    <div className="mb-2.5">
+      <label className={`block text-xs mb-0.5 ${dark ? "text-slate-400" : "text-slate-500"}`}>{label}</label>
+      {children}
+    </div>
+  );
+  const ColorRow = ({ label, value, onChange }) => (
+    <div className="mb-2.5">
+      <label className={`block text-xs mb-0.5 ${dark ? "text-slate-400" : "text-slate-500"}`}>{label}</label>
+      <div className="flex gap-2 items-center">
+        <input type="color" value={value && value !== "none" && value !== "transparent" ? value : "#ffffff"} onChange={e => onChange(e.target.value)} className="w-8 h-7 rounded cursor-pointer border-0 bg-transparent flex-shrink-0"/>
+        <input value={value || "none"} onChange={e => onChange(e.target.value)} className={`${inp} flex-1`}/>
+      </div>
+    </div>
+  );
+  const NumRow = ({ label, value, onChange, unit = "px", min = 0 }) => (
+    <div className="mb-2.5">
+      <label className={`block text-xs mb-0.5 ${dark ? "text-slate-400" : "text-slate-500"}`}>{label}</label>
+      <div className="flex gap-1 items-center">
+        <input type="number" min={min} value={value || 0} onChange={e => onChange(Number(e.target.value))} className={inp}/>
+        {unit && <span className={`text-xs flex-shrink-0 ${dark ? "text-slate-500" : "text-slate-400"}`}>{unit}</span>}
+      </div>
+    </div>
+  );
 
-  const deleteBlock = (id) => { setBlocks(bs=>bs.filter(b=>b.id!==id)); if(editing===id) setEditing(null); };
-  const moveBlock = (id, dir) => {
-    setBlocks(bs=>{const idx=bs.findIndex(b=>b.id===id);const nb=[...bs];const other=idx+dir;if(other<0||other>=nb.length) return bs;[nb[idx],nb[other]]=[nb[other],nb[idx]];return nb;});
-  };
+  const U = (changes) => updateEl(el.id, changes);
 
-  const insertVar = (identifier) => {
-    if(!editing) return;
-    const textarea = document.getElementById("block-edit-text");
-    if(textarea){const pos=textarea.selectionStart;const v=editVal.content||"";const newContent=v.slice(0,pos)+"{{"+identifier+"}}"+v.slice(pos);updateBlock(editing,{content:newContent});}
-    setShowVarPicker(false);
-  };
-
-  const inp = `w-full border rounded-lg px-3 py-2 text-sm focus:outline-none ${dark?"bg-slate-700 border-slate-600 text-white":"bg-white border-slate-300 text-slate-800"} focus:border-amber-400`;
+  const borderProps = (
+    <>
+      <ColorRow label="Border Color" value={el.borderColor || "#000000"} onChange={v => U({ borderColor: v })}/>
+      <NumRow label="Border Width" value={el.borderWidth || 0} onChange={v => U({ borderWidth: v })}/>
+      <Row label="Border Style">
+        <select value={el.borderStyle || "none"} onChange={e => U({ borderStyle: e.target.value })} className={sel}>
+          {["none","solid","dashed","dotted","double","groove","ridge","inset","outset"].map(s => <option key={s}>{s}</option>)}
+        </select>
+      </Row>
+      <NumRow label="Border Radius" value={el.borderRadius || 0} onChange={v => U({ borderRadius: v })}/>
+    </>
+  );
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col" style={{background:dark?"#070e1c":"#f8fafc"}}>
-      {/* Top bar */}
-      <div className={`flex items-center gap-3 px-5 py-3 border-b flex-shrink-0 ${dark?"bg-[#0a1628] border-slate-700":"bg-white border-slate-200 shadow-sm"}`}>
-        <div className="flex-1 min-w-0">
-          <input value={tname} onChange={e=>setTname(e.target.value)}
-            className={`text-base font-bold bg-transparent border-b pb-0.5 focus:outline-none mr-3 ${dark?"border-amber-400 text-white":"border-amber-500 text-slate-800"}`}
-            style={{minWidth:200}}/>
-          <input value={tdesc} onChange={e=>setTdesc(e.target.value)} placeholder="Description..."
-            className={`text-xs bg-transparent border-b focus:outline-none ${dark?"border-slate-600 text-slate-400 placeholder-slate-600":"border-slate-200 text-slate-500 placeholder-slate-400"}`}
-            style={{minWidth:200}}/>
-        </div>
-        <div className="flex gap-2">
-          <button onClick={()=>setPreviewMode(v=>!v)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${previewMode?"bg-amber-500 text-slate-900":dark?"bg-slate-700 text-slate-300 hover:bg-slate-600":"bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
-            {previewMode?"✏️ Edit":"👁 Preview"}
-          </button>
-          <button onClick={()=>onSave({...template,name:tname,description:tdesc,blocks})}
-            className="px-4 py-1.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-900 transition-colors">
-            💾 Save Template
-          </button>
-          <button onClick={onClose} className={`px-3 py-1.5 rounded-lg text-xs ${dark?"text-slate-400 hover:bg-slate-700":"text-slate-500 hover:bg-slate-100"}`}>✕ Close</button>
-        </div>
-      </div>
-
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left: Block library */}
-        {!previewMode&&(
-          <div className={`w-52 flex-shrink-0 border-r overflow-y-auto p-3 ${dark?"border-slate-700 bg-[#0c1929]":"border-slate-200 bg-white"}`}>
-            <p className={`text-xs font-bold mb-2 ${dark?"text-slate-400":"text-slate-500"}`}>ADD BLOCKS</p>
-            <div className="space-y-1">
-              {BLOCK_TYPES.map(bt=>(
-                <button key={bt.type} onClick={()=>addBlock(bt.type)}
-                  className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs text-left transition-colors ${dark?"text-slate-300 hover:bg-slate-700":"text-slate-600 hover:bg-slate-50"}`}>
-                  <span>{bt.icon}</span>{bt.label}
+    <div className="overflow-y-auto h-full">
+      <div className={`px-3 py-2 text-xs font-bold border-b ${dark ? "border-slate-700 text-slate-400" : "border-slate-200 text-slate-500"}`}>PROPERTIES</div>
+      <div className="p-3">
+        {el.type === "text" && <>
+          <Row label="Textfield Tag">
+            <select value={el.textfieldTag || "None"} onChange={e => U({ textfieldTag: e.target.value })} className={sel}>
+              <option>None</option>
+              {(variables || []).map(v => <option key={v.id} value={v.identifier}>{v.name}</option>)}
+            </select>
+          </Row>
+          <Row label="Type">
+            <select value={el.fieldType || "fill_now"} onChange={e => U({ fieldType: e.target.value })} className={sel}>
+              <option value="fill_now">Fill Now</option>
+              <option value="fill_later">Fill Later</option>
+            </select>
+          </Row>
+          {el.fieldType === "fill_later" && (
+            <Row label="Field Name">
+              <input value={el.fieldName || ""} onChange={e => U({ fieldName: e.target.value })} placeholder="e.g. Customer Name" className={inp}/>
+            </Row>
+          )}
+          <Row label="Content (use $varName)">
+            <textarea rows={3} value={el.content || ""} onChange={e => U({ content: e.target.value })} className={inp + " resize-none font-mono"}/>
+          </Row>
+          <ColorRow label="Font Color" value={el.fontColor || "#000000"} onChange={v => U({ fontColor: v })}/>
+          <ColorRow label="Background Color" value={el.bgColor || "none"} onChange={v => U({ bgColor: v })}/>
+          <Row label="Text Alignment">
+            <div className="flex gap-1">
+              {["left","center","right","justify"].map(a => (
+                <button key={a} onClick={() => U({ textAlign: a })}
+                  className={`flex-1 py-1 rounded text-xs capitalize ${el.textAlign === a ? "bg-teal-500 text-white" : dark ? "bg-slate-700 text-slate-400" : "bg-slate-100 text-slate-600"}`}>
+                  {a === "justify" ? "Just" : a.charAt(0).toUpperCase() + a.slice(1)}
                 </button>
               ))}
             </div>
-            <div className={`mt-4 pt-3 border-t ${dark?"border-slate-700":"border-slate-200"}`}>
-              <p className={`text-xs font-bold mb-2 ${dark?"text-slate-400":"text-slate-500"}`}>VARIABLES</p>
-              <div className="space-y-1">
-                {variables.map(v=>(
-                  <button key={v.id} onClick={()=>{if(editing){const textarea=document.getElementById("block-edit-text");if(textarea){const pos=textarea.selectionStart;const c=editVal.content||"";updateBlock(editing,{content:c.slice(0,pos)+"{{"+v.identifier+"}}"+c.slice(pos)});}else{}}}}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-mono transition-colors ${dark?"text-amber-400 hover:bg-slate-700":"text-amber-600 hover:bg-amber-50"}`}
-                    title={v.name}>
-                    {"{{"}{v.identifier}{"}}"}
-                  </button>
-                ))}
-              </div>
+          </Row>
+          <NumRow label="Word Spacing" value={el.wordSpacing || 0} onChange={v => U({ wordSpacing: v })}/>
+          <NumRow label="Line Height" value={el.lineHeight || 1} unit="" onChange={v => U({ lineHeight: v })}/>
+          {borderProps}
+          <NumRow label="Font Size" value={el.fontSize || 14} onChange={v => U({ fontSize: v })}/>
+          <Row label="Font Family">
+            <select value={el.fontFamily || "Default"} onChange={e => U({ fontFamily: e.target.value })} className={sel}>
+              {["Default","Arial","Georgia","PT Sans Narrow","Roboto","Open Sans","Montserrat","Playfair Display","Lato","Oswald"].map(f => <option key={f}>{f}</option>)}
+            </select>
+          </Row>
+          <Row label="Font Weight">
+            <select value={el.fontWeight || "normal"} onChange={e => U({ fontWeight: e.target.value })} className={sel}>
+              <option value="normal">Normal</option>
+              <option value="bold">Bold</option>
+              <option value="600">Semi-Bold</option>
+              <option value="300">Light</option>
+            </select>
+          </Row>
+        </>}
+
+        {el.type === "rect" && <>
+          <ColorRow label="Background Color" value={el.bgColor || "#e2e8f0"} onChange={v => U({ bgColor: v })}/>
+          {borderProps}
+        </>}
+
+        {el.type === "image" && <>
+          <ColorRow label="Border Color" value={el.borderColor || "#03989e"} onChange={v => U({ borderColor: v })}/>
+          <NumRow label="Border Width" value={el.borderWidth || 1} onChange={v => U({ borderWidth: v })}/>
+          <Row label="Border Style">
+            <select value={el.borderStyle || "solid"} onChange={e => U({ borderStyle: e.target.value })} className={sel}>
+              {["none","solid","dashed","dotted"].map(s => <option key={s}>{s}</option>)}
+            </select>
+          </Row>
+          <NumRow label="Border Radius" value={el.borderRadius || 0} onChange={v => U({ borderRadius: v })}/>
+          <Row label="Image Fit">
+            <select value={el.imageFit || "contain"} onChange={e => U({ imageFit: e.target.value })} className={sel}>
+              {["contain","cover","fill"].map(f => <option key={f}>{f}</option>)}
+            </select>
+          </Row>
+          <Row label="Hyperlink">
+            <input value={el.hyperlink || ""} onChange={e => U({ hyperlink: e.target.value })} placeholder="https://..." className={inp}/>
+          </Row>
+        </>}
+
+        {el.type === "imagegrid" && <>
+          <Row label="Grid Type">
+            <select value={el.gridType || "panel"} onChange={e => U({ gridType: e.target.value })} className={sel}>
+              <option value="panel">Panel Images</option>
+              <option value="inverter">Inverter Images</option>
+              <option value="cable">Cable Images</option>
+            </select>
+          </Row>
+          <NumRow label="Max Image Count" value={el.maxCount || 5} min={1} onChange={v => U({ maxCount: v })} unit=""/>
+          <NumRow label="Image Width" value={el.imageWidth || 100} onChange={v => U({ imageWidth: v })}/>
+          <NumRow label="Image Height" value={el.imageHeight || 50} onChange={v => U({ imageHeight: v })}/>
+          <NumRow label="Image Margin" value={el.imageMargin || 4} onChange={v => U({ imageMargin: v })}/>
+          <Row label="Image Fit">
+            <select value={el.imageFit || "contain"} onChange={e => U({ imageFit: e.target.value })} className={sel}>
+              {["contain","cover","fill"].map(f => <option key={f}>{f}</option>)}
+            </select>
+          </Row>
+        </>}
+
+        <NumRow label="Z Index" value={el.zIndex || 1} min={0} unit="" onChange={v => U({ zIndex: v })}/>
+      </div>
+    </div>
+  );
+};
+
+// ── EDIT DATA MODAL (for Image component) ───────────────────────
+const EditDataModal = ({ el, updateEl, onClose, dark }) => {
+  const [dataType, setDataType] = useState(el.dataType || "static");
+  const [fieldName, setFieldName] = useState(el.fieldName || "");
+  const [src, setSrc] = useState(el.src || "");
+  const [dynOptions, setDynOptions] = useState(el.dynamicOptions || []);
+  const [newOptLabel, setNewOptLabel] = useState("");
+  const fileRef = useRef();
+  const optFileRef = useRef();
+
+  const save = () => {
+    updateEl(el.id, { dataType, fieldName, src: dataType === "static" ? src : el.src || "", dynamicOptions: dynOptions });
+    onClose();
+  };
+
+  const inp = `w-full border rounded px-3 py-2 text-sm focus:outline-none ${dark ? "bg-slate-700 border-slate-600 text-white" : "bg-white border-slate-300 text-slate-800"}`;
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60" onClick={onClose}>
+      <div className={`w-full max-w-md rounded-2xl shadow-2xl p-6 ${dark ? "bg-[#0a1628]" : "bg-white"}`} onClick={e => e.stopPropagation()}>
+        <h3 className={`font-bold text-base mb-4 ${dark ? "text-white" : "text-slate-800"}`}>Edit Image Data</h3>
+
+        <div className="flex gap-2 mb-5">
+          {["static","placeholder","dynamic"].map(t => (
+            <button key={t} onClick={() => setDataType(t)}
+              className={`flex-1 py-2 rounded-lg text-xs font-bold capitalize transition-colors ${dataType === t ? "bg-teal-500 text-white" : dark ? "bg-slate-700 text-slate-400" : "bg-slate-100 text-slate-600"}`}>
+              {t}
+            </button>
+          ))}
+        </div>
+
+        {dataType === "static" && (
+          <div>
+            <p className={`text-xs mb-3 ${dark ? "text-slate-400" : "text-slate-500"}`}>Image stays the same for all proposals.</p>
+            <div className="mb-3">
+              <label className={`block text-xs font-semibold mb-1 ${dark ? "text-slate-300" : "text-slate-700"}`}>Image URL</label>
+              <input value={src} onChange={e => setSrc(e.target.value)} placeholder="https://... or paste base64" className={inp}/>
+            </div>
+            <label className="flex items-center gap-2 text-xs cursor-pointer text-teal-500 hover:text-teal-400">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M7 1v8M4 4l3-3 3 3M2 11h10"/></svg>
+              Upload file
+              <input ref={fileRef} type="file" className="hidden" accept="image/*" onChange={e => {
+                const f = e.target.files[0]; if (!f) return;
+                const r = new FileReader(); r.onload = ev => setSrc(ev.target.result); r.readAsDataURL(f);
+              }}/>
+            </label>
+          </div>
+        )}
+
+        {dataType === "placeholder" && (
+          <div>
+            <p className={`text-xs mb-3 ${dark ? "text-slate-400" : "text-slate-500"}`}>Customer uploads this image when creating the proposal.</p>
+            <div>
+              <label className={`block text-xs font-semibold mb-1 ${dark ? "text-slate-300" : "text-slate-700"}`}>Field Name <span className="text-slate-400">(shown to customer)</span></label>
+              <input value={fieldName} onChange={e => setFieldName(e.target.value)} placeholder="e.g. Customer Signature, Company Logo" className={inp}/>
             </div>
           </div>
         )}
 
-        {/* Center: Canvas */}
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="max-w-2xl mx-auto">
-            {/* Preview mode */}
-            {previewMode&&(
-              <div style={{background:"white",borderRadius:12,boxShadow:"0 4px 24px rgba(0,0,0,0.1)",padding:"32px 40px",minHeight:500}}>
-                <div style={{marginBottom:8,textAlign:"center",fontSize:10,color:"#94a3b8",letterSpacing:2,fontWeight:600}}>PREVIEW (SAMPLE DATA)</div>
-                {blocks.map(b=><ProposalBlockRenderer key={b.id} block={b} vals={previewVals} dark={false}/>)}
-              </div>
-            )}
-
-            {/* Edit mode */}
-            {!previewMode&&(
-              <div className="space-y-2">
-                {blocks.length===0&&(
-                  <div className={`text-center py-16 border-2 border-dashed rounded-xl ${dark?"border-slate-700 text-slate-600":"border-slate-200 text-slate-400"}`}>
-                    <div className="text-4xl mb-3">📄</div>
-                    <p className="text-sm font-medium">Add blocks from the left panel</p>
-                    <p className="text-xs opacity-60">Start with a Header, then add sections</p>
-                  </div>
-                )}
-                {blocks.map((block,idx)=>{
-                  const isEditing = editing===block.id;
-                  return (
-                    <div key={block.id} className={`group relative border rounded-xl transition-all ${isEditing?dark?"border-amber-500 bg-slate-800":"border-amber-400 bg-amber-50/30":dark?"border-slate-700 bg-slate-800/30 hover:border-slate-600":"border-slate-200 bg-white hover:border-slate-300"}`}>
-                      {/* Block header controls */}
-                      <div className={`flex items-center gap-1 px-3 py-1.5 border-b text-xs ${isEditing?dark?"border-amber-500/30":"border-amber-200":dark?"border-slate-700 opacity-0 group-hover:opacity-100":"border-slate-100 opacity-0 group-hover:opacity-100"} transition-opacity`}>
-                        <span className={`flex-1 font-medium ${dark?"text-slate-400":"text-slate-500"}`}>{BLOCK_TYPES.find(b=>b.type===block.type)?.icon} {BLOCK_TYPES.find(b=>b.type===block.type)?.label}</span>
-                        <button onClick={()=>moveBlock(block.id,-1)} disabled={idx===0} className={`px-1.5 py-0.5 rounded ${dark?"text-slate-500 hover:text-white disabled:opacity-30":"text-slate-400 hover:text-slate-700 disabled:opacity-30"}`}>↑</button>
-                        <button onClick={()=>moveBlock(block.id,1)} disabled={idx===blocks.length-1} className={`px-1.5 py-0.5 rounded ${dark?"text-slate-500 hover:text-white disabled:opacity-30":"text-slate-400 hover:text-slate-700 disabled:opacity-30"}`}>↓</button>
-                        <button onClick={()=>{setEditing(isEditing?null:block.id);setEditVal(block);}} className={`px-2 py-0.5 rounded text-xs ${isEditing?"bg-amber-500 text-slate-900":dark?"text-slate-400 hover:text-white hover:bg-slate-700":"text-slate-400 hover:text-slate-700 hover:bg-slate-100"}`}>{isEditing?"Done":"Edit"}</button>
-                        <button onClick={()=>deleteBlock(block.id)} className={`px-1.5 py-0.5 rounded ${dark?"text-red-400 hover:bg-red-500/10":"text-red-400 hover:bg-red-50"}`}>✕</button>
-                      </div>
-
-                      {/* Block preview */}
-                      <div className="px-4 py-3" onClick={()=>{if(!isEditing){setEditing(block.id);setEditVal(block);}}}>
-                        {block.type==="divider"&&<div className={`border-t ${dark?"border-slate-600":"border-slate-300"}`}/>}
-                        {(block.type==="header"||block.type==="heading"||block.type==="text")&&(
-                          <div style={{fontSize:block.type==="header"?block.fontSize||22:block.type==="heading"?block.fontSize||15:13,fontWeight:block.bold||block.type==="header"?"700":"400",color:block.color||(dark?"#e2e8f0":"#1e293b"),whiteSpace:"pre-line",opacity:0.9}}>
-                            {block.content||<span className="opacity-40 italic">Click to edit...</span>}
-                          </div>
-                        )}
-                        {block.type==="metric_row"&&(
-                          <div className="grid grid-cols-4 gap-2">
-                            {(block.metrics||[]).map((m,i)=>(
-                              <div key={i} className={`rounded-lg p-2 text-center border ${dark?"border-slate-700 bg-slate-700/30":"border-slate-200 bg-slate-50"}`}>
-                                <div className={`text-xs ${dark?"text-slate-400":"text-slate-500"}`}>{m.label}</div>
-                                <div className="text-amber-400 font-bold text-sm">{m.value}</div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {block.type==="table"&&(
-                          <div className={`text-xs rounded overflow-hidden border ${dark?"border-slate-700":"border-slate-200"}`}>
-                            <div className={`flex gap-3 px-3 py-1.5 font-bold ${dark?"bg-slate-700 text-slate-300":"bg-slate-100 text-slate-600"}`}>
-                              {(block.headers||[]).map((h,i)=><span key={i} className="flex-1">{h}</span>)}
-                            </div>
-                            {(block.rows||[]).slice(0,3).map((row,ri)=>(
-                              <div key={ri} className={`flex gap-3 px-3 py-1 border-t ${dark?"border-slate-700 text-slate-400":"border-slate-100 text-slate-600"}`}>
-                                {row.map((cell,ci)=><span key={ci} className="flex-1">{cell}</span>)}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {block.type==="image"&&(block.src?<img src={block.src} alt={block.alt||""} className="max-h-32 rounded object-cover"/>:<div className={`h-20 rounded border-2 border-dashed flex items-center justify-center text-sm ${dark?"border-slate-600 text-slate-600":"border-slate-200 text-slate-400"}`}>🖼 Image URL</div>)}
-                      </div>
-
-                      {/* Inline edit panel */}
-                      {isEditing&&(
-                        <div className={`px-4 pb-4 border-t ${dark?"border-amber-500/20":"border-amber-200"}`}>
-                          {(block.type==="header"||block.type==="heading"||block.type==="text")&&(
-                            <div>
-                              <textarea id="block-edit-text" rows={block.type==="text"?5:2}
-                                value={editVal.content||""} onChange={e=>updateBlock(block.id,{content:e.target.value})}
-                                className={`${inp} mt-3 resize-none font-mono text-xs`} placeholder="Enter text... use {{variable_name}}"/>
-                              <div className="flex gap-2 mt-2 flex-wrap">
-                                {block.type==="header"&&<>
-                                  <input type="number" value={editVal.fontSize||28} onChange={e=>updateBlock(block.id,{fontSize:Number(e.target.value)})} className={`w-20 ${inp} text-xs`} placeholder="Size"/>
-                                  <input type="color" value={editVal.color||"#f59e0b"} onChange={e=>updateBlock(block.id,{color:e.target.value})} className="w-9 h-8 rounded cursor-pointer border-0"/>
-                                  <select value={editVal.align||"center"} onChange={e=>updateBlock(block.id,{align:e.target.value})} className={`${inp} text-xs w-28`}>
-                                    {["left","center","right"].map(a=><option key={a}>{a}</option>)}
-                                  </select>
-                                </>}
-                                {block.type==="heading"&&<input type="number" value={editVal.fontSize||16} onChange={e=>updateBlock(block.id,{fontSize:Number(e.target.value)})} className={`w-20 ${inp} text-xs`} placeholder="Size"/>}
-                              </div>
-                            </div>
-                          )}
-                          {block.type==="metric_row"&&(
-                            <div className="mt-3 space-y-2">
-                              {(editVal.metrics||[]).map((m,i)=>(
-                                <div key={i} className="flex gap-2 items-center">
-                                  <input value={m.label} onChange={e=>updateBlock(block.id,{metrics:editVal.metrics.map((x,j)=>j===i?{...x,label:e.target.value}:x)})}
-                                    className={`${inp} text-xs flex-1`} placeholder="Label"/>
-                                  <input value={m.value} onChange={e=>updateBlock(block.id,{metrics:editVal.metrics.map((x,j)=>j===i?{...x,value:e.target.value}:x)})}
-                                    className={`${inp} text-xs flex-1`} placeholder="{{variable}} or text"/>
-                                  <button onClick={()=>updateBlock(block.id,{metrics:editVal.metrics.filter((_,j)=>j!==i)})} className="text-red-400 text-sm">✕</button>
-                                </div>
-                              ))}
-                              <button onClick={()=>updateBlock(block.id,{metrics:[...(editVal.metrics||[]),{label:"New",value:""}]})}
-                                className={`text-xs ${dark?"text-amber-400 hover:text-amber-300":"text-amber-600 hover:text-amber-500"}`}>+ Add metric</button>
-                            </div>
-                          )}
-                          {block.type==="table"&&(
-                            <div className="mt-3">
-                              <div className="flex gap-2 mb-2">
-                                {(editVal.headers||[]).map((h,i)=>(
-                                  <input key={i} value={h} onChange={e=>updateBlock(block.id,{headers:editVal.headers.map((x,j)=>j===i?e.target.value:x)})}
-                                    className={`${inp} text-xs flex-1`} placeholder="Header"/>
-                                ))}
-                                <button onClick={()=>updateBlock(block.id,{headers:[...(editVal.headers||[]),"New"],rows:(editVal.rows||[]).map(r=>[...r,""])})} className={`text-xs px-2 ${dark?"text-amber-400":"text-amber-600"}`}>+Col</button>
-                              </div>
-                              {(editVal.rows||[]).map((row,ri)=>(
-                                <div key={ri} className="flex gap-2 mb-1">
-                                  {row.map((cell,ci)=>(
-                                    <input key={ci} value={cell} onChange={e=>updateBlock(block.id,{rows:editVal.rows.map((r,rj)=>rj===ri?r.map((c,cj)=>cj===ci?e.target.value:c):r)})}
-                                      className={`${inp} text-xs flex-1`} placeholder="{{variable}} or text"/>
-                                  ))}
-                                  <button onClick={()=>updateBlock(block.id,{rows:editVal.rows.filter((_,rj)=>rj!==ri)})} className="text-red-400 text-xs">✕</button>
-                                </div>
-                              ))}
-                              <button onClick={()=>updateBlock(block.id,{rows:[...(editVal.rows||[]),(editVal.headers||[]).map(()=>"")]})}
-                                className={`text-xs ${dark?"text-amber-400":"text-amber-600"}`}>+ Add row</button>
-                            </div>
-                          )}
-                          {block.type==="image"&&(
-                            <input value={editVal.src||""} onChange={e=>updateBlock(block.id,{src:e.target.value})}
-                              className={`${inp} mt-3 text-xs`} placeholder="Image URL or paste base64..."/>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                {blocks.length>0&&(
-                  <div className={`text-center py-3 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${dark?"border-slate-800 text-slate-600 hover:border-slate-600 hover:text-slate-400":"border-slate-200 text-slate-400 hover:border-slate-300"}`}
-                    onClick={()=>addBlock("text")}>
-                    + Add Block
-                  </div>
-                )}
-              </div>
-            )}
+        {dataType === "dynamic" && (
+          <div>
+            <p className={`text-xs mb-3 ${dark ? "text-slate-400" : "text-slate-500"}`}>Customer picks from a dropdown of images you provide.</p>
+            <div>
+              <label className={`block text-xs font-semibold mb-1 ${dark ? "text-slate-300" : "text-slate-700"}`}>Field Name</label>
+              <input value={fieldName} onChange={e => setFieldName(e.target.value)} placeholder="e.g. Brand Logo" className={`${inp} mb-3`}/>
+            </div>
+            <label className={`block text-xs font-semibold mb-2 ${dark ? "text-slate-300" : "text-slate-700"}`}>Image Options ({dynOptions.length})</label>
+            <div className="space-y-2 mb-3 max-h-40 overflow-y-auto">
+              {dynOptions.map((opt, i) => (
+                <div key={i} className={`flex items-center gap-2 p-2 rounded-lg border ${dark ? "border-slate-700 bg-slate-800" : "border-slate-200 bg-slate-50"}`}>
+                  {opt.src && <img src={opt.src} alt="" className="w-10 h-8 object-contain rounded flex-shrink-0"/>}
+                  <span className={`text-xs flex-1 truncate ${dark ? "text-slate-300" : "text-slate-600"}`}>{opt.label}</span>
+                  <button onClick={() => setDynOptions(opts => opts.filter((_, j) => j !== i))} className="text-red-400 text-sm">×</button>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <input value={newOptLabel} onChange={e => setNewOptLabel(e.target.value)} placeholder="Option label..." className={`${inp} flex-1`}/>
+              <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-teal-500 hover:bg-teal-400 text-white cursor-pointer whitespace-nowrap">
+                + Add Image
+                <input ref={optFileRef} type="file" className="hidden" accept="image/*" onChange={e => {
+                  const f = e.target.files[0]; if (!f) return;
+                  const r = new FileReader(); r.onload = ev => {
+                    setDynOptions(opts => [...opts, { label: newOptLabel || f.name, src: ev.target.result }]);
+                    setNewOptLabel("");
+                  }; r.readAsDataURL(f);
+                }}/>
+              </label>
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Right: Properties (only when editing) */}
+        <div className="flex gap-3 mt-5">
+          <button onClick={save} className="flex-1 py-2.5 rounded-lg font-bold text-sm bg-teal-600 hover:bg-teal-500 text-white">Save</button>
+          <button onClick={onClose} className={`px-5 py-2.5 rounded-lg text-sm ${dark ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>Cancel</button>
+        </div>
       </div>
     </div>
   );
 };
 
-// ── VARIABLE MANAGER ────────────────────────────────────────────
-const VariableManager = ({variables, setVariables, devId, dark}) => {
-  const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({name:"",identifier:"",type:"text",defaultValue:"",formula:"",unit:"",source:"manual"});
+// ── PROPOSAL CANVAS EDITOR ───────────────────────────────────────
+const ProposalCanvasEditor = ({ template, onSave, onClose, variables, dark }) => {
   const toast = useToast();
-  const SF = (k,v) => setForm(f=>({...f,[k]:v}));
-  const VAR_SOURCES = ["manual","developer.electricityPrice","developer.costPerKW","developer.solarGenerationFactor","project.projectSize","project.customerName","formula"];
+  const canvasRef = useRef();
+
+  const [tname, setTname] = useState(template?.name || "Untitled Proposal");
+  const [pageColor, setPageColor] = useState(template?.pageColor || "#ffffff");
+  const [elements, setElements] = useState(template?.elements || []);
+  const [selectedId, setSelectedId] = useState(null);
+  const [mode, setMode] = useState("move"); // "move" | "resize"
+  const [gridSnap, setGridSnap] = useState(true);
+  const [editDataEl, setEditDataEl] = useState(null);
+  const [showGlobalVars, setShowGlobalVars] = useState(false);
+  const [previewMode, setPreviewMode] = useState(false);
+
+  const dragRef = useRef({ active: false, startX: 0, startY: 0, elX: 0, elY: 0, elW: 0, elH: 0, id: null, handle: null });
+
+  const SNAP = 10;
+  const CANVAS_W = 794; // A4 width at 96dpi
+  const CANVAS_H = 1123; // A4 height at 96dpi
+
+  const snap = v => gridSnap ? Math.round(v / SNAP) * SNAP : v;
+
+  const selected = elements.find(e => e.id === selectedId);
+  const previewVals = { customerName: "Robert Kim", companyName: "SunPower Solutions", projectSize: 5, monthlyGeneration: 600, currentTariff: 8, monthly_savings: 4800, total_cost: 275000, proposalDate: new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }) };
+
+  const addElement = (type) => {
+    const defaults = {
+      text: { w: 200, h: 50, content: "Click to edit", fieldType: "fill_now", fontColor: "#000000", bgColor: "none", textAlign: "left", fontSize: 14, fontFamily: "Default", fontWeight: "normal", borderStyle: "none", borderWidth: 0, borderColor: "#000000", borderRadius: 0, wordSpacing: 0, lineHeight: 1 },
+      rect: { w: 200, h: 80, bgColor: "#e2e8f0", borderColor: "#000000", borderWidth: 0, borderStyle: "solid", borderRadius: 0 },
+      image: { w: 150, h: 100, src: "", dataType: "static", imageFit: "contain", borderColor: "#03989e", borderWidth: 1, borderStyle: "solid", hyperlink: "" },
+      imagegrid: { w: 400, h: 120, gridType: "panel", maxCount: 5, imageWidth: 100, imageHeight: 50, imageMargin: 4, imageFit: "contain" },
+      graph: { w: 300, h: 200 },
+      paneldesign: { w: 300, h: 150 },
+    };
+    const newEl = { id: `el${Date.now()}`, type, x: 50, y: 50, zIndex: elements.length + 1, ...defaults[type] };
+    setElements(es => [...es, newEl]);
+    setSelectedId(newEl.id);
+  };
+
+  const updateEl = (id, changes) => setElements(es => es.map(e => e.id === id ? { ...e, ...changes } : e));
+
+  const deleteSelected = () => {
+    if (!selectedId) return;
+    setElements(es => es.filter(e => e.id !== selectedId));
+    setSelectedId(null);
+  };
+
+  // Pointer drag handling
+  const onElPointerDown = (e, id, handleType) => {
+    if (previewMode) return;
+    e.preventDefault();
+    setSelectedId(id);
+    const el = elements.find(x => x.id === id);
+    if (!el) return;
+    dragRef.current = { active: true, startX: e.clientX, startY: e.clientY, elX: el.x, elY: el.y, elW: el.w, elH: el.h, id, handle: "move" };
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+  };
+
+  const onResizePointerDown = (e, id, handle) => {
+    e.preventDefault();
+    const el = elements.find(x => x.id === id);
+    if (!el) return;
+    dragRef.current = { active: true, startX: e.clientX, startY: e.clientY, elX: el.x, elY: el.y, elW: el.w, elH: el.h, id, handle };
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+  };
+
+  const onPointerMove = (e) => {
+    const d = dragRef.current;
+    if (!d.active) return;
+    const dx = e.clientX - d.startX;
+    const dy = e.clientY - d.startY;
+
+    if (d.handle === "move") {
+      updateEl(d.id, { x: snap(Math.max(0, d.elX + dx)), y: snap(Math.max(0, d.elY + dy)) });
+    } else {
+      // Resize handles
+      let nx = d.elX, ny = d.elY, nw = d.elW, nh = d.elH;
+      if (d.handle.includes("e")) nw = snap(Math.max(20, d.elW + dx));
+      if (d.handle.includes("s")) nh = snap(Math.max(20, d.elH + dy));
+      if (d.handle.includes("w")) { nx = snap(d.elX + dx); nw = snap(Math.max(20, d.elW - dx)); }
+      if (d.handle.includes("n")) { ny = snap(d.elY + dy); nh = snap(Math.max(20, d.elH - dy)); }
+      updateEl(d.id, { x: nx, y: ny, w: nw, h: nh });
+    }
+  };
+
+  const onPointerUp = () => {
+    dragRef.current.active = false;
+    window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("pointerup", onPointerUp);
+  };
+
+  useEffect(() => () => {
+    window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("pointerup", onPointerUp);
+  }, []);
+
+  const toolbarBtn = (active, onClick, children, title = "") => (
+    <button onClick={onClick} title={title}
+      className={`w-8 h-8 flex items-center justify-center rounded transition-colors ${active ? "bg-teal-500 text-white" : dark ? "text-slate-400 hover:bg-slate-700" : "text-slate-500 hover:bg-slate-100"}`}>
+      {children}
+    </button>
+  );
+
+  const COMPONENTS = [
+    { type: "text", label: "Text Field", icon: "Tx" },
+    { type: "rect", label: "Rectangle", icon: "⬜" },
+    { type: "image", label: "Image", icon: "🖼" },
+    { type: "imagegrid", label: "Image Grid", icon: "⊞" },
+    { type: "graph", label: "Graphs", icon: "📊" },
+    { type: "paneldesign", label: "Panel Designs", icon: "🎨" },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-[100] flex flex-col" style={{ background: dark ? "#0a1628" : "#f1f5f9" }}>
+      {/* ── TOP BAR ── */}
+      <div className={`flex items-center gap-2 px-4 h-12 flex-shrink-0 border-b ${dark ? "bg-[#070e1c] border-slate-800" : "bg-white border-slate-200 shadow-sm"}`}>
+        <span className={`text-xs font-bold mr-2 ${dark ? "text-slate-300" : "text-slate-700"}`}>PROPOSAL EDITOR</span>
+        <div className={`flex items-center gap-1 border rounded-lg px-1 py-0.5 ${dark ? "border-slate-700" : "border-slate-200"}`}>
+          {/* Move mode */}
+          {toolbarBtn(mode === "move", () => setMode("move"),
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M7 1v12M1 7h12M4 4l-3 3 3 3M10 4l3 3-3 3"/></svg>, "Move")}
+          {/* Resize mode */}
+          {toolbarBtn(mode === "resize", () => setMode("resize"),
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 1h5M1 1v5M13 13h-5M13 13v-5"/></svg>, "Resize")}
+          {/* Grid toggle */}
+          {toolbarBtn(gridSnap, () => setGridSnap(v => !v),
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2"><path d="M1 5h12M1 9h12M5 1v12M9 1v12"/></svg>, gridSnap ? "Grid On" : "Grid Off")}
+          {/* Delete */}
+          {toolbarBtn(false, deleteSelected,
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 4h10M5 4V2h4v2M6 7v4M8 7v4M3 4l1 8h6l1-8"/></svg>, "Delete selected")}
+        </div>
+        {/* Page counter */}
+        <div className={`flex items-center gap-1 px-2 py-0.5 rounded border text-xs ${dark ? "border-slate-700 text-slate-400" : "border-slate-200 text-slate-500"}`}>1 / 1</div>
+        <div className="flex-1"/>
+        {/* Preview */}
+        <button onClick={() => setPreviewMode(v => !v)}
+          className={`px-3 h-7 rounded text-xs font-medium transition-colors ${previewMode ? "bg-amber-500 text-slate-900" : dark ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>
+          {previewMode ? "✏ Edit" : "👁 Preview"}
+        </button>
+        {/* Save */}
+        <button onClick={() => { onSave({ ...template, name: tname, pageColor, elements }); toast.show({ message: `"${tname}" saved!` }); }}
+          className="flex items-center gap-1.5 px-3 h-7 rounded text-xs font-bold bg-teal-600 hover:bg-teal-500 text-white transition-colors">
+          💾 Save
+        </button>
+        <button onClick={onClose} className={`w-7 h-7 flex items-center justify-center rounded text-lg ${dark ? "text-slate-400 hover:bg-slate-700" : "text-slate-400 hover:bg-slate-100"}`}>×</button>
+      </div>
+
+      <div className="flex flex-1 overflow-hidden">
+        {/* ── LEFT PANEL ── */}
+        {!previewMode && (
+          <div className={`w-44 flex-shrink-0 border-r flex flex-col overflow-hidden ${dark ? "bg-[#0c1929] border-slate-700" : "bg-white border-slate-200"}`}>
+            <div className={`px-3 py-2 text-xs font-bold border-b ${dark ? "border-slate-700 text-slate-400" : "border-slate-200 text-slate-500"}`}>Components</div>
+            <div className="flex-1 overflow-y-auto py-1">
+              {COMPONENTS.map(c => (
+                <button key={c.type} onClick={() => addElement(c.type)}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left transition-colors ${dark ? "text-slate-300 hover:bg-slate-700" : "text-slate-600 hover:bg-slate-50"}`}>
+                  <span className="w-5 text-center">{c.icon}</span>{c.label}
+                </button>
+              ))}
+            </div>
+            <div className={`border-t p-2 space-y-1 ${dark ? "border-slate-700" : "border-slate-200"}`}>
+              <button onClick={() => setShowGlobalVars(v => !v)}
+                className="w-full py-1.5 rounded text-xs font-bold bg-teal-600 hover:bg-teal-500 text-white transition-colors">
+                GLOBAL VARIABLES
+              </button>
+              <button className={`w-full py-1.5 rounded text-xs font-medium border ${dark ? "border-slate-600 text-slate-400 hover:bg-slate-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                VARIABLES ORDER
+              </button>
+            </div>
+            {/* Global Vars dropdown */}
+            {showGlobalVars && (
+              <div className={`border-t p-2 max-h-52 overflow-y-auto ${dark ? "border-slate-700" : "border-slate-200"}`}>
+                <p className={`text-xs font-bold mb-1.5 ${dark ? "text-slate-400" : "text-slate-500"}`}>Click to insert into selected text:</p>
+                {(variables || []).map(v => (
+                  <button key={v.id} onClick={() => {
+                    if (selected?.type === "text") {
+                      updateEl(selected.id, { content: (selected.content || "") + " $" + v.identifier });
+                    }
+                    setShowGlobalVars(false);
+                  }}
+                    className={`w-full text-left px-2 py-1.5 rounded text-xs font-mono transition-colors ${dark ? "text-amber-400 hover:bg-slate-700" : "text-amber-600 hover:bg-amber-50"}`}>
+                    ${v.identifier}
+                  </button>
+                ))}
+                {(!variables || variables.length === 0) && <p className={`text-xs ${dark ? "text-slate-600" : "text-slate-400"}`}>No variables defined yet.</p>}
+              </div>
+            )}
+            <div className={`border-t p-2 ${dark ? "border-slate-700" : "border-slate-200"}`}>
+              <p className={`text-xs font-bold mb-1 ${dark ? "text-slate-400" : "text-slate-500"}`}>Private Formulas</p>
+              <button className={`w-full text-left text-xs ${dark ? "text-teal-400" : "text-teal-600"}`}>+ New Formula</button>
+              <input placeholder="Search" className={`mt-1 w-full border rounded px-2 py-1 text-xs ${dark ? "bg-slate-700 border-slate-600 text-white" : "bg-white border-slate-300"}`}/>
+            </div>
+          </div>
+        )}
+
+        {/* ── CANVAS AREA ── */}
+        <div className={`flex-1 overflow-auto flex items-start justify-center p-8 ${dark ? "bg-slate-900" : "bg-slate-200"}`}
+          onClick={() => setSelectedId(null)}>
+          <div ref={canvasRef} style={{ position: "relative", width: CANVAS_W, minHeight: CANVAS_H, background: pageColor, boxShadow: "0 4px 32px rgba(0,0,0,0.18)", flexShrink: 0 }}
+            onClick={e => e.stopPropagation()}>
+            {/* Elements */}
+            {[...elements].sort((a, b) => (a.zIndex || 1) - (b.zIndex || 1)).map(el => (
+              <div key={el.id} style={{ position: "absolute", left: el.x, top: el.y, width: el.w, height: el.h, zIndex: el.zIndex || 1 }}>
+                <CanvasElement el={el} selected={selectedId === el.id} onSelect={setSelectedId} onPointerDown={onElPointerDown} mode={mode} vals={previewVals} previewMode={previewMode}/>
+                {selectedId === el.id && !previewMode && (
+                  <ResizeHandles onPointerDown={(e, handle) => onResizePointerDown(e, el.id, handle)}/>
+                )}
+              </div>
+            ))}
+            {elements.length === 0 && !previewMode && (
+              <div className="absolute inset-0 flex items-center justify-center flex-col gap-3 opacity-30">
+                <div className="text-5xl">📄</div>
+                <p className="text-slate-400 text-sm font-medium">Add components from the left panel</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── RIGHT PANEL ── */}
+        {!previewMode && (
+          <div className={`w-56 flex-shrink-0 border-l flex flex-col overflow-hidden ${dark ? "bg-[#0c1929] border-slate-700" : "bg-white border-slate-200"}`}>
+            {/* Template name */}
+            <div className={`p-3 border-b ${dark ? "border-slate-700" : "border-slate-200"}`}>
+              <label className={`block text-xs mb-0.5 ${dark ? "text-slate-400" : "text-slate-500"}`}>Template Name</label>
+              <input value={tname} onChange={e => setTname(e.target.value)} className={`w-full border rounded px-2 py-1.5 text-xs focus:outline-none focus:border-teal-400 ${dark ? "bg-slate-700 border-slate-600 text-white" : "bg-white border-slate-300 text-slate-800"}`}/>
+              <label className={`block text-xs mt-2 mb-0.5 ${dark ? "text-slate-400" : "text-slate-500"}`}>Page Color</label>
+              <div className="flex gap-2 items-center">
+                <input type="color" value={pageColor} onChange={e => setPageColor(e.target.value)} className="w-8 h-7 rounded cursor-pointer border-0"/>
+                <input value={pageColor} onChange={e => setPageColor(e.target.value)} className={`flex-1 border rounded px-2 py-1 text-xs focus:outline-none ${dark ? "bg-slate-700 border-slate-600 text-white" : "bg-white border-slate-300"}`}/>
+              </div>
+            </div>
+            {/* Data section */}
+            {selected && selected.type === "image" && (
+              <div className={`p-3 border-b ${dark ? "border-slate-700" : "border-slate-200"}`}>
+                <p className={`text-xs font-bold mb-2 ${dark ? "text-slate-400" : "text-slate-500"}`}>Data</p>
+                <button onClick={() => setEditDataEl(selected)}
+                  className="w-full py-2 rounded-lg text-xs font-bold bg-teal-600 hover:bg-teal-500 text-white transition-colors">
+                  EDIT DATA
+                </button>
+                <p className={`text-xs mt-1 text-center ${dark ? "text-slate-500" : "text-slate-400"}`}>{selected.dataType || "static"}</p>
+              </div>
+            )}
+            {selected && !["image"].includes(selected.type) && (
+              <div className={`px-3 py-2 border-b ${dark ? "border-slate-700" : "border-slate-200"}`}>
+                <p className={`text-xs ${dark ? "text-slate-500" : "text-slate-400"}`}>Data: No Data</p>
+              </div>
+            )}
+            {/* Properties */}
+            <div className="flex-1 overflow-hidden">
+              <PropertiesPanel el={selected} updateEl={updateEl} dark={dark} variables={variables}/>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Edit Data Modal */}
+      {editDataEl && (
+        <EditDataModal el={editDataEl} updateEl={updateEl} onClose={() => setEditDataEl(null)} dark={dark}/>
+      )}
+    </div>
+  );
+};
+
+// ── VARIABLE MANAGER ─────────────────────────────────────────────
+const VariableManager = ({ variables, setVariables, devId, dark }) => {
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({ name: "", identifier: "", type: "text", defaultValue: "", formula: "", unit: "", source: "manual" });
+  const toast = useToast();
+  const SF = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const save = () => {
-    if(!form.name.trim()||!form.identifier.trim()) return;
-    const id_clean = form.identifier.trim().replace(/\s+/g,"_").replace(/[^a-z0-9_]/gi,"").toLowerCase();
-    const v = {...form, id:`pv${Date.now()}`, devId, identifier:id_clean, createdAt:new Date().toISOString()};
-    setVariables(vs=>[...vs, v]);
+    if (!form.name.trim() || !form.identifier.trim()) return;
+    const id_clean = form.identifier.trim().replace(/\s+/g, "_").replace(/[^a-z0-9_]/gi, "").toLowerCase();
+    setVariables(vs => [...vs, { ...form, id: `pv${Date.now()}`, devId, identifier: id_clean, createdAt: new Date().toISOString() }]);
     setShowAdd(false);
-    setForm({name:"",identifier:"",type:"text",defaultValue:"",formula:"",unit:"",source:"manual"});
-    toast.show({message:`Variable "{{${id_clean}}}" created.`});
+    setForm({ name: "", identifier: "", type: "text", defaultValue: "", formula: "", unit: "", source: "manual" });
+    toast.show({ message: `Variable "$${id_clean}" added.` });
   };
 
-  const del = (id) => {
-    if(!window.confirm("Delete this variable?")) return;
-    setVariables(vs=>vs.filter(v=>v.id!==id));
-  };
-
-  const inp = `w-full border rounded-lg px-3 py-2 text-sm focus:outline-none ${dark?"bg-slate-800 border-slate-600 text-white focus:border-amber-400":"bg-white border-slate-300 text-slate-800 focus:border-amber-500"}`;
-  const myVars = variables.filter(v=>v.devId===devId);
+  const del = id => { if (!window.confirm("Delete this variable?")) return; setVariables(vs => vs.filter(v => v.id !== id)); };
+  const inp = `w-full border rounded-lg px-3 py-2 text-sm focus:outline-none ${dark ? "bg-slate-800 border-slate-600 text-white focus:border-amber-400" : "bg-white border-slate-300 text-slate-800 focus:border-amber-500"}`;
+  const myVars = (variables || []).filter(v => v.devId === devId);
 
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className={`font-bold text-sm ${dark?"text-white":"text-slate-800"}`}>Variables</h3>
-          <p className={`text-xs ${dark?"text-slate-400":"text-slate-500"}`}>Define inputs and formulas used in templates with {"{{"} {"}}"}  syntax</p>
+          <h3 className={`font-bold text-sm ${dark ? "text-white" : "text-slate-800"}`}>Variables & Formulas</h3>
+          <p className={`text-xs ${dark ? "text-slate-400" : "text-slate-500"}`}>Use <code className="font-mono">$identifier</code> inside template text fields</p>
         </div>
-        <button onClick={()=>setShowAdd(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-900 transition-colors">
-          + Add Variable
-        </button>
+        <button onClick={() => setShowAdd(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-900">+ Add Variable</button>
       </div>
-
-      <div className={`border rounded-xl overflow-hidden ${dark?"border-slate-700/50":"border-slate-200 shadow-sm"}`}>
-        <table className="w-full text-sm" style={{minWidth:600}}>
-          <thead>
-            <tr className={`border-b text-xs font-medium ${dark?"border-slate-700 bg-slate-800/30 text-slate-400":"border-slate-200 bg-slate-50 text-slate-500"}`}>
-              {["Name","Identifier","Type","Formula / Default","Unit","Source",""].map(h=>(
-                <th key={h} className="text-left px-4 py-2.5">{h}</th>
-              ))}
-            </tr>
-          </thead>
+      <div className={`border rounded-xl overflow-hidden ${dark ? "border-slate-700/50" : "border-slate-200 shadow-sm"}`}>
+        <table className="w-full text-sm" style={{ minWidth: 600 }}>
+          <thead><tr className={`border-b text-xs font-medium ${dark ? "border-slate-700 bg-slate-800/30 text-slate-400" : "border-slate-200 bg-slate-50 text-slate-500"}`}>
+            {["Name", "Identifier ($)", "Type", "Formula / Default", "Unit", ""].map(h => <th key={h} className="text-left px-4 py-2.5">{h}</th>)}
+          </tr></thead>
           <tbody>
-            {myVars.length===0&&<tr><td colSpan={7} className={`text-center py-8 text-sm ${dark?"text-slate-500":"text-slate-400"}`}>No variables yet. Add your first variable.</td></tr>}
-            {myVars.map(v=>(
-              <tr key={v.id} className={`border-b ${dark?"border-slate-700/30 hover:bg-slate-800/20":"border-slate-100 hover:bg-slate-50"}`}>
-                <td className={`px-4 py-2.5 font-medium ${dark?"text-white":"text-slate-800"}`}>{v.name}</td>
-                <td className="px-4 py-2.5"><code className={`text-xs px-1.5 py-0.5 rounded font-mono ${dark?"bg-slate-700 text-amber-400":"bg-amber-50 text-amber-700"}`}>{"{{"}{v.identifier}{"}}"}</code></td>
-                <td className={`px-4 py-2.5 text-xs capitalize ${dark?"text-slate-400":"text-slate-500"}`}>{v.type}</td>
-                <td className={`px-4 py-2.5 text-xs font-mono ${dark?"text-sky-400":"text-sky-700"}`}>{v.type==="formula"?v.formula:v.defaultValue||"—"}</td>
-                <td className={`px-4 py-2.5 text-xs ${dark?"text-slate-500":"text-slate-400"}`}>{v.unit||"—"}</td>
-                <td className={`px-4 py-2.5 text-xs ${dark?"text-slate-500":"text-slate-400"}`}>{v.source||"manual"}</td>
-                <td className="px-4 py-2.5">
-                  <button onClick={()=>del(v.id)} className={`text-xs ${dark?"text-red-400 hover:text-red-300":"text-red-500 hover:text-red-700"}`}>✕</button>
-                </td>
+            {myVars.length === 0 && <tr><td colSpan={6} className={`text-center py-8 text-sm ${dark ? "text-slate-500" : "text-slate-400"}`}>No variables yet. Add your first variable to use in templates.</td></tr>}
+            {myVars.map(v => (
+              <tr key={v.id} className={`border-b ${dark ? "border-slate-700/30 hover:bg-slate-800/20" : "border-slate-100 hover:bg-slate-50"}`}>
+                <td className={`px-4 py-2.5 font-medium ${dark ? "text-white" : "text-slate-800"}`}>{v.name}</td>
+                <td className="px-4 py-2.5"><code className={`text-xs px-1.5 py-0.5 rounded font-mono ${dark ? "bg-slate-700 text-amber-400" : "bg-amber-50 text-amber-700"}`}>${v.identifier}</code></td>
+                <td className={`px-4 py-2.5 text-xs capitalize ${dark ? "text-slate-400" : "text-slate-500"}`}>{v.type}</td>
+                <td className={`px-4 py-2.5 text-xs font-mono ${dark ? "text-sky-400" : "text-sky-700"}`}>{v.type === "formula" ? v.formula : v.defaultValue || "—"}</td>
+                <td className={`px-4 py-2.5 text-xs ${dark ? "text-slate-500" : "text-slate-400"}`}>{v.unit || "—"}</td>
+                <td className="px-4 py-2.5"><button onClick={() => del(v.id)} className={`text-xs ${dark ? "text-red-400" : "text-red-500"}`}>✕</button></td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-
-      {showAdd&&(
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={()=>setShowAdd(false)}>
-          <div className={`w-full max-w-lg rounded-2xl shadow-2xl p-6 ${dark?"bg-[#0a1628]":"bg-white"}`} onClick={e=>e.stopPropagation()}>
-            <h3 className={`font-bold text-lg mb-5 ${dark?"text-white":"text-slate-800"}`}>Add Variable</h3>
+      {showAdd && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowAdd(false)}>
+          <div className={`w-full max-w-lg rounded-2xl shadow-2xl p-6 ${dark ? "bg-[#0a1628]" : "bg-white"}`} onClick={e => e.stopPropagation()}>
+            <h3 className={`font-bold text-lg mb-5 ${dark ? "text-white" : "text-slate-800"}`}>Add Variable</h3>
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div>
-                <label className={`block text-xs font-semibold mb-1 ${dark?"text-slate-300":"text-slate-700"}`}>Variable Name</label>
-                <input value={form.name} onChange={e=>{SF("name",e.target.value);SF("identifier",e.target.value.toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,""));}} placeholder="e.g. Monthly Savings" className={inp}/>
+                <label className={`block text-xs font-semibold mb-1 ${dark ? "text-slate-300" : "text-slate-700"}`}>Variable Name</label>
+                <input value={form.name} onChange={e => { SF("name", e.target.value); SF("identifier", e.target.value.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "")); }} placeholder="e.g. Monthly Savings" className={inp}/>
               </div>
               <div>
-                <label className={`block text-xs font-semibold mb-1 ${dark?"text-slate-300":"text-slate-700"}`}>Identifier (auto-fill)</label>
-                <input value={form.identifier} onChange={e=>SF("identifier",e.target.value.toLowerCase().replace(/[^a-z0-9_]/g,""))} className={`${inp} font-mono text-xs`} placeholder="monthly_savings"/>
-                <p className={`text-xs mt-0.5 ${dark?"text-slate-500":"text-slate-400"}`}>Use in template: {"{{"}{form.identifier||"identifier"}{"}}"}</p>
+                <label className={`block text-xs font-semibold mb-1 ${dark ? "text-slate-300" : "text-slate-700"}`}>Identifier</label>
+                <input value={form.identifier} onChange={e => SF("identifier", e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))} className={`${inp} font-mono`}/>
+                <p className={`text-xs mt-0.5 ${dark ? "text-slate-500" : "text-slate-400"}`}>Use as: ${form.identifier || "identifier"}</p>
               </div>
               <div>
-                <label className={`block text-xs font-semibold mb-1 ${dark?"text-slate-300":"text-slate-700"}`}>Type</label>
-                <select value={form.type} onChange={e=>SF("type",e.target.value)} className={inp}>
-                  <option value="text">Text</option>
-                  <option value="number">Number</option>
+                <label className={`block text-xs font-semibold mb-1 ${dark ? "text-slate-300" : "text-slate-700"}`}>Type</label>
+                <select value={form.type} onChange={e => SF("type", e.target.value)} className={inp}>
+                  <option value="text">Text</option><option value="number">Number</option>
                   <option value="formula">Formula (calculated)</option>
-                  <option value="date">Date</option>
                 </select>
               </div>
               <div>
-                <label className={`block text-xs font-semibold mb-1 ${dark?"text-slate-300":"text-slate-700"}`}>Unit (optional)</label>
-                <input value={form.unit} onChange={e=>SF("unit",e.target.value)} placeholder="kW, ₹, kWh..." className={inp}/>
+                <label className={`block text-xs font-semibold mb-1 ${dark ? "text-slate-300" : "text-slate-700"}`}>Unit (optional)</label>
+                <input value={form.unit} onChange={e => SF("unit", e.target.value)} placeholder="kW, ₹, kWh..." className={inp}/>
               </div>
-              <div>
-                <label className={`block text-xs font-semibold mb-1 ${dark?"text-slate-300":"text-slate-700"}`}>Source / Default</label>
-                <select value={form.source} onChange={e=>SF("source",e.target.value)} className={inp}>
-                  {VAR_SOURCES.map(s=><option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-              {form.type!=="formula"&&(
-                <div>
-                  <label className={`block text-xs font-semibold mb-1 ${dark?"text-slate-300":"text-slate-700"}`}>Default Value</label>
-                  <input value={form.defaultValue} onChange={e=>SF("defaultValue",e.target.value)} placeholder="Default value..." className={inp}/>
-                </div>
-              )}
             </div>
-            {form.type==="formula"&&(
+            {form.type === "formula" ? (
               <div className="mb-4">
-                <label className={`block text-xs font-semibold mb-1 ${dark?"text-slate-300":"text-slate-700"}`}>Formula Expression</label>
-                <input value={form.formula} onChange={e=>SF("formula",e.target.value)} className={`${inp} font-mono text-xs`} placeholder="e.g. monthly_generation * current_tariff"/>
-                <p className={`text-xs mt-1 ${dark?"text-slate-500":"text-slate-400"}`}>Use identifier names: monthly_generation * 12, project_size * cost_per_kw, etc.</p>
+                <label className={`block text-xs font-semibold mb-1 ${dark ? "text-slate-300" : "text-slate-700"}`}>Formula Expression</label>
+                <input value={form.formula} onChange={e => SF("formula", e.target.value)} className={`${inp} font-mono`} placeholder="e.g. monthlyGeneration * currentTariff"/>
+                <p className={`text-xs mt-1 ${dark ? "text-slate-500" : "text-slate-400"}`}>Use other variable identifiers in the expression.</p>
+              </div>
+            ) : (
+              <div className="mb-4">
+                <label className={`block text-xs font-semibold mb-1 ${dark ? "text-slate-300" : "text-slate-700"}`}>Default Value</label>
+                <input value={form.defaultValue} onChange={e => SF("defaultValue", e.target.value)} placeholder="Default value (optional)" className={inp}/>
               </div>
             )}
             <div className="flex gap-3">
-              <button onClick={save} disabled={!form.name.trim()||!form.identifier.trim()} className={`flex-1 py-2.5 rounded-lg font-bold text-sm transition-all ${form.name.trim()&&form.identifier.trim()?"bg-amber-500 hover:bg-amber-400 text-slate-900":"bg-slate-200 text-slate-400 cursor-not-allowed"}`}>Add Variable</button>
-              <button onClick={()=>setShowAdd(false)} className={`px-4 py-2.5 rounded-lg text-sm ${dark?"bg-slate-700 text-slate-300":"bg-slate-100 text-slate-600"}`}>Cancel</button>
+              <button onClick={save} disabled={!form.name.trim() || !form.identifier.trim()} className={`flex-1 py-2.5 rounded-lg font-bold text-sm ${form.name.trim() && form.identifier.trim() ? "bg-amber-500 hover:bg-amber-400 text-slate-900" : "bg-slate-200 text-slate-400 cursor-not-allowed"}`}>Add Variable</button>
+              <button onClick={() => setShowAdd(false)} className={`px-4 py-2.5 rounded-lg text-sm ${dark ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>Cancel</button>
             </div>
           </div>
         </div>
@@ -2825,199 +3147,223 @@ const VariableManager = ({variables, setVariables, devId, dark}) => {
   );
 };
 
-// ── PROPOSAL GENERATOR (NEW ENGINE) ─────────────────────────────
-const ProposalGeneratorNew = ({template, variables, project, developer, onGenerate, onClose}) => {
-  const {dark}=useTheme();
-  const toast=useToast();
-  // Resolve initial values from project/developer
-  const initVals = resolveVariables(variables, {}, project, developer);
-  // Only show "manual" input variables to the user
-  const inputVars = variables.filter(v=>v.type!=="formula"&&(v.source==="manual"||v.source==="formula"||v.source===""));
-  const [vals, setVals] = useState(Object.fromEntries(inputVars.map(v=>[v.identifier, initVals[v.identifier]||v.defaultValue||""])));
-  const [preview, setPreview] = useState(false);
+// ── PROPOSAL GENERATOR (Fill form for customer) ──────────────────
+const ProposalGeneratorNew = ({ template, variables, project, developer, onGenerate, onClose }) => {
+  const { dark } = useTheme();
+  const initVals = resolveVars(variables || [], {}, project, developer);
+  const fillLaterFields = (template?.elements || []).filter(e => e.type === "text" && e.fieldType === "fill_later");
+  const placeholderImages = (template?.elements || []).filter(e => e.type === "image" && e.dataType === "placeholder");
+  const dynamicImages = (template?.elements || []).filter(e => e.type === "image" && e.dataType === "dynamic");
 
-  const allVals = resolveVariables(variables, vals, project, developer);
-  const inp = `w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none ${dark?"bg-slate-800 border-slate-600 text-white focus:border-amber-400":"bg-white border-slate-300 text-slate-800 focus:border-amber-500"}`;
+  const [fillValues, setFillValues] = useState(Object.fromEntries(fillLaterFields.map(e => [e.id, ""])));
+  const [uploadedImages, setUploadedImages] = useState({});
+  const [selectedDynamic, setSelectedDynamic] = useState({});
+  const [selectedBrands, setSelectedBrands] = useState({});
+  const fileRefs = useRef({});
+
+  const allVals = resolveVars(variables || [], initVals, project, developer);
+  const inp = `w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none ${dark ? "bg-slate-800 border-slate-600 text-white focus:border-teal-400" : "bg-white border-slate-300 text-slate-800 focus:border-teal-500"}`;
+
+  const generate = () => {
+    const finalVals = { ...allVals };
+    fillLaterFields.forEach(e => { finalVals[`__fill_${e.id}`] = fillValues[e.id] || ""; });
+    onGenerate(finalVals, template, uploadedImages, selectedDynamic, selectedBrands);
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex" onClick={onClose}>
       <div className="flex-1 bg-black/60 backdrop-blur-sm"/>
-      <div className={`w-full sm:w-[620px] h-full flex flex-col overflow-hidden shadow-2xl ${dark?"bg-[#0a1628]":"bg-white"}`} onClick={e=>e.stopPropagation()}>
-        <div className={`flex items-center gap-3 px-5 py-4 border-b flex-shrink-0 ${dark?"border-slate-700":"border-slate-200"}`}>
+      <div className={`w-full sm:w-[520px] h-full flex flex-col overflow-hidden shadow-2xl ${dark ? "bg-[#0a1628]" : "bg-white"}`} onClick={e => e.stopPropagation()}>
+        <div className={`flex items-center gap-3 px-5 py-4 border-b flex-shrink-0 ${dark ? "border-slate-700" : "border-slate-200"}`}>
           <div className="flex-1">
-            <h2 className={`text-base font-bold ${dark?"text-white":"text-slate-800"}`}>Generate Proposal</h2>
-            <p className={`text-xs ${dark?"text-slate-400":"text-slate-500"}`}>{template.name} · {project?.customerName}</p>
+            <h2 className={`text-base font-bold ${dark ? "text-white" : "text-slate-800"}`}>Create Proposal</h2>
+            <p className={`text-xs ${dark ? "text-slate-400" : "text-slate-500"}`}>{template?.name} · {project?.customerName}</p>
           </div>
-          <div className="flex gap-2">
-            <button onClick={()=>setPreview(v=>!v)} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${preview?"bg-amber-500 text-slate-900":dark?"bg-slate-700 text-slate-300":"bg-slate-100 text-slate-600"}`}>{preview?"📝 Form":"👁 Preview"}</button>
-            <button onClick={onClose} className={`p-1.5 rounded-lg ${dark?"text-slate-400 hover:bg-slate-700":"text-slate-400 hover:bg-slate-100"}`}>✕</button>
-          </div>
+          <button onClick={onClose} className={`p-1.5 rounded-lg ${dark ? "text-slate-400 hover:bg-slate-700" : "text-slate-400 hover:bg-slate-100"}`}>✕</button>
         </div>
-
-        <div className="flex-1 overflow-y-auto px-5 py-4">
-          {preview?(
-            <div style={{background:"white",borderRadius:12,padding:"28px 32px",minHeight:400}}>
-              {template.blocks?.map(b=><ProposalBlockRenderer key={b.id} block={b} vals={allVals} dark={false}/>)}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+          {/* Auto-filled values */}
+          <div className={`border rounded-xl p-4 ${dark ? "border-slate-700/50 bg-slate-800/30" : "border-slate-200 bg-slate-50"}`}>
+            <p className={`text-xs font-bold mb-3 ${dark ? "text-slate-400" : "text-slate-500"}`}>AUTO-FILLED FROM PROJECT</p>
+            <div className="grid grid-cols-2 gap-y-1.5 gap-x-4">
+              {[["Customer", allVals.customerName], ["System Size", `${allVals.projectSize} kW`], ["Company", allVals.companyName], ["Tariff", `₹${allVals.currentTariff}/kWh`]].map(([k, v]) => (
+                <div key={k} className="flex justify-between gap-2">
+                  <span className={`text-xs ${dark ? "text-slate-400" : "text-slate-500"}`}>{k}:</span>
+                  <span className={`text-xs font-medium truncate ${dark ? "text-white" : "text-slate-800"}`}>{v || "—"}</span>
+                </div>
+              ))}
             </div>
-          ):(
+          </div>
+
+          {/* Fill Later fields */}
+          {fillLaterFields.length > 0 && (
             <div>
-              {/* Auto-filled from project */}
-              {(project||developer)&&(
-                <div className={`border rounded-xl p-4 mb-5 ${dark?"border-slate-700/50 bg-slate-800/30":"border-slate-200 bg-slate-50"}`}>
-                  <p className={`text-xs font-bold mb-2 ${dark?"text-slate-400":"text-slate-500"}`}>AUTO-FILLED FROM PROJECT</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {[["Customer",allVals.customer_name],["System Size",`${allVals.project_size} kW`],["Company",allVals.company_name],["Tariff",`₹${allVals.current_tariff}/kWh`]].map(([k,v])=>(
-                      <div key={k} className="flex justify-between">
-                        <span className={`text-xs ${dark?"text-slate-400":"text-slate-500"}`}>{k}:</span>
-                        <span className={`text-xs font-medium ${dark?"text-white":"text-slate-800"}`}>{v}</span>
-                      </div>
-                    ))}
+              <p className={`text-xs font-bold mb-3 ${dark ? "text-slate-300" : "text-slate-700"}`}>FILL IN FIELDS</p>
+              <div className="space-y-3">
+                {fillLaterFields.map(e => (
+                  <div key={e.id}>
+                    <label className={`block text-xs font-semibold mb-1 ${dark ? "text-slate-300" : "text-slate-700"}`}>{e.fieldName || "Text Field"}</label>
+                    <input value={fillValues[e.id] || ""} onChange={ev => setFillValues(v => ({ ...v, [e.id]: ev.target.value }))} placeholder={`Enter ${(e.fieldName || "text").toLowerCase()}...`} className={inp}/>
                   </div>
-                </div>
-              )}
-
-              {/* Formulas preview */}
-              <div className={`border rounded-xl p-4 mb-5 ${dark?"border-amber-500/20 bg-amber-500/5":"border-amber-200 bg-amber-50"}`}>
-                <p className={`text-xs font-bold mb-2 ${dark?"text-amber-400":"text-amber-700"}`}>⚙ FORMULA RESULTS (AUTO-CALCULATED)</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {variables.filter(v=>v.type==="formula").map(v=>(
-                    <div key={v.id} className="flex justify-between">
-                      <span className={`text-xs ${dark?"text-slate-400":"text-slate-600"}`}>{v.name}:</span>
-                      <span className={`text-xs font-bold ${dark?"text-amber-400":"text-amber-700"}`}>{v.unit&&v.unit.startsWith("₹")?"₹":""}{Number(allVals[v.identifier]||0).toLocaleString("en-IN")}{v.unit&&!v.unit.startsWith("₹")?" "+v.unit:""}</span>
-                    </div>
-                  ))}
-                </div>
+                ))}
               </div>
-
-              {/* Manual inputs */}
-              {inputVars.length>0&&(
-                <div>
-                  <p className={`text-xs font-bold mb-3 ${dark?"text-slate-300":"text-slate-700"}`}>ADJUST VALUES</p>
-                  <div className="space-y-3">
-                    {inputVars.map(v=>(
-                      <div key={v.id}>
-                        <label className={`block text-xs font-semibold mb-1 ${dark?"text-slate-300":"text-slate-700"}`}>
-                          {v.name} {v.unit&&<span className={`font-normal ${dark?"text-slate-500":"text-slate-400"}`}>({v.unit})</span>}
-                        </label>
-                        <input type={v.type==="number"?"number":"text"} value={vals[v.identifier]||""} onChange={e=>setVals(vv=>({...vv,[v.identifier]:e.target.value}))} className={inp} placeholder={`Enter ${v.name.toLowerCase()}...`}/>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           )}
-        </div>
 
-        <div className={`px-5 py-4 border-t flex gap-3 flex-shrink-0 ${dark?"border-slate-700":"border-slate-200"}`}>
-          <button onClick={()=>onGenerate(allVals,template)} className="flex-1 py-2.5 rounded-lg font-bold text-sm bg-amber-500 hover:bg-amber-400 text-slate-900 transition-colors">
-            ⚡ Generate Proposal
-          </button>
-          <button onClick={onClose} className={`px-5 py-2.5 rounded-lg text-sm ${dark?"bg-slate-700 text-slate-300":"bg-slate-100 text-slate-600"}`}>Cancel</button>
+          {/* Dynamic image dropdowns */}
+          {dynamicImages.length > 0 && (
+            <div>
+              <p className={`text-xs font-bold mb-3 ${dark ? "text-slate-300" : "text-slate-700"}`}>SELECT IMAGES</p>
+              <div className="space-y-3">
+                {dynamicImages.map(e => (
+                  <div key={e.id}>
+                    <label className={`block text-xs font-semibold mb-2 ${dark ? "text-slate-300" : "text-slate-700"}`}>{e.fieldName || "Dynamic Image"}</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {(e.dynamicOptions || []).map((opt, i) => (
+                        <button key={i} onClick={() => setSelectedDynamic(s => ({ ...s, [e.id]: opt.src }))}
+                          className={`p-2 rounded-xl border transition-all ${selectedDynamic[e.id] === opt.src ? "border-teal-500 bg-teal-500/10" : dark ? "border-slate-700 hover:border-slate-500" : "border-slate-200 hover:border-slate-300"}`}>
+                          <img src={opt.src} alt={opt.label} className="w-full h-12 object-contain rounded"/>
+                          <p className={`text-xs mt-1 truncate ${dark ? "text-slate-400" : "text-slate-500"}`}>{opt.label}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Placeholder image uploads */}
+          {placeholderImages.length > 0 && (
+            <div>
+              <p className={`text-xs font-bold mb-3 ${dark ? "text-slate-300" : "text-slate-700"}`}>UPLOAD IMAGES</p>
+              <div className="space-y-3">
+                {placeholderImages.map(e => (
+                  <div key={e.id}>
+                    <label className={`block text-xs font-semibold mb-1 ${dark ? "text-slate-300" : "text-slate-700"}`}>{e.fieldName || "Upload Image"}</label>
+                    <div className={`border-2 border-dashed rounded-xl p-4 text-center ${dark ? "border-slate-600 hover:border-teal-500" : "border-slate-200 hover:border-teal-400"} transition-colors cursor-pointer`}
+                      onClick={() => fileRefs.current[e.id]?.click()}>
+                      {uploadedImages[e.id]
+                        ? <img src={uploadedImages[e.id]} alt="" className="max-h-24 mx-auto rounded object-contain"/>
+                        : <><div className="text-2xl mb-1">📤</div><p className={`text-xs ${dark ? "text-slate-500" : "text-slate-400"}`}>Click to upload</p></>}
+                      <input ref={el => fileRefs.current[e.id] = el} type="file" className="hidden" accept="image/*"
+                        onChange={ev => { const f = ev.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = ex => setUploadedImages(s => ({ ...s, [e.id]: ex.target.result })); r.readAsDataURL(f); }}/>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Image grid brand selection */}
+          {(template?.elements || []).filter(e => e.type === "imagegrid").map(e => (
+            <div key={e.id}>
+              <p className={`text-xs font-bold mb-3 ${dark ? "text-slate-300" : "text-slate-700"}`}>SELECT {(e.gridType || "panel").toUpperCase()} BRANDS (max {e.maxCount || 5})</p>
+              <div className="flex flex-wrap gap-2">
+                {(BRAND_IMAGES[e.gridType || "panel"] || []).map((b, i) => {
+                  const selected = (selectedBrands[e.id] || []).includes(b.name);
+                  return (
+                    <button key={i} onClick={() => {
+                      setSelectedBrands(s => {
+                        const cur = s[e.id] || [];
+                        const max = e.maxCount || 5;
+                        return { ...s, [e.id]: selected ? cur.filter(n => n !== b.name) : cur.length < max ? [...cur, b.name] : cur };
+                      });
+                    }} className={`px-2 py-1 rounded-lg text-xs font-medium border transition-all ${selected ? "border-teal-500 text-teal-600 bg-teal-50" : dark ? "border-slate-700 text-slate-400" : "border-slate-200 text-slate-600"}`}>
+                      {b.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className={`px-5 py-4 border-t flex gap-3 flex-shrink-0 ${dark ? "border-slate-700" : "border-slate-200"}`}>
+          <button onClick={generate} className="flex-1 py-2.5 rounded-lg font-bold text-sm bg-amber-500 hover:bg-amber-400 text-slate-900 transition-colors">⚡ Generate Proposal</button>
+          <button onClick={onClose} className={`px-5 py-2.5 rounded-lg text-sm ${dark ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>Cancel</button>
         </div>
       </div>
     </div>
   );
 };
 
-// ── FULL TEMPLATE STUDIO PAGE ────────────────────────────────────
-const TemplateStudioPage = ({propVariables, setPropVariables, propTemplates, setPropTemplates, developers, currentUser}) => {
-  const {dark}=useTheme();
-  const toast=useToast();
-  const [activeTab, setActiveTab] = useState("templates"); // templates | variables
-  const [buildingTemplate, setBuildingTemplate] = useState(null); // template obj or "new"
-  const isSA = currentUser.role===ROLES.SUPER_ADMIN;
-  const devId = currentUser.developerId||(isSA&&developers[0]?.id)||"";
-  const myVars = (propVariables||[]).filter(v=>v.devId===devId||isSA);
-  const myTemplates = (propTemplates||[]).filter(t=>t.devId===devId||isSA);
+// ── TEMPLATE STUDIO PAGE ─────────────────────────────────────────
+const TemplateStudioPage = ({ propVariables, setPropVariables, propTemplates, setPropTemplates, developers, currentUser }) => {
+  const { dark } = useTheme();
+  const toast = useToast();
+  const [activeTab, setActiveTab] = useState("templates");
+  const [editing, setEditing] = useState(null); // template obj or "new"
+  const isSA = currentUser.role === ROLES.SUPER_ADMIN;
+  const devId = currentUser.developerId || (isSA && developers[0]?.id) || "";
+  const myVars = (propVariables || []).filter(v => v.devId === devId || isSA);
+  const myTemplates = (propTemplates || []).filter(t => t.devId === devId || isSA);
 
-  const saveTemplate = (tmpl) => {
-    const isNew = !tmpl.id || !propTemplates.find(t=>t.id===tmpl.id);
-    if(isNew) {
-      setPropTemplates(ts=>[...ts,{...tmpl,id:`pt${Date.now()}`,devId,createdAt:new Date().toISOString()}]);
-      toast.show({message:`Template "${tmpl.name}" created!`});
+  const saveTemplate = tmpl => {
+    const isNew = !propTemplates.find(t => t.id === tmpl.id);
+    if (isNew) {
+      setPropTemplates(ts => [...ts, { ...tmpl, id: `pt${Date.now()}`, devId, createdAt: new Date().toISOString() }]);
     } else {
-      setPropTemplates(ts=>ts.map(t=>t.id===tmpl.id?{...t,...tmpl}:t));
-      toast.show({message:`Template "${tmpl.name}" saved.`});
+      setPropTemplates(ts => ts.map(t => t.id === tmpl.id ? { ...t, ...tmpl } : t));
     }
-    setBuildingTemplate(null);
+    setEditing(null);
   };
 
-  const delTemplate = (id) => {
-    if(!window.confirm("Delete this template?")) return;
-    setPropTemplates(ts=>ts.filter(t=>t.id!==id));
-    toast.show({message:"Template deleted."});
-  };
+  const delTemplate = id => { if (!window.confirm("Delete this template?")) return; setPropTemplates(ts => ts.filter(t => t.id !== id)); };
 
-  if(buildingTemplate) {
-    return <TemplateBuilder
-      template={buildingTemplate==="new"?null:buildingTemplate}
-      variables={myVars}
-      dark={dark}
-      onSave={saveTemplate}
-      onClose={()=>setBuildingTemplate(null)}/>;
+  if (editing) {
+    return <ProposalCanvasEditor template={editing === "new" ? null : editing} variables={myVars} dark={dark} onSave={saveTemplate} onClose={() => setEditing(null)}/>;
   }
 
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
         <div>
-          <h1 className={`text-xl font-bold ${dark?"text-white":"text-slateate-800"}`}>Template Studio</h1>
-          <p className={`text-sm ${dark?"text-slate-400":"text-slate-500"}`}>Design proposal templates with drag-and-drop blocks and smart variables</p>
+          <h1 className={`text-xl font-bold ${dark ? "text-white" : "text-slate-800"}`}>Template Studio</h1>
+          <p className={`text-sm ${dark ? "text-slate-400" : "text-slate-500"}`}>Design proposal templates with free-position canvas + smart variables</p>
         </div>
-        <div className="flex gap-2">
-          {activeTab==="templates"&&<button onClick={()=>setBuildingTemplate("new")} className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm bg-amber-500 hover:bg-amber-400 text-slate-900 transition-colors">✏️ New Template</button>}
-        </div>
+        {activeTab === "templates" && <button onClick={() => setEditing("new")} className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm bg-amber-500 hover:bg-amber-400 text-slate-900">✏️ New Template</button>}
       </div>
 
-      {/* Tabs */}
-      <div className={`flex gap-1 rounded-xl p-1 mb-5 w-fit border ${dark?"bg-[#070e1c] border-slate-800":"bg-slate-100 border-slate-200"}`}>
-        {[["templates","📄 Templates"],["variables","⚙ Variables & Formulas"]].map(([v,l])=>(
-          <button key={v} onClick={()=>setActiveTab(v)} className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${activeTab===v?"bg-amber-500 text-slate-900":dark?"text-slate-400 hover:text-white":"text-slate-500 hover:text-slate-700"}`}>{l}</button>
+      <div className={`flex gap-1 rounded-xl p-1 mb-5 w-fit border ${dark ? "bg-[#070e1c] border-slate-800" : "bg-slate-100 border-slate-200"}`}>
+        {[["templates", "📄 Templates"], ["variables", "⚙ Variables & Formulas"]].map(([v, l]) => (
+          <button key={v} onClick={() => setActiveTab(v)} className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${activeTab === v ? "bg-amber-500 text-slate-900" : dark ? "text-slate-400 hover:text-white" : "text-slate-500 hover:text-slate-700"}`}>{l}</button>
         ))}
       </div>
 
-      {activeTab==="variables"&&(
-        <VariableManager variables={propVariables||[]} setVariables={setPropVariables} devId={devId} dark={dark}/>
-      )}
+      {activeTab === "variables" && <VariableManager variables={propVariables || []} setVariables={setPropVariables} devId={devId} dark={dark}/>}
 
-      {activeTab==="templates"&&(
-        <div>
-          {myTemplates.length===0?(
-            <div className={`text-center py-20 border-2 border-dashed rounded-2xl ${dark?"border-slate-800 text-slate-600":"border-slate-200 text-slate-400"}`}>
-              <div className="text-5xl mb-4">📄</div>
-              <p className={`text-lg font-bold mb-2 ${dark?"text-white":"text-slate-800"}`}>No templates yet</p>
-              <p className="text-sm opacity-60 mb-5">Create your first proposal template with the drag-and-drop builder</p>
-              <button onClick={()=>setBuildingTemplate("new")} className="px-6 py-3 rounded-xl font-bold text-sm bg-amber-500 hover:bg-amber-400 text-slate-900 transition-colors">✏️ Build First Template</button>
-            </div>
-          ):(
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {myTemplates.map(t=>(
-                <div key={t.id} className={`border rounded-xl p-4 ${dark?"bg-[#0c1929] border-slate-700/50":"bg-white border-slate-200 shadow-sm"}`}>
-                  <div className="flex items-start gap-3 mb-3">
-                    <div className="w-9 h-9 rounded-lg bg-amber-500/15 flex items-center justify-center text-amber-400 flex-shrink-0 text-lg">📄</div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className={`font-bold truncate ${dark?"text-white":"text-slate-800"}`}>{t.name}</h3>
-                      <p className={`text-xs ${dark?"text-slate-400":"text-slate-500"}`}>{t.description||"No description"}</p>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-1 mb-3">
-                    {(t.blocks||[]).map(b=>(
-                      <span key={b.id} className={`text-xs px-1.5 py-0.5 rounded ${dark?"bg-slate-700 text-slate-400":"bg-slate-100 text-slate-500"}`}>
-                        {b.type}
-                      </span>
-                    ))}
-                    <span className={`text-xs px-1.5 py-0.5 rounded ${dark?"bg-slate-700 text-slate-500":"bg-slate-100 text-slate-400"}`}>{t.blocks?.length||0} blocks</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={()=>setBuildingTemplate(t)} className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${dark?"bg-slate-700 text-slate-300 hover:bg-slate-600":"bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>✏️ Edit</button>
-                    <button onClick={()=>delTemplate(t.id)} className={`px-2.5 py-1.5 rounded-lg text-xs transition-colors ${dark?"text-red-400 hover:bg-red-500/10":"text-red-500 hover:bg-red-50"}`}>✕</button>
+      {activeTab === "templates" && (
+        myTemplates.length === 0 ? (
+          <div className={`text-center py-20 border-2 border-dashed rounded-2xl ${dark ? "border-slate-800 text-slate-600" : "border-slate-200 text-slate-400"}`}>
+            <div className="text-5xl mb-4">📄</div>
+            <p className={`text-lg font-bold mb-2 ${dark ? "text-white" : "text-slate-800"}`}>No templates yet</p>
+            <p className="text-sm opacity-60 mb-5">Build your first proposal template with the free-position canvas editor</p>
+            <button onClick={() => setEditing("new")} className="px-6 py-3 rounded-xl font-bold text-sm bg-amber-500 hover:bg-amber-400 text-slate-900">✏️ Build First Template</button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {myTemplates.map(t => (
+              <div key={t.id} className={`border rounded-xl p-4 ${dark ? "bg-[#0c1929] border-slate-700/50" : "bg-white border-slate-200 shadow-sm"}`}>
+                <div className="flex items-start gap-3 mb-3">
+                  <div className="w-9 h-9 rounded-lg bg-amber-500/15 flex items-center justify-center text-amber-400 flex-shrink-0 text-lg">📄</div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className={`font-bold truncate ${dark ? "text-white" : "text-slate-800"}`}>{t.name}</h3>
+                    <p className={`text-xs ${dark ? "text-slate-400" : "text-slate-500"}`}>{(t.elements || []).length} elements · {new Date(t.createdAt).toLocaleDateString("en-IN")}</p>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+                <div className="flex flex-wrap gap-1 mb-3">
+                  {[...new Set((t.elements || []).map(e => e.type))].map(tp => (
+                    <span key={tp} className={`text-xs px-1.5 py-0.5 rounded capitalize ${dark ? "bg-slate-700 text-slate-400" : "bg-slate-100 text-slate-500"}`}>{tp}</span>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setEditing(t)} className={`flex-1 py-1.5 rounded-lg text-xs font-medium ${dark ? "bg-slate-700 text-slate-300 hover:bg-slate-600" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>✏️ Edit</button>
+                  <button onClick={() => delTemplate(t.id)} className={`px-2.5 py-1.5 rounded-lg text-xs ${dark ? "text-red-400 hover:bg-red-500/10" : "text-red-500 hover:bg-red-50"}`}>✕</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
       )}
     </div>
   );
@@ -5909,8 +6255,10 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
           variables={propVariables||[]}
           project={project}
           developer={developer}
-          onGenerate={(vals, tmpl)=>{
-            const np={id:`pr${Date.now()}`,projectId:project.id,templateId:tmpl.id,templateType:"canvas",status:"Generated",createdAt:new Date().toISOString(),data:vals,canvasTemplate:tmpl};
+          onGenerate={(vals, tmpl, uploadedImages, selectedDynamic, selectedBrands)=>{
+            const np={id:`pr${Date.now()}`,projectId:project.id,templateId:tmpl.id,templateType:"canvas",status:"Generated",
+              createdAt:new Date().toISOString(),data:vals,canvasTemplate:tmpl,
+              uploadedImages:uploadedImages||{},selectedDynamic:selectedDynamic||{},selectedBrands:selectedBrands||{}};
             setProposals(ps=>[...ps,np]);
             setShowGen(false); setShowGenNewTmpl(null); setViewProposal(np);
           }}
@@ -5968,10 +6316,23 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
         <Modal title="Proposal Preview" onClose={()=>setViewProposal(null)} wide>
           {viewProposal.templateType==="canvas"&&viewProposal.canvasTemplate ? (
             <div>
-              <div style={{background:"white",borderRadius:12,padding:"28px 32px",border:"1px solid #e2e8f0"}}>
-                {viewProposal.canvasTemplate.blocks?.map(b=>(
-                  <ProposalBlockRenderer key={b.id} block={b} vals={viewProposal.data||{}} dark={false}/>
-                ))}
+              <div style={{position:"relative",background:viewProposal.canvasTemplate.pageColor||"white",border:"1px solid #e2e8f0",minHeight:400,overflowX:"auto"}}>
+                {/* Canvas proposal preview */}
+                <div style={{position:"relative",width:794,minHeight:500,margin:"0 auto"}}>
+                  {(viewProposal.canvasTemplate.elements||[]).sort((a,b)=>(a.zIndex||1)-(b.zIndex||1)).map(el=>{
+                    const vals=viewProposal.data||{};
+                    const sub=t=>(t||"").replace(/\$([a-zA-Z_][a-zA-Z0-9_]*)/g,(_,k)=>{const v=vals[k];return v!=null?(typeof v==="number"?Number(v).toLocaleString("en-IN"):String(v)):"$"+k;});
+                    const fp = vals[`__fill_${el.id}`]||"";
+                    return (
+                      <div key={el.id} style={{position:"absolute",left:el.x,top:el.y,width:el.w,height:el.h,zIndex:el.zIndex||1,boxSizing:"border-box",overflow:"hidden"}}>
+                        {el.type==="text"&&<div style={{width:"100%",height:"100%",fontSize:(el.fontSize||14)+"px",fontFamily:el.fontFamily==="Default"?"inherit":el.fontFamily,fontWeight:el.fontWeight||"normal",color:el.fontColor||"#000",background:el.bgColor==="none"||!el.bgColor?"transparent":el.bgColor,textAlign:el.textAlign||"left",wordSpacing:(el.wordSpacing||0)+"px",lineHeight:el.lineHeight||1,borderColor:el.borderColor||"transparent",borderWidth:(el.borderWidth||0)+"px",borderStyle:el.borderStyle||"none",borderRadius:(el.borderRadius||0)+"px",padding:"4px 6px",display:"flex",alignItems:"center",whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{el.fieldType==="fill_later"?fp:sub(el.content||"")}</div>}
+                        {el.type==="rect"&&<div style={{width:"100%",height:"100%",background:el.bgColor==="none"||!el.bgColor?"transparent":el.bgColor,borderColor:el.borderColor||"transparent",borderWidth:(el.borderWidth||0)+"px",borderStyle:el.borderStyle||"solid",borderRadius:(el.borderRadius||0)+"px"}}/>}
+                        {el.type==="image"&&(el.src||(viewProposal.uploadedImages||{})[el.id]||(viewProposal.selectedDynamic||{})[el.id]?<img src={(viewProposal.uploadedImages||{})[el.id]||(viewProposal.selectedDynamic||{})[el.id]||el.src} alt="" style={{width:"100%",height:"100%",objectFit:el.imageFit||"contain"}}/>:<div style={{width:"100%",height:"100%",background:"#f1f5f9",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:"#94a3b8"}}>{el.fieldName||"Image"}</div>)}
+                        {el.type==="imagegrid"&&(()=>{const brands=(BRAND_IMAGES[el.gridType||"panel"]||[]).slice(0,el.maxCount||5);return(<div style={{display:"flex",flexWrap:"wrap",gap:el.imageMargin||4,padding:4,alignContent:"flex-start"}}>{brands.map((b,i)=><BrandLogo key={i} name={b.name} color={b.color} w={el.imageWidth||100} h={el.imageHeight||50}/>)}</div>);})()}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
               <div className="flex gap-2 mt-4 justify-end">
                 <Btn size="sm" onClick={()=>{
