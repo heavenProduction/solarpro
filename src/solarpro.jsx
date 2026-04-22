@@ -303,6 +303,42 @@ const SEED_DOCUMENTS = [
   { id:"doc1", projectId:"p1", title:"Site Survey Photos", name:"Site Survey Photos.pdf", type:"PDF", size:"2.3 MB", uploadDate:"2024-06-05", uploadedBy:"Mia Chen", uploadedById:"u3" },
 ];
 
+const SEED_PROP_VARIABLES = [
+  {id:"pv1",devId:"d1",name:"Company Name",identifier:"company_name",type:"text",defaultValue:"",source:"developer.companyName",createdAt:"2024-01-01"},
+  {id:"pv2",devId:"d1",name:"Customer Name",identifier:"customer_name",type:"text",defaultValue:"",source:"project.customerName",createdAt:"2024-01-01"},
+  {id:"pv3",devId:"d1",name:"Project Size",identifier:"project_size",type:"number",defaultValue:"",source:"project.projectSize",unit:"kW",createdAt:"2024-01-01"},
+  {id:"pv4",devId:"d1",name:"Monthly Generation",identifier:"monthly_generation",type:"number",defaultValue:"",source:"manual",unit:"kWh",createdAt:"2024-01-01"},
+  {id:"pv5",devId:"d1",name:"Current Tariff",identifier:"current_tariff",type:"number",defaultValue:"8",source:"developer.electricityPrice",unit:"₹/kWh",createdAt:"2024-01-01"},
+  {id:"pv6",devId:"d1",name:"Monthly Savings",identifier:"monthly_savings",type:"formula",defaultValue:"",source:"formula",formula:"monthly_generation * current_tariff",unit:"₹",createdAt:"2024-01-01"},
+  {id:"pv7",devId:"d1",name:"Total System Cost",identifier:"total_cost",type:"formula",defaultValue:"",source:"formula",formula:"project_size * cost_per_kw",unit:"₹",createdAt:"2024-01-01"},
+  {id:"pv8",devId:"d1",name:"Cost Per kW",identifier:"cost_per_kw",type:"number",defaultValue:"",source:"developer.costPerKW",unit:"₹",createdAt:"2024-01-01"},
+  {id:"pv9",devId:"d1",name:"Annual Savings",identifier:"annual_savings",type:"formula",defaultValue:"",source:"formula",formula:"monthly_savings * 12",unit:"₹",createdAt:"2024-01-01"},
+  {id:"pv10",devId:"d1",name:"Payback Period",identifier:"payback_period",type:"formula",defaultValue:"",source:"formula",formula:"total_cost / annual_savings",unit:"years",createdAt:"2024-01-01"},
+];
+
+const SEED_PROP_TEMPLATES = [
+  {
+    id:"pt1",devId:"d1",name:"Residential Solar Proposal",description:"Standard residential proposal with auto-calculated financials",
+    createdAt:"2024-01-01",
+    blocks:[
+      {id:"b1",type:"header",content:"Solar Energy Proposal\n{{company_name}}",align:"center",fontSize:28,bold:true,color:"#f59e0b"},
+      {id:"b2",type:"divider"},
+      {id:"b3",type:"heading",content:"Prepared For",fontSize:16,bold:true},
+      {id:"b4",type:"text",content:"Customer: {{customer_name}}\nSystem Size: {{project_size}} kW\nDate: {{proposal_date}}"},
+      {id:"b5",type:"divider"},
+      {id:"b6",type:"heading",content:"Financial Summary",fontSize:16,bold:true},
+      {id:"b7",type:"metric_row",metrics:[
+        {label:"System Size",value:"{{project_size}} kW"},
+        {label:"Total Cost",value:"₹{{total_cost}}"},
+        {label:"Monthly Savings",value:"₹{{monthly_savings}}"},
+        {label:"Payback Period",value:"{{payback_period}} years"},
+      ]},
+      {id:"b8",type:"divider"},
+      {id:"b9",type:"text",content:"Thank you for choosing {{company_name}}. We look forward to powering your future with clean solar energy.\n\nFor queries: {{company_phone}} | {{company_email}}"},
+    ],
+  },
+];
+
 const SEED_TEMPLATES = [
   { id:"t1", name:"Residential Solar Proposal", description:"Standard residential proposal", assignedTo:["d1","d2"], variables:["company_name","customer_name","project_size","total_cost","annual_savings","payback_period"], createdAt:"2024-01-01" },
   { id:"t2", name:"Commercial Solar Proposal", description:"Detailed commercial proposal", assignedTo:["d1"], variables:["company_name","customer_name","project_size","total_cost","annual_savings","payback_period","roi"], createdAt:"2024-02-01" },
@@ -1310,6 +1346,7 @@ const Sidebar = ({ user, currentPage, setPage, onLogout, developer, mobileOpen, 
     {id:"team",label:"My Team",icon:"users"},
     {id:"invoices",label:"Invoices",icon:"invoice"},
     {id:"templates",label:"Templates",icon:"template"},
+    {id:"template-studio",label:"Template Studio",icon:"zap"},
     {id:"settings",label:"Settings",icon:"settings"},
     {id:"my-settings",label:"My Profile",icon:"user"},
   ];
@@ -2270,6 +2307,724 @@ const UsersPage = ({ users, setUsers, currentUser, developers, projects, setProj
 };
 
 // ── TEMPLATES PAGE ─────────────────────────────────────────────
+// ── VARIABLE EVALUATOR ──────────────────────────────────────────
+const evaluateFormula = (formula, values) => {
+  try {
+    const clean = formula.replace(/[a-zA-Z_][a-zA-Z0-9_]*/g, m => {
+      const v = values[m];
+      return v !== undefined && v !== "" ? Number(v) : "0";
+    });
+    const result = Function('"use strict"; return (' + clean + ')')();
+    if(isNaN(result)||!isFinite(result)) return 0;
+    return Math.round(result * 100) / 100;
+  } catch { return 0; }
+};
+
+const resolveVariables = (variables, inputValues, project, developer) => {
+  const vals = {};
+  // Source: project fields
+  if(project) {
+    vals.project_size = project.projectSize||0;
+    vals.customer_name = project.customerName||"";
+    vals.customer_email = project.customerEmail||"";
+    vals.customer_phone = project.customerPhone||"";
+    vals.customer_address = (project.customerAddress||"")+(project.customerCity?", "+project.customerCity:"");
+    vals.project_type = project.customerType||"";
+  }
+  // Source: developer fields
+  if(developer) {
+    vals.company_name = developer.companyName||"";
+    vals.company_email = developer.email||"";
+    vals.company_phone = developer.phone||"";
+    vals.current_tariff = developer.electricityPrice||8;
+    vals.cost_per_kw = developer.costPerKW||50000;
+    vals.solar_gen_factor = developer.solarGenerationFactor||1350;
+  }
+  // Misc
+  vals.proposal_date = new Date().toLocaleDateString("en-IN",{day:"numeric",month:"long",year:"numeric"});
+  // Manual input overrides
+  Object.assign(vals, inputValues||{});
+  // Auto-compute derived numeric variables
+  variables.filter(v=>v.source==="developer.electricityPrice").forEach(v=>{ if(developer) vals[v.identifier]=developer.electricityPrice||8; });
+  variables.filter(v=>v.source==="developer.costPerKW").forEach(v=>{ if(developer) vals[v.identifier]=developer.costPerKW||50000; });
+  // Monthly generation default if not overridden
+  if(!vals.monthly_generation) vals.monthly_generation = (vals.project_size||0)*(vals.solar_gen_factor||1350)/12;
+  // Resolve formula variables (topological - run twice to handle deps)
+  for(let pass=0;pass<3;pass++) {
+    variables.filter(v=>v.type==="formula"&&v.formula).forEach(v=>{
+      vals[v.identifier] = evaluateFormula(v.formula, vals);
+    });
+  }
+  return vals;
+};
+
+const substituteTemplate = (text, vals) => {
+  return (text||"").replace(/\{\{(\w+)\}\}/g, (_, key) => {
+    const v = vals[key];
+    if(v === undefined) return "{{"+key+"}}";
+    if(typeof v === "number") return v % 1 === 0 ? v.toLocaleString("en-IN") : v.toFixed(2);
+    return String(v);
+  });
+};
+
+// ── BLOCK RENDERER ──────────────────────────────────────────────
+const ProposalBlockRenderer = ({block, vals, dark}) => {
+  const sub = t => substituteTemplate(t, vals);
+  if(block.type==="header") return (
+    <div className="py-6 px-4 text-center" style={{textAlign:block.align||"center"}}>
+      {sub(block.content).split("\n").map((line,i)=>(
+        <div key={i} style={{fontSize:(block.fontSize||28)-(i*6),fontWeight:i===0?"900":"600",color:i===0?(block.color||"#f59e0b"):"#94a3b8",lineHeight:1.2}}>
+          {line}
+        </div>
+      ))}
+    </div>
+  );
+  if(block.type==="divider") return <div className="border-t border-slate-200 my-3"/>;
+  if(block.type==="heading") return (
+    <div style={{fontSize:block.fontSize||16,fontWeight:"700",color:"#1e293b",marginBottom:8,borderLeft:"3px solid #f59e0b",paddingLeft:10}}>
+      {sub(block.content)}
+    </div>
+  );
+  if(block.type==="text") return (
+    <div style={{fontSize:13,lineHeight:1.7,color:"#475569",whiteSpace:"pre-line",marginBottom:8}}>
+      {sub(block.content)}
+    </div>
+  );
+  if(block.type==="metric_row") return (
+    <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(block.metrics?.length||2,4)},1fr)`,gap:12,marginBottom:16}}>
+      {(block.metrics||[]).map((m,i)=>(
+        <div key={i} style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"12px 14px",textAlign:"center"}}>
+          <div style={{fontSize:11,color:"#94a3b8",marginBottom:4}}>{sub(m.label||"")}</div>
+          <div style={{fontSize:18,fontWeight:"800",color:"#f59e0b"}}>{sub(m.value||"")}</div>
+        </div>
+      ))}
+    </div>
+  );
+  if(block.type==="image") return (
+    block.src ? <img src={block.src} alt={block.alt||""} style={{maxWidth:"100%",borderRadius:8,marginBottom:12}}/> : null
+  );
+  if(block.type==="table") return (
+    <table style={{width:"100%",borderCollapse:"collapse",marginBottom:16,fontSize:12}}>
+      <thead>
+        <tr style={{background:"#f1f5f9"}}>{(block.headers||[]).map((h,i)=>(
+          <th key={i} style={{padding:"8px 12px",textAlign:"left",fontWeight:600,color:"#475569",borderBottom:"1px solid #e2e8f0"}}>{sub(h)}</th>
+        ))}</tr>
+      </thead>
+      <tbody>
+        {(block.rows||[]).map((row,ri)=>(
+          <tr key={ri} style={{borderBottom:"1px solid #f1f5f9"}}>
+            {row.map((cell,ci)=>(
+              <td key={ci} style={{padding:"7px 12px",color:"#334155"}}>{sub(cell)}</td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+  return null;
+};
+
+// ── CANVAS TEMPLATE BUILDER ─────────────────────────────────────
+const TemplateBuilder = ({template, onSave, onClose, variables, dark}) => {
+  const [blocks, setBlocks] = useState(template?.blocks||[]);
+  const [tname, setTname] = useState(template?.name||"New Template");
+  const [tdesc, setTdesc] = useState(template?.description||"");
+  const [editing, setEditing] = useState(null); // blockId
+  const [editVal, setEditVal] = useState({});
+  const [showVarPicker, setShowVarPicker] = useState(false);
+  const [insertTargetId, setInsertTargetId] = useState(null);
+  const [previewMode, setPreviewMode] = useState(false);
+  const previewVals = {};
+  variables.forEach(v => { previewVals[v.identifier] = v.defaultValue||v.name; });
+  previewVals.company_name = "SunPower Solutions";
+  previewVals.customer_name = "Robert Kim";
+  previewVals.project_size = 5;
+  previewVals.monthly_generation = 600;
+  previewVals.current_tariff = 8;
+  previewVals.monthly_savings = 4800;
+  previewVals.total_cost = 275000;
+  previewVals.annual_savings = 57600;
+  previewVals.payback_period = 4.8;
+  previewVals.proposal_date = new Date().toLocaleDateString("en-IN",{day:"numeric",month:"long",year:"numeric"});
+
+  const BLOCK_TYPES = [
+    {type:"header",label:"Header/Title",icon:"🏷"},
+    {type:"heading",label:"Section Heading",icon:"📌"},
+    {type:"text",label:"Text Block",icon:"📝"},
+    {type:"metric_row",label:"Metric Cards Row",icon:"📊"},
+    {type:"divider",label:"Divider",icon:"—"},
+    {type:"table",label:"Table",icon:"📋"},
+    {type:"image",label:"Image",icon:"🖼"},
+  ];
+
+  const addBlock = (type, afterId=null) => {
+    const defaults = {
+      header:{content:"{{company_name}}\nSolar Proposal",fontSize:28,bold:true,color:"#f59e0b",align:"center"},
+      heading:{content:"Section Title",fontSize:16,bold:true},
+      text:{content:"Enter your text here. Use {{variable_name}} to insert variables."},
+      metric_row:{metrics:[{label:"Metric",value:"{{project_size}} kW"},{label:"Cost",value:"₹{{total_cost}}"},{label:"Savings",value:"₹{{monthly_savings}}"},{label:"Payback",value:"{{payback_period}} yrs"}]},
+      divider:{},
+      table:{headers:["Item","Value"],rows:[["System Size","{{project_size}} kW"],["Monthly Savings","₹{{monthly_savings}}"]]},
+      image:{src:"",alt:""},
+    };
+    const newBlock = {id:`b${Date.now()}`, type, ...(defaults[type]||{})};
+    setBlocks(bs => {
+      if(!afterId) return [...bs, newBlock];
+      const idx = bs.findIndex(b=>b.id===afterId);
+      const nb = [...bs];
+      nb.splice(idx+1,0,newBlock);
+      return nb;
+    });
+    setEditing(newBlock.id);
+    setEditVal(newBlock);
+  };
+
+  const updateBlock = (id, changes) => {
+    setBlocks(bs=>bs.map(b=>b.id===id?{...b,...changes}:b));
+    setEditVal(v=>({...v,...changes}));
+  };
+
+  const deleteBlock = (id) => { setBlocks(bs=>bs.filter(b=>b.id!==id)); if(editing===id) setEditing(null); };
+  const moveBlock = (id, dir) => {
+    setBlocks(bs=>{const idx=bs.findIndex(b=>b.id===id);const nb=[...bs];const other=idx+dir;if(other<0||other>=nb.length) return bs;[nb[idx],nb[other]]=[nb[other],nb[idx]];return nb;});
+  };
+
+  const insertVar = (identifier) => {
+    if(!editing) return;
+    const textarea = document.getElementById("block-edit-text");
+    if(textarea){const pos=textarea.selectionStart;const v=editVal.content||"";const newContent=v.slice(0,pos)+"{{"+identifier+"}}"+v.slice(pos);updateBlock(editing,{content:newContent});}
+    setShowVarPicker(false);
+  };
+
+  const inp = `w-full border rounded-lg px-3 py-2 text-sm focus:outline-none ${dark?"bg-slate-700 border-slate-600 text-white":"bg-white border-slate-300 text-slate-800"} focus:border-amber-400`;
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col" style={{background:dark?"#070e1c":"#f8fafc"}}>
+      {/* Top bar */}
+      <div className={`flex items-center gap-3 px-5 py-3 border-b flex-shrink-0 ${dark?"bg-[#0a1628] border-slate-700":"bg-white border-slate-200 shadow-sm"}`}>
+        <div className="flex-1 min-w-0">
+          <input value={tname} onChange={e=>setTname(e.target.value)}
+            className={`text-base font-bold bg-transparent border-b pb-0.5 focus:outline-none mr-3 ${dark?"border-amber-400 text-white":"border-amber-500 text-slate-800"}`}
+            style={{minWidth:200}}/>
+          <input value={tdesc} onChange={e=>setTdesc(e.target.value)} placeholder="Description..."
+            className={`text-xs bg-transparent border-b focus:outline-none ${dark?"border-slate-600 text-slate-400 placeholder-slate-600":"border-slate-200 text-slate-500 placeholder-slate-400"}`}
+            style={{minWidth:200}}/>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={()=>setPreviewMode(v=>!v)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${previewMode?"bg-amber-500 text-slate-900":dark?"bg-slate-700 text-slate-300 hover:bg-slate-600":"bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
+            {previewMode?"✏️ Edit":"👁 Preview"}
+          </button>
+          <button onClick={()=>onSave({...template,name:tname,description:tdesc,blocks})}
+            className="px-4 py-1.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-900 transition-colors">
+            💾 Save Template
+          </button>
+          <button onClick={onClose} className={`px-3 py-1.5 rounded-lg text-xs ${dark?"text-slate-400 hover:bg-slate-700":"text-slate-500 hover:bg-slate-100"}`}>✕ Close</button>
+        </div>
+      </div>
+
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left: Block library */}
+        {!previewMode&&(
+          <div className={`w-52 flex-shrink-0 border-r overflow-y-auto p-3 ${dark?"border-slate-700 bg-[#0c1929]":"border-slate-200 bg-white"}`}>
+            <p className={`text-xs font-bold mb-2 ${dark?"text-slate-400":"text-slate-500"}`}>ADD BLOCKS</p>
+            <div className="space-y-1">
+              {BLOCK_TYPES.map(bt=>(
+                <button key={bt.type} onClick={()=>addBlock(bt.type)}
+                  className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs text-left transition-colors ${dark?"text-slate-300 hover:bg-slate-700":"text-slate-600 hover:bg-slate-50"}`}>
+                  <span>{bt.icon}</span>{bt.label}
+                </button>
+              ))}
+            </div>
+            <div className={`mt-4 pt-3 border-t ${dark?"border-slate-700":"border-slate-200"}`}>
+              <p className={`text-xs font-bold mb-2 ${dark?"text-slate-400":"text-slate-500"}`}>VARIABLES</p>
+              <div className="space-y-1">
+                {variables.map(v=>(
+                  <button key={v.id} onClick={()=>{if(editing){const textarea=document.getElementById("block-edit-text");if(textarea){const pos=textarea.selectionStart;const c=editVal.content||"";updateBlock(editing,{content:c.slice(0,pos)+"{{"+v.identifier+"}}"+c.slice(pos)});}else{}}}}
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-mono transition-colors ${dark?"text-amber-400 hover:bg-slate-700":"text-amber-600 hover:bg-amber-50"}`}
+                    title={v.name}>
+                    {"{{"}{v.identifier}{"}}"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Center: Canvas */}
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="max-w-2xl mx-auto">
+            {/* Preview mode */}
+            {previewMode&&(
+              <div style={{background:"white",borderRadius:12,boxShadow:"0 4px 24px rgba(0,0,0,0.1)",padding:"32px 40px",minHeight:500}}>
+                <div style={{marginBottom:8,textAlign:"center",fontSize:10,color:"#94a3b8",letterSpacing:2,fontWeight:600}}>PREVIEW (SAMPLE DATA)</div>
+                {blocks.map(b=><ProposalBlockRenderer key={b.id} block={b} vals={previewVals} dark={false}/>)}
+              </div>
+            )}
+
+            {/* Edit mode */}
+            {!previewMode&&(
+              <div className="space-y-2">
+                {blocks.length===0&&(
+                  <div className={`text-center py-16 border-2 border-dashed rounded-xl ${dark?"border-slate-700 text-slate-600":"border-slate-200 text-slate-400"}`}>
+                    <div className="text-4xl mb-3">📄</div>
+                    <p className="text-sm font-medium">Add blocks from the left panel</p>
+                    <p className="text-xs opacity-60">Start with a Header, then add sections</p>
+                  </div>
+                )}
+                {blocks.map((block,idx)=>{
+                  const isEditing = editing===block.id;
+                  return (
+                    <div key={block.id} className={`group relative border rounded-xl transition-all ${isEditing?dark?"border-amber-500 bg-slate-800":"border-amber-400 bg-amber-50/30":dark?"border-slate-700 bg-slate-800/30 hover:border-slate-600":"border-slate-200 bg-white hover:border-slate-300"}`}>
+                      {/* Block header controls */}
+                      <div className={`flex items-center gap-1 px-3 py-1.5 border-b text-xs ${isEditing?dark?"border-amber-500/30":"border-amber-200":dark?"border-slate-700 opacity-0 group-hover:opacity-100":"border-slate-100 opacity-0 group-hover:opacity-100"} transition-opacity`}>
+                        <span className={`flex-1 font-medium ${dark?"text-slate-400":"text-slate-500"}`}>{BLOCK_TYPES.find(b=>b.type===block.type)?.icon} {BLOCK_TYPES.find(b=>b.type===block.type)?.label}</span>
+                        <button onClick={()=>moveBlock(block.id,-1)} disabled={idx===0} className={`px-1.5 py-0.5 rounded ${dark?"text-slate-500 hover:text-white disabled:opacity-30":"text-slate-400 hover:text-slate-700 disabled:opacity-30"}`}>↑</button>
+                        <button onClick={()=>moveBlock(block.id,1)} disabled={idx===blocks.length-1} className={`px-1.5 py-0.5 rounded ${dark?"text-slate-500 hover:text-white disabled:opacity-30":"text-slate-400 hover:text-slate-700 disabled:opacity-30"}`}>↓</button>
+                        <button onClick={()=>{setEditing(isEditing?null:block.id);setEditVal(block);}} className={`px-2 py-0.5 rounded text-xs ${isEditing?"bg-amber-500 text-slate-900":dark?"text-slate-400 hover:text-white hover:bg-slate-700":"text-slate-400 hover:text-slate-700 hover:bg-slate-100"}`}>{isEditing?"Done":"Edit"}</button>
+                        <button onClick={()=>deleteBlock(block.id)} className={`px-1.5 py-0.5 rounded ${dark?"text-red-400 hover:bg-red-500/10":"text-red-400 hover:bg-red-50"}`}>✕</button>
+                      </div>
+
+                      {/* Block preview */}
+                      <div className="px-4 py-3" onClick={()=>{if(!isEditing){setEditing(block.id);setEditVal(block);}}}>
+                        {block.type==="divider"&&<div className={`border-t ${dark?"border-slate-600":"border-slate-300"}`}/>}
+                        {(block.type==="header"||block.type==="heading"||block.type==="text")&&(
+                          <div style={{fontSize:block.type==="header"?block.fontSize||22:block.type==="heading"?block.fontSize||15:13,fontWeight:block.bold||block.type==="header"?"700":"400",color:block.color||(dark?"#e2e8f0":"#1e293b"),whiteSpace:"pre-line",opacity:0.9}}>
+                            {block.content||<span className="opacity-40 italic">Click to edit...</span>}
+                          </div>
+                        )}
+                        {block.type==="metric_row"&&(
+                          <div className="grid grid-cols-4 gap-2">
+                            {(block.metrics||[]).map((m,i)=>(
+                              <div key={i} className={`rounded-lg p-2 text-center border ${dark?"border-slate-700 bg-slate-700/30":"border-slate-200 bg-slate-50"}`}>
+                                <div className={`text-xs ${dark?"text-slate-400":"text-slate-500"}`}>{m.label}</div>
+                                <div className="text-amber-400 font-bold text-sm">{m.value}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {block.type==="table"&&(
+                          <div className={`text-xs rounded overflow-hidden border ${dark?"border-slate-700":"border-slate-200"}`}>
+                            <div className={`flex gap-3 px-3 py-1.5 font-bold ${dark?"bg-slate-700 text-slate-300":"bg-slate-100 text-slate-600"}`}>
+                              {(block.headers||[]).map((h,i)=><span key={i} className="flex-1">{h}</span>)}
+                            </div>
+                            {(block.rows||[]).slice(0,3).map((row,ri)=>(
+                              <div key={ri} className={`flex gap-3 px-3 py-1 border-t ${dark?"border-slate-700 text-slate-400":"border-slate-100 text-slate-600"}`}>
+                                {row.map((cell,ci)=><span key={ci} className="flex-1">{cell}</span>)}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {block.type==="image"&&(block.src?<img src={block.src} alt={block.alt||""} className="max-h-32 rounded object-cover"/>:<div className={`h-20 rounded border-2 border-dashed flex items-center justify-center text-sm ${dark?"border-slate-600 text-slate-600":"border-slate-200 text-slate-400"}`}>🖼 Image URL</div>)}
+                      </div>
+
+                      {/* Inline edit panel */}
+                      {isEditing&&(
+                        <div className={`px-4 pb-4 border-t ${dark?"border-amber-500/20":"border-amber-200"}`}>
+                          {(block.type==="header"||block.type==="heading"||block.type==="text")&&(
+                            <div>
+                              <textarea id="block-edit-text" rows={block.type==="text"?5:2}
+                                value={editVal.content||""} onChange={e=>updateBlock(block.id,{content:e.target.value})}
+                                className={`${inp} mt-3 resize-none font-mono text-xs`} placeholder="Enter text... use {{variable_name}}"/>
+                              <div className="flex gap-2 mt-2 flex-wrap">
+                                {block.type==="header"&&<>
+                                  <input type="number" value={editVal.fontSize||28} onChange={e=>updateBlock(block.id,{fontSize:Number(e.target.value)})} className={`w-20 ${inp} text-xs`} placeholder="Size"/>
+                                  <input type="color" value={editVal.color||"#f59e0b"} onChange={e=>updateBlock(block.id,{color:e.target.value})} className="w-9 h-8 rounded cursor-pointer border-0"/>
+                                  <select value={editVal.align||"center"} onChange={e=>updateBlock(block.id,{align:e.target.value})} className={`${inp} text-xs w-28`}>
+                                    {["left","center","right"].map(a=><option key={a}>{a}</option>)}
+                                  </select>
+                                </>}
+                                {block.type==="heading"&&<input type="number" value={editVal.fontSize||16} onChange={e=>updateBlock(block.id,{fontSize:Number(e.target.value)})} className={`w-20 ${inp} text-xs`} placeholder="Size"/>}
+                              </div>
+                            </div>
+                          )}
+                          {block.type==="metric_row"&&(
+                            <div className="mt-3 space-y-2">
+                              {(editVal.metrics||[]).map((m,i)=>(
+                                <div key={i} className="flex gap-2 items-center">
+                                  <input value={m.label} onChange={e=>updateBlock(block.id,{metrics:editVal.metrics.map((x,j)=>j===i?{...x,label:e.target.value}:x)})}
+                                    className={`${inp} text-xs flex-1`} placeholder="Label"/>
+                                  <input value={m.value} onChange={e=>updateBlock(block.id,{metrics:editVal.metrics.map((x,j)=>j===i?{...x,value:e.target.value}:x)})}
+                                    className={`${inp} text-xs flex-1`} placeholder="{{variable}} or text"/>
+                                  <button onClick={()=>updateBlock(block.id,{metrics:editVal.metrics.filter((_,j)=>j!==i)})} className="text-red-400 text-sm">✕</button>
+                                </div>
+                              ))}
+                              <button onClick={()=>updateBlock(block.id,{metrics:[...(editVal.metrics||[]),{label:"New",value:""}]})}
+                                className={`text-xs ${dark?"text-amber-400 hover:text-amber-300":"text-amber-600 hover:text-amber-500"}`}>+ Add metric</button>
+                            </div>
+                          )}
+                          {block.type==="table"&&(
+                            <div className="mt-3">
+                              <div className="flex gap-2 mb-2">
+                                {(editVal.headers||[]).map((h,i)=>(
+                                  <input key={i} value={h} onChange={e=>updateBlock(block.id,{headers:editVal.headers.map((x,j)=>j===i?e.target.value:x)})}
+                                    className={`${inp} text-xs flex-1`} placeholder="Header"/>
+                                ))}
+                                <button onClick={()=>updateBlock(block.id,{headers:[...(editVal.headers||[]),"New"],rows:(editVal.rows||[]).map(r=>[...r,""])})} className={`text-xs px-2 ${dark?"text-amber-400":"text-amber-600"}`}>+Col</button>
+                              </div>
+                              {(editVal.rows||[]).map((row,ri)=>(
+                                <div key={ri} className="flex gap-2 mb-1">
+                                  {row.map((cell,ci)=>(
+                                    <input key={ci} value={cell} onChange={e=>updateBlock(block.id,{rows:editVal.rows.map((r,rj)=>rj===ri?r.map((c,cj)=>cj===ci?e.target.value:c):r)})}
+                                      className={`${inp} text-xs flex-1`} placeholder="{{variable}} or text"/>
+                                  ))}
+                                  <button onClick={()=>updateBlock(block.id,{rows:editVal.rows.filter((_,rj)=>rj!==ri)})} className="text-red-400 text-xs">✕</button>
+                                </div>
+                              ))}
+                              <button onClick={()=>updateBlock(block.id,{rows:[...(editVal.rows||[]),(editVal.headers||[]).map(()=>"")]})}
+                                className={`text-xs ${dark?"text-amber-400":"text-amber-600"}`}>+ Add row</button>
+                            </div>
+                          )}
+                          {block.type==="image"&&(
+                            <input value={editVal.src||""} onChange={e=>updateBlock(block.id,{src:e.target.value})}
+                              className={`${inp} mt-3 text-xs`} placeholder="Image URL or paste base64..."/>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {blocks.length>0&&(
+                  <div className={`text-center py-3 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${dark?"border-slate-800 text-slate-600 hover:border-slate-600 hover:text-slate-400":"border-slate-200 text-slate-400 hover:border-slate-300"}`}
+                    onClick={()=>addBlock("text")}>
+                    + Add Block
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right: Properties (only when editing) */}
+      </div>
+    </div>
+  );
+};
+
+// ── VARIABLE MANAGER ────────────────────────────────────────────
+const VariableManager = ({variables, setVariables, devId, dark}) => {
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({name:"",identifier:"",type:"text",defaultValue:"",formula:"",unit:"",source:"manual"});
+  const toast = useToast();
+  const SF = (k,v) => setForm(f=>({...f,[k]:v}));
+  const VAR_SOURCES = ["manual","developer.electricityPrice","developer.costPerKW","developer.solarGenerationFactor","project.projectSize","project.customerName","formula"];
+
+  const save = () => {
+    if(!form.name.trim()||!form.identifier.trim()) return;
+    const id_clean = form.identifier.trim().replace(/\s+/g,"_").replace(/[^a-z0-9_]/gi,"").toLowerCase();
+    const v = {...form, id:`pv${Date.now()}`, devId, identifier:id_clean, createdAt:new Date().toISOString()};
+    setVariables(vs=>[...vs, v]);
+    setShowAdd(false);
+    setForm({name:"",identifier:"",type:"text",defaultValue:"",formula:"",unit:"",source:"manual"});
+    toast.show({message:`Variable "{{${id_clean}}}" created.`});
+  };
+
+  const del = (id) => {
+    if(!window.confirm("Delete this variable?")) return;
+    setVariables(vs=>vs.filter(v=>v.id!==id));
+  };
+
+  const inp = `w-full border rounded-lg px-3 py-2 text-sm focus:outline-none ${dark?"bg-slate-800 border-slate-600 text-white focus:border-amber-400":"bg-white border-slate-300 text-slate-800 focus:border-amber-500"}`;
+  const myVars = variables.filter(v=>v.devId===devId);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className={`font-bold text-sm ${dark?"text-white":"text-slate-800"}`}>Variables</h3>
+          <p className={`text-xs ${dark?"text-slate-400":"text-slate-500"}`}>Define inputs and formulas used in templates with {"{{"} {"}}"}  syntax</p>
+        </div>
+        <button onClick={()=>setShowAdd(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-900 transition-colors">
+          + Add Variable
+        </button>
+      </div>
+
+      <div className={`border rounded-xl overflow-hidden ${dark?"border-slate-700/50":"border-slate-200 shadow-sm"}`}>
+        <table className="w-full text-sm" style={{minWidth:600}}>
+          <thead>
+            <tr className={`border-b text-xs font-medium ${dark?"border-slate-700 bg-slate-800/30 text-slate-400":"border-slate-200 bg-slate-50 text-slate-500"}`}>
+              {["Name","Identifier","Type","Formula / Default","Unit","Source",""].map(h=>(
+                <th key={h} className="text-left px-4 py-2.5">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {myVars.length===0&&<tr><td colSpan={7} className={`text-center py-8 text-sm ${dark?"text-slate-500":"text-slate-400"}`}>No variables yet. Add your first variable.</td></tr>}
+            {myVars.map(v=>(
+              <tr key={v.id} className={`border-b ${dark?"border-slate-700/30 hover:bg-slate-800/20":"border-slate-100 hover:bg-slate-50"}`}>
+                <td className={`px-4 py-2.5 font-medium ${dark?"text-white":"text-slate-800"}`}>{v.name}</td>
+                <td className="px-4 py-2.5"><code className={`text-xs px-1.5 py-0.5 rounded font-mono ${dark?"bg-slate-700 text-amber-400":"bg-amber-50 text-amber-700"}`}>{"{{"}{v.identifier}{"}}"}</code></td>
+                <td className={`px-4 py-2.5 text-xs capitalize ${dark?"text-slate-400":"text-slate-500"}`}>{v.type}</td>
+                <td className={`px-4 py-2.5 text-xs font-mono ${dark?"text-sky-400":"text-sky-700"}`}>{v.type==="formula"?v.formula:v.defaultValue||"—"}</td>
+                <td className={`px-4 py-2.5 text-xs ${dark?"text-slate-500":"text-slate-400"}`}>{v.unit||"—"}</td>
+                <td className={`px-4 py-2.5 text-xs ${dark?"text-slate-500":"text-slate-400"}`}>{v.source||"manual"}</td>
+                <td className="px-4 py-2.5">
+                  <button onClick={()=>del(v.id)} className={`text-xs ${dark?"text-red-400 hover:text-red-300":"text-red-500 hover:text-red-700"}`}>✕</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {showAdd&&(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={()=>setShowAdd(false)}>
+          <div className={`w-full max-w-lg rounded-2xl shadow-2xl p-6 ${dark?"bg-[#0a1628]":"bg-white"}`} onClick={e=>e.stopPropagation()}>
+            <h3 className={`font-bold text-lg mb-5 ${dark?"text-white":"text-slate-800"}`}>Add Variable</h3>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div>
+                <label className={`block text-xs font-semibold mb-1 ${dark?"text-slate-300":"text-slate-700"}`}>Variable Name</label>
+                <input value={form.name} onChange={e=>{SF("name",e.target.value);SF("identifier",e.target.value.toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,""));}} placeholder="e.g. Monthly Savings" className={inp}/>
+              </div>
+              <div>
+                <label className={`block text-xs font-semibold mb-1 ${dark?"text-slate-300":"text-slate-700"}`}>Identifier (auto-fill)</label>
+                <input value={form.identifier} onChange={e=>SF("identifier",e.target.value.toLowerCase().replace(/[^a-z0-9_]/g,""))} className={`${inp} font-mono text-xs`} placeholder="monthly_savings"/>
+                <p className={`text-xs mt-0.5 ${dark?"text-slate-500":"text-slate-400"}`}>Use in template: {"{{"}{form.identifier||"identifier"}{"}}"}</p>
+              </div>
+              <div>
+                <label className={`block text-xs font-semibold mb-1 ${dark?"text-slate-300":"text-slate-700"}`}>Type</label>
+                <select value={form.type} onChange={e=>SF("type",e.target.value)} className={inp}>
+                  <option value="text">Text</option>
+                  <option value="number">Number</option>
+                  <option value="formula">Formula (calculated)</option>
+                  <option value="date">Date</option>
+                </select>
+              </div>
+              <div>
+                <label className={`block text-xs font-semibold mb-1 ${dark?"text-slate-300":"text-slate-700"}`}>Unit (optional)</label>
+                <input value={form.unit} onChange={e=>SF("unit",e.target.value)} placeholder="kW, ₹, kWh..." className={inp}/>
+              </div>
+              <div>
+                <label className={`block text-xs font-semibold mb-1 ${dark?"text-slate-300":"text-slate-700"}`}>Source / Default</label>
+                <select value={form.source} onChange={e=>SF("source",e.target.value)} className={inp}>
+                  {VAR_SOURCES.map(s=><option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              {form.type!=="formula"&&(
+                <div>
+                  <label className={`block text-xs font-semibold mb-1 ${dark?"text-slate-300":"text-slate-700"}`}>Default Value</label>
+                  <input value={form.defaultValue} onChange={e=>SF("defaultValue",e.target.value)} placeholder="Default value..." className={inp}/>
+                </div>
+              )}
+            </div>
+            {form.type==="formula"&&(
+              <div className="mb-4">
+                <label className={`block text-xs font-semibold mb-1 ${dark?"text-slate-300":"text-slate-700"}`}>Formula Expression</label>
+                <input value={form.formula} onChange={e=>SF("formula",e.target.value)} className={`${inp} font-mono text-xs`} placeholder="e.g. monthly_generation * current_tariff"/>
+                <p className={`text-xs mt-1 ${dark?"text-slate-500":"text-slate-400"}`}>Use identifier names: monthly_generation * 12, project_size * cost_per_kw, etc.</p>
+              </div>
+            )}
+            <div className="flex gap-3">
+              <button onClick={save} disabled={!form.name.trim()||!form.identifier.trim()} className={`flex-1 py-2.5 rounded-lg font-bold text-sm transition-all ${form.name.trim()&&form.identifier.trim()?"bg-amber-500 hover:bg-amber-400 text-slate-900":"bg-slate-200 text-slate-400 cursor-not-allowed"}`}>Add Variable</button>
+              <button onClick={()=>setShowAdd(false)} className={`px-4 py-2.5 rounded-lg text-sm ${dark?"bg-slate-700 text-slate-300":"bg-slate-100 text-slate-600"}`}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── PROPOSAL GENERATOR (NEW ENGINE) ─────────────────────────────
+const ProposalGeneratorNew = ({template, variables, project, developer, onGenerate, onClose}) => {
+  const {dark}=useTheme();
+  const toast=useToast();
+  // Resolve initial values from project/developer
+  const initVals = resolveVariables(variables, {}, project, developer);
+  // Only show "manual" input variables to the user
+  const inputVars = variables.filter(v=>v.type!=="formula"&&(v.source==="manual"||v.source==="formula"||v.source===""));
+  const [vals, setVals] = useState(Object.fromEntries(inputVars.map(v=>[v.identifier, initVals[v.identifier]||v.defaultValue||""])));
+  const [preview, setPreview] = useState(false);
+
+  const allVals = resolveVariables(variables, vals, project, developer);
+  const inp = `w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none ${dark?"bg-slate-800 border-slate-600 text-white focus:border-amber-400":"bg-white border-slate-300 text-slate-800 focus:border-amber-500"}`;
+
+  return (
+    <div className="fixed inset-0 z-50 flex" onClick={onClose}>
+      <div className="flex-1 bg-black/60 backdrop-blur-sm"/>
+      <div className={`w-full sm:w-[620px] h-full flex flex-col overflow-hidden shadow-2xl ${dark?"bg-[#0a1628]":"bg-white"}`} onClick={e=>e.stopPropagation()}>
+        <div className={`flex items-center gap-3 px-5 py-4 border-b flex-shrink-0 ${dark?"border-slate-700":"border-slate-200"}`}>
+          <div className="flex-1">
+            <h2 className={`text-base font-bold ${dark?"text-white":"text-slate-800"}`}>Generate Proposal</h2>
+            <p className={`text-xs ${dark?"text-slate-400":"text-slate-500"}`}>{template.name} · {project?.customerName}</p>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={()=>setPreview(v=>!v)} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${preview?"bg-amber-500 text-slate-900":dark?"bg-slate-700 text-slate-300":"bg-slate-100 text-slate-600"}`}>{preview?"📝 Form":"👁 Preview"}</button>
+            <button onClick={onClose} className={`p-1.5 rounded-lg ${dark?"text-slate-400 hover:bg-slate-700":"text-slate-400 hover:bg-slate-100"}`}>✕</button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+          {preview?(
+            <div style={{background:"white",borderRadius:12,padding:"28px 32px",minHeight:400}}>
+              {template.blocks?.map(b=><ProposalBlockRenderer key={b.id} block={b} vals={allVals} dark={false}/>)}
+            </div>
+          ):(
+            <div>
+              {/* Auto-filled from project */}
+              {(project||developer)&&(
+                <div className={`border rounded-xl p-4 mb-5 ${dark?"border-slate-700/50 bg-slate-800/30":"border-slate-200 bg-slate-50"}`}>
+                  <p className={`text-xs font-bold mb-2 ${dark?"text-slate-400":"text-slate-500"}`}>AUTO-FILLED FROM PROJECT</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[["Customer",allVals.customer_name],["System Size",`${allVals.project_size} kW`],["Company",allVals.company_name],["Tariff",`₹${allVals.current_tariff}/kWh`]].map(([k,v])=>(
+                      <div key={k} className="flex justify-between">
+                        <span className={`text-xs ${dark?"text-slate-400":"text-slate-500"}`}>{k}:</span>
+                        <span className={`text-xs font-medium ${dark?"text-white":"text-slate-800"}`}>{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Formulas preview */}
+              <div className={`border rounded-xl p-4 mb-5 ${dark?"border-amber-500/20 bg-amber-500/5":"border-amber-200 bg-amber-50"}`}>
+                <p className={`text-xs font-bold mb-2 ${dark?"text-amber-400":"text-amber-700"}`}>⚙ FORMULA RESULTS (AUTO-CALCULATED)</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {variables.filter(v=>v.type==="formula").map(v=>(
+                    <div key={v.id} className="flex justify-between">
+                      <span className={`text-xs ${dark?"text-slate-400":"text-slate-600"}`}>{v.name}:</span>
+                      <span className={`text-xs font-bold ${dark?"text-amber-400":"text-amber-700"}`}>{v.unit&&v.unit.startsWith("₹")?"₹":""}{Number(allVals[v.identifier]||0).toLocaleString("en-IN")}{v.unit&&!v.unit.startsWith("₹")?" "+v.unit:""}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Manual inputs */}
+              {inputVars.length>0&&(
+                <div>
+                  <p className={`text-xs font-bold mb-3 ${dark?"text-slate-300":"text-slate-700"}`}>ADJUST VALUES</p>
+                  <div className="space-y-3">
+                    {inputVars.map(v=>(
+                      <div key={v.id}>
+                        <label className={`block text-xs font-semibold mb-1 ${dark?"text-slate-300":"text-slate-700"}`}>
+                          {v.name} {v.unit&&<span className={`font-normal ${dark?"text-slate-500":"text-slate-400"}`}>({v.unit})</span>}
+                        </label>
+                        <input type={v.type==="number"?"number":"text"} value={vals[v.identifier]||""} onChange={e=>setVals(vv=>({...vv,[v.identifier]:e.target.value}))} className={inp} placeholder={`Enter ${v.name.toLowerCase()}...`}/>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className={`px-5 py-4 border-t flex gap-3 flex-shrink-0 ${dark?"border-slate-700":"border-slate-200"}`}>
+          <button onClick={()=>onGenerate(allVals,template)} className="flex-1 py-2.5 rounded-lg font-bold text-sm bg-amber-500 hover:bg-amber-400 text-slate-900 transition-colors">
+            ⚡ Generate Proposal
+          </button>
+          <button onClick={onClose} className={`px-5 py-2.5 rounded-lg text-sm ${dark?"bg-slate-700 text-slate-300":"bg-slate-100 text-slate-600"}`}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── FULL TEMPLATE STUDIO PAGE ────────────────────────────────────
+const TemplateStudioPage = ({propVariables, setPropVariables, propTemplates, setPropTemplates, developers, currentUser}) => {
+  const {dark}=useTheme();
+  const toast=useToast();
+  const [activeTab, setActiveTab] = useState("templates"); // templates | variables
+  const [buildingTemplate, setBuildingTemplate] = useState(null); // template obj or "new"
+  const isSA = currentUser.role===ROLES.SUPER_ADMIN;
+  const devId = currentUser.developerId||(isSA&&developers[0]?.id)||"";
+  const myVars = (propVariables||[]).filter(v=>v.devId===devId||isSA);
+  const myTemplates = (propTemplates||[]).filter(t=>t.devId===devId||isSA);
+
+  const saveTemplate = (tmpl) => {
+    const isNew = !tmpl.id || !propTemplates.find(t=>t.id===tmpl.id);
+    if(isNew) {
+      setPropTemplates(ts=>[...ts,{...tmpl,id:`pt${Date.now()}`,devId,createdAt:new Date().toISOString()}]);
+      toast.show({message:`Template "${tmpl.name}" created!`});
+    } else {
+      setPropTemplates(ts=>ts.map(t=>t.id===tmpl.id?{...t,...tmpl}:t));
+      toast.show({message:`Template "${tmpl.name}" saved.`});
+    }
+    setBuildingTemplate(null);
+  };
+
+  const delTemplate = (id) => {
+    if(!window.confirm("Delete this template?")) return;
+    setPropTemplates(ts=>ts.filter(t=>t.id!==id));
+    toast.show({message:"Template deleted."});
+  };
+
+  if(buildingTemplate) {
+    return <TemplateBuilder
+      template={buildingTemplate==="new"?null:buildingTemplate}
+      variables={myVars}
+      dark={dark}
+      onSave={saveTemplate}
+      onClose={()=>setBuildingTemplate(null)}/>;
+  }
+
+  return (
+    <div>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
+        <div>
+          <h1 className={`text-xl font-bold ${dark?"text-white":"text-slateate-800"}`}>Template Studio</h1>
+          <p className={`text-sm ${dark?"text-slate-400":"text-slate-500"}`}>Design proposal templates with drag-and-drop blocks and smart variables</p>
+        </div>
+        <div className="flex gap-2">
+          {activeTab==="templates"&&<button onClick={()=>setBuildingTemplate("new")} className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm bg-amber-500 hover:bg-amber-400 text-slate-900 transition-colors">✏️ New Template</button>}
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className={`flex gap-1 rounded-xl p-1 mb-5 w-fit border ${dark?"bg-[#070e1c] border-slate-800":"bg-slate-100 border-slate-200"}`}>
+        {[["templates","📄 Templates"],["variables","⚙ Variables & Formulas"]].map(([v,l])=>(
+          <button key={v} onClick={()=>setActiveTab(v)} className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${activeTab===v?"bg-amber-500 text-slate-900":dark?"text-slate-400 hover:text-white":"text-slate-500 hover:text-slate-700"}`}>{l}</button>
+        ))}
+      </div>
+
+      {activeTab==="variables"&&(
+        <VariableManager variables={propVariables||[]} setVariables={setPropVariables} devId={devId} dark={dark}/>
+      )}
+
+      {activeTab==="templates"&&(
+        <div>
+          {myTemplates.length===0?(
+            <div className={`text-center py-20 border-2 border-dashed rounded-2xl ${dark?"border-slate-800 text-slate-600":"border-slate-200 text-slate-400"}`}>
+              <div className="text-5xl mb-4">📄</div>
+              <p className={`text-lg font-bold mb-2 ${dark?"text-white":"text-slate-800"}`}>No templates yet</p>
+              <p className="text-sm opacity-60 mb-5">Create your first proposal template with the drag-and-drop builder</p>
+              <button onClick={()=>setBuildingTemplate("new")} className="px-6 py-3 rounded-xl font-bold text-sm bg-amber-500 hover:bg-amber-400 text-slate-900 transition-colors">✏️ Build First Template</button>
+            </div>
+          ):(
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {myTemplates.map(t=>(
+                <div key={t.id} className={`border rounded-xl p-4 ${dark?"bg-[#0c1929] border-slate-700/50":"bg-white border-slate-200 shadow-sm"}`}>
+                  <div className="flex items-start gap-3 mb-3">
+                    <div className="w-9 h-9 rounded-lg bg-amber-500/15 flex items-center justify-center text-amber-400 flex-shrink-0 text-lg">📄</div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className={`font-bold truncate ${dark?"text-white":"text-slate-800"}`}>{t.name}</h3>
+                      <p className={`text-xs ${dark?"text-slate-400":"text-slate-500"}`}>{t.description||"No description"}</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1 mb-3">
+                    {(t.blocks||[]).map(b=>(
+                      <span key={b.id} className={`text-xs px-1.5 py-0.5 rounded ${dark?"bg-slate-700 text-slate-400":"bg-slate-100 text-slate-500"}`}>
+                        {b.type}
+                      </span>
+                    ))}
+                    <span className={`text-xs px-1.5 py-0.5 rounded ${dark?"bg-slate-700 text-slate-500":"bg-slate-100 text-slate-400"}`}>{t.blocks?.length||0} blocks</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={()=>setBuildingTemplate(t)} className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${dark?"bg-slate-700 text-slate-300 hover:bg-slate-600":"bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>✏️ Edit</button>
+                    <button onClick={()=>delTemplate(t.id)} className={`px-2.5 py-1.5 rounded-lg text-xs transition-colors ${dark?"text-red-400 hover:bg-red-500/10":"text-red-500 hover:bg-red-50"}`}>✕</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+
+
 const TemplatesPage = ({ templates, setTemplates, developers, currentUser }) => {
   const { dark } = useTheme();
   const [showAdd, setShowAdd] = useState(false);
@@ -4554,7 +5309,7 @@ const ProjectTasksTab = ({project, tasks, setTasks, users, currentUser, develope
   );
 };
 
-const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, proposals, setProposals, templates, developer, currentUser, onBack, setCurrentPage, setProjects, users, tasks, setTasks, projects, pmCategories, setPmCategories, pmTasks, setPmTasks, pmSubtasks, setPmSubtasks, pmComments, setPmComments, pmTemplates, setPmTemplates, pmCollections, setPmCollections }) => {
+const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, proposals, setProposals, templates, developer, currentUser, onBack, setCurrentPage, setProjects, users, tasks, setTasks, projects, pmCategories, setPmCategories, pmTasks, setPmTasks, pmSubtasks, setPmSubtasks, pmComments, setPmComments, pmTemplates, setPmTemplates, pmCollections, setPmCollections, propVariables, propTemplates }) => {
   const { dark } = useTheme();
   const toast = useToast();
   const [tab, setTab] = useState("info");
@@ -5147,11 +5902,39 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
         </div>
       )}
 
-      {/* Proposal Generator Modal */}
-      {showGen&&(
+      {/* Proposal Generator — New Engine (uses prop templates + variables) */}
+      {showGen&&showGenNewTmpl&&(
+        <ProposalGeneratorNew
+          template={showGenNewTmpl}
+          variables={propVariables||[]}
+          project={project}
+          developer={developer}
+          onGenerate={(vals, tmpl)=>{
+            const np={id:`pr${Date.now()}`,projectId:project.id,templateId:tmpl.id,templateType:"canvas",status:"Generated",createdAt:new Date().toISOString(),data:vals,canvasTemplate:tmpl};
+            setProposals(ps=>[...ps,np]);
+            setShowGen(false); setShowGenNewTmpl(null); setViewProposal(np);
+          }}
+          onClose={()=>{setShowGen(false);setShowGenNewTmpl(null);}}/>
+      )}
+      {/* Legacy Proposal Generator Modal (classic templates) */}
+      {showGen&&!showGenNewTmpl&&(
         <Modal title="Generate Proposal" onClose={()=>setShowGen(false)} wide>
-          <Field label="Select Template" type="select" value={selectedTmpl} onChange={setSelectedTmpl}
-            options={[{value:"",label:"— Select Template —"},...avlTemplates.map(t=>({value:t.id,label:t.name}))]}/>
+          {/* Canvas template picker */}
+          {(propTemplates||[]).filter(t=>t.devId===developer?.id).length>0&&(
+            <div className={`mb-4 p-3 rounded-xl border ${tc(dark,"border-amber-500/30 bg-amber-500/5","border-amber-200 bg-amber-50")}`}>
+              <p className={`text-xs font-bold mb-2 ${tc(dark,"text-amber-400","text-amber-700")}`}>✨ New: Use Canvas Template (recommended)</p>
+              <div className="flex flex-wrap gap-2">
+                {(propTemplates||[]).filter(t=>t.devId===developer?.id).map(t=>(
+                  <button key={t.id} onClick={()=>setShowGenNewTmpl(t)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500 hover:bg-amber-400 text-slate-900 transition-colors">
+                    📄 {t.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <Field label="Select Legacy Template" type="select" value={selectedTmpl} onChange={setSelectedTmpl}
+            options={[{value:"",label:"— Select Legacy Template —"},...avlTemplates.map(t=>({value:t.id,label:t.name}))]}/>
           {selectedTmpl&&(()=>{
             const v=calcSolar(project.projectSize,developer,pForm);
             return (
@@ -5183,7 +5966,32 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
       {/* Proposal Preview Modal */}
       {viewProposal&&(
         <Modal title="Proposal Preview" onClose={()=>setViewProposal(null)} wide>
-          <ProposalPreview proposal={viewProposal} project={project} developer={developer} templates={templates}/>
+          {viewProposal.templateType==="canvas"&&viewProposal.canvasTemplate ? (
+            <div>
+              <div style={{background:"white",borderRadius:12,padding:"28px 32px",border:"1px solid #e2e8f0"}}>
+                {viewProposal.canvasTemplate.blocks?.map(b=>(
+                  <ProposalBlockRenderer key={b.id} block={b} vals={viewProposal.data||{}} dark={false}/>
+                ))}
+              </div>
+              <div className="flex gap-2 mt-4 justify-end">
+                <Btn size="sm" onClick={()=>{
+                  const blocksHtml = viewProposal.canvasTemplate.blocks?.map(b=>{
+                    const sub=t=>(t||"").replace(/\{\{(\w+)\}\}/g,(_,k)=>{const v=viewProposal.data?.[k];return v!=null?(typeof v==="number"?Number(v).toLocaleString("en-IN"):String(v)):"{{"+k+"}}";});
+                    if(b.type==="header") return `<div style="text-align:${b.align||"center"};padding:24px 0"><div style="font-size:${b.fontSize||28}px;font-weight:900;color:${b.color||"#f59e0b"}">${sub(b.content?.split("\n")[0]||"")}</div>${b.content?.split("\n").slice(1).map(l=>`<div style="font-size:18px;font-weight:600;color:#94a3b8">${sub(l)}</div>`).join("")||""}</div>`;
+                    if(b.type==="divider") return `<hr style="border:none;border-top:1px solid #e2e8f0;margin:12px 0"/>`;
+                    if(b.type==="heading") return `<div style="font-size:${b.fontSize||16}px;font-weight:700;color:#1e293b;border-left:3px solid #f59e0b;padding-left:10px;margin-bottom:8px">${sub(b.content||"")}</div>`;
+                    if(b.type==="text") return `<div style="font-size:13px;line-height:1.7;color:#475569;white-space:pre-line;margin-bottom:8px">${sub(b.content||"")}</div>`;
+                    if(b.type==="metric_row") return `<div style="display:grid;grid-template-columns:repeat(${Math.min(b.metrics?.length||2,4)},1fr);gap:12px;margin-bottom:16px">${(b.metrics||[]).map(m=>`<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px;text-align:center"><div style="font-size:11px;color:#94a3b8;margin-bottom:4px">${sub(m.label||"")}</div><div style="font-size:18px;font-weight:800;color:#f59e0b">${sub(m.value||"")}</div></div>`).join("")}</div>`;
+                    return "";
+                  }).join("");
+                  const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Proposal</title><style>body{font-family:sans-serif;max-width:800px;margin:0 auto;padding:40px;}</style></head><body>${blocksHtml||""}</body></html>`;
+                  const w=window.open("","_blank");w.document.write(html);w.document.close();setTimeout(()=>w.print(),500);
+                }}><Icon name="print" size={13}/>Print/PDF</Btn>
+              </div>
+            </div>
+          ) : (
+            <ProposalPreview proposal={viewProposal} project={project} developer={developer} templates={templates}/>
+          )}
         </Modal>
       )}
 
@@ -9522,6 +10330,8 @@ export default function SolarProApp() {
   const [pmComments, setPmComments]     = useLS("sp_pm_comments",    SEED_PM_COMMENTS);
   const [pmTemplates, setPmTemplates]   = useLS("sp_pm_templates",   SEED_PM_TEMPLATES);
   const [pmCollections, setPmCollections] = useLS("sp_pm_collections", SEED_PM_COLLECTIONS);
+  const [propVariables, setPropVariables] = useLS("sp_prop_variables", SEED_PROP_VARIABLES);
+  const [propTemplates, setPropTemplates] = useLS("sp_prop_templates", SEED_PROP_TEMPLATES);
   useReminderChecker(tasks); // fires browser + in-app notifications
 
   // ── NAV STATE with browser history ──
@@ -9596,6 +10406,7 @@ export default function SolarProApp() {
           pmComments={pmComments} setPmComments={setPmComments}
           pmTemplates={pmTemplates} setPmTemplates={setPmTemplates}
           pmCollections={pmCollections} setPmCollections={setPmCollections}
+          propVariables={propVariables} propTemplates={propTemplates}
         />
       );
     }
@@ -9631,6 +10442,13 @@ export default function SolarProApp() {
       // ── SHARED: TEMPLATES ──
       case "templates":
         return <TemplatesPage templates={templates} setTemplates={setTemplates} developers={developers} currentUser={currentUser}/>;
+
+      // ── TEMPLATE STUDIO (Variable + Formula + Canvas Builder) ──
+      case "template-studio":
+        return <TemplateStudioPage
+          propVariables={propVariables} setPropVariables={setPropVariables}
+          propTemplates={propTemplates} setPropTemplates={setPropTemplates}
+          developers={developers} currentUser={currentUser}/>;
 
       // ── SHARED: USERS ──
       case "users":
