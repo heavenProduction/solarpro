@@ -2307,54 +2307,97 @@ const UsersPage = ({ users, setUsers, currentUser, developers, projects, setProj
 };
 
 // ── TEMPLATES PAGE ─────────────────────────────────────────────
-// ══════════════════════════════════════════════════════════════════
-// PROPOSAL CANVAS ENGINE — Free-position drag/resize canvas editor
-// Matches exact UI from training video: solarladder.com/proposal-editor
-// ══════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════
+// SOLARPRO PROPOSAL ENGINE v3
+// Full Canva-like editor: rich text, text types, graphs, tables, image modes
+// ══════════════════════════════════════════════════════════════════════
 
-// ── FORMULA EVALUATOR ────────────────────────────────────────────
+// ── BRAND CATALOG (5 categories) ─────────────────────────────────
+const BRAND_CATALOG = {
+  panel: [
+    {name:"Adani Solar",col:"#1a5276"},{name:"Waaree",col:"#117a65"},{name:"Tata Solar",col:"#1f618d"},
+    {name:"Vikram Solar",col:"#6c3483"},{name:"Jinko Solar",col:"#922b21"},{name:"LONGi",col:"#145a32"},
+    {name:"Canadian Solar",col:"#7d6608"},{name:"REC Group",col:"#0b5345"},{name:"Luminous",col:"#1a237e"},
+    {name:"Havells Solar",col:"#880e4f"},{name:"Goldi Solar",col:"#1565c0"},{name:"Saatvik",col:"#00695c"},
+  ],
+  inverter: [
+    {name:"Growatt",col:"#0e6655"},{name:"Sungrow",col:"#1a5276"},{name:"SMA",col:"#6e2f1a"},
+    {name:"ABB",col:"#922b21"},{name:"Huawei",col:"#c0392b"},{name:"Fronius",col:"#117864"},
+    {name:"Delta",col:"#1f618d"},{name:"Goodwe",col:"#7d6608"},{name:"Enphase",col:"#4a235a"},
+    {name:"Havells",col:"#e65100"},{name:"SolarEdge",col:"#0d47a1"},{name:"Deye",col:"#2e7d32"},
+  ],
+  cable: [
+    {name:"Polycab",col:"#1a237e"},{name:"Finolex",col:"#004d40"},{name:"KEI",col:"#880e4f"},
+    {name:"Havells",col:"#e65100"},{name:"Sterlite",col:"#1b5e20"},{name:"RR Cables",col:"#b71c1c"},
+  ],
+  ups: [
+    {name:"Luminous",col:"#1a237e"},{name:"APC",col:"#004d40"},{name:"Exide",col:"#880e4f"},
+    {name:"Su-Kam",col:"#e65100"},{name:"Genus",col:"#1b5e20"},
+  ],
+  battery: [
+    {name:"Exide",col:"#880e4f"},{name:"Amara Raja",col:"#1a237e"},{name:"Loom Solar",col:"#004d40"},
+    {name:"Luminous",col:"#e65100"},{name:"Nexcharge",col:"#1b5e20"},{name:"Waaree",col:"#117a65"},
+  ],
+};
+
+// ── FORMULA / VARIABLE ENGINE ─────────────────────────────────────
 const evaluateFormula = (formula, values) => {
   try {
-    const clean = formula.replace(/[a-zA-Z_][a-zA-Z0-9_]*/g, m =>
-      values[m] !== undefined && values[m] !== "" ? Number(values[m]) || 0 : 0);
-    const result = Function('"use strict"; return (' + clean + ')')();
-    if (isNaN(result) || !isFinite(result)) return 0;
+    const expr = formula.replace(/\$?([a-zA-Z_][a-zA-Z0-9_]*)/g, (m, k) => {
+      const v = values[k];
+      return v !== undefined && v !== "" ? Number(v) || 0 : 0;
+    });
+    const result = Function('"use strict"; return (' + expr + ')')();
+    if (!isFinite(result) || isNaN(result)) return 0;
     return Math.round(result * 100) / 100;
   } catch { return 0; }
 };
 
 const resolveVars = (variables, inputs, project, developer) => {
   const v = {};
-  if (project) {
-    v.customerName = project.customerName || "";
-    v.customerPhone = project.customerPhone || "";
-    v.customerEmail = project.customerEmail || "";
-    v.customerAddress = (project.customerAddress || "") + (project.customerCity ? ", " + project.customerCity : "");
-    v.projectSize = project.projectSize || 0;
-    v.projectType = project.customerType || "";
-    v.projectId = project.projectId || "";
-  }
+  // ── Account variables ──
   if (developer) {
     v.companyName = developer.companyName || "";
     v.companyEmail = developer.email || "";
     v.companyPhone = developer.phone || "";
-    v.currentTariff = developer.electricityPrice || 8;
+    v.electricityRate = developer.electricityPrice || 8;
     v.costPerKW = developer.costPerKW || 50000;
-    v.solarGenFactor = developer.solarGenerationFactor || 1350;
+    v.generationPerKW = developer.solarGenerationFactor || 1350;
+    v.bankDetails = developer.bankDetails || "";
+    v.companyLogo = developer.logo || "";
   }
-  v.proposalDate = new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+  // ── Project variables ──
+  if (project) {
+    v.customerName = project.customerName || "";
+    v.customerPhone = project.customerPhone || "";
+    v.customerEmail = project.customerEmail || "";
+    v.customerAddress = [project.customerAddress, project.customerCity].filter(Boolean).join(", ");
+    v.projectSize = project.projectSize || 0;
+    v.projectType = project.customerType || "";
+    v.projectId = project.projectId || "";
+    v.systemCost = (project.projectSize || 0) * (developer?.costPerKW || 50000);
+  }
+  v.proposalDate = new Date().toLocaleDateString("en-IN", {day:"numeric",month:"long",year:"numeric"});
+  // ── Manual inputs override ──
   Object.assign(v, inputs || {});
-  if (!v.monthlyGeneration) v.monthlyGeneration = (v.projectSize || 0) * (v.solarGenFactor || 1350) / 12;
-  // Resolve formula vars (3 passes for chained deps)
+  // ── Formula variables — 3 passes for chained deps ──
   for (let pass = 0; pass < 3; pass++) {
     (variables || []).filter(x => x.type === "formula" && x.formula).forEach(x => {
       v[x.identifier] = evaluateFormula(x.formula, v);
     });
   }
+  // Built-in solar formulas (if not overridden by user vars)
+  if (!v.monthlyGeneration) v.monthlyGeneration = Math.round((v.projectSize||0) * (v.generationPerKW||1350) / 12);
+  if (!v.yearlyGeneration) v.yearlyGeneration = v.monthlyGeneration * 12;
+  if (!v.monthlySavings) v.monthlySavings = Math.round(v.monthlyGeneration * (v.electricityRate||8));
+  if (!v.yearlySavings) v.yearlySavings = v.monthlySavings * 12;
+  if (!v.systemCost) v.systemCost = Math.round((v.projectSize||0) * (v.costPerKW||50000));
+  if (!v.paybackYears) v.paybackYears = v.yearlySavings > 0 ? +(v.systemCost / v.yearlySavings).toFixed(1) : 0;
+  if (!v.roi25) v.roi25 = v.systemCost > 0 ? Math.round((v.yearlySavings * 25 - v.systemCost) / v.systemCost * 100) : 0;
   return v;
 };
 
-// Substitute $varName in text
+// $var substitution in text
 const subVars = (text, vals) =>
   (text || "").replace(/\$([a-zA-Z_][a-zA-Z0-9_]*)/g, (_, k) => {
     const val = vals[k];
@@ -2363,782 +2406,1016 @@ const subVars = (text, vals) =>
     return String(val);
   });
 
-// ── BRAND IMAGE PLACEHOLDERS ─────────────────────────────────────
-const BRAND_IMAGES = {
-  panel: [
-    { name: "Adani Solar", color: "#1a5276" }, { name: "Waaree", color: "#117a65" },
-    { name: "Tata Power Solar", color: "#1f618d" }, { name: "Vikram Solar", color: "#6c3483" },
-    { name: "Jinko Solar", color: "#922b21" }, { name: "LONGi Solar", color: "#145a32" },
-    { name: "Canadian Solar", color: "#7d6608" }, { name: "REC Group", color: "#0b5345" },
-    { name: "SunPower", color: "#784212" }, { name: "Luminous", color: "#1a237e" },
-  ],
-  inverter: [
-    { name: "Growatt", color: "#0e6655" }, { name: "Sungrow", color: "#1a5276" },
-    { name: "SMA", color: "#6e2f1a" }, { name: "ABB", color: "#922b21" },
-    { name: "Huawei", color: "#c0392b" }, { name: "Fronius", color: "#117864" },
-    { name: "Delta", color: "#1f618d" }, { name: "Havells", color: "#76448a" },
-    { name: "Goodwe", color: "#0b5345" }, { name: "Enphase", color: "#7d6608" },
-  ],
-  cable: [
-    { name: "Polycab", color: "#1a237e" }, { name: "Finolex", color: "#004d40" },
-    { name: "KEI", color: "#880e4f" }, { name: "Havells", color: "#e65100" },
-    { name: "Sterlite", color: "#1b5e20" },
-  ],
-};
+// ── MINI RICH TEXT EDITOR ─────────────────────────────────────────
+const RichTextEditor = ({ value, onChange, vars, style }) => {
+  const editorRef = useRef();
+  const [showVarMenu, setShowVarMenu] = useState(false);
 
-const BrandLogo = ({ name, color, w = 80, h = 50 }) => (
-  <div style={{ width: w, height: h, background: color, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
-    <span style={{ color: "white", fontSize: Math.max(8, Math.min(11, w / 7)), fontWeight: 700, textAlign: "center", padding: "2px 4px", lineHeight: 1.2 }}>{name}</span>
-  </div>
-);
+  useEffect(() => {
+    if (editorRef.current && editorRef.current.innerHTML !== value) {
+      editorRef.current.innerHTML = value || "";
+    }
+  }, []);
 
-// ── CANVAS ELEMENT RENDERER ──────────────────────────────────────
-const CanvasElement = ({ el, selected, onSelect, onPointerDown, mode, vals, previewMode, selectedBrands }) => {
-  const baseStyle = {
-    position: "absolute", left: el.x, top: el.y, width: el.w, height: el.h,
-    zIndex: el.zIndex || 1,
-    boxSizing: "border-box",
-    cursor: mode === "move" && !previewMode ? "grab" : "default",
-    outline: selected && !previewMode ? "2px solid #0d9488" : "none",
-    outlineOffset: 1,
+  const exec = (cmd, val = null) => { document.execCommand(cmd, false, val); editorRef.current?.focus(); };
+
+  const insertVar = (identifier) => {
+    editorRef.current?.focus();
+    document.execCommand("insertText", false, "$" + identifier);
+    setShowVarMenu(false);
   };
 
-  const handlePointerDown = (e) => {
+  const handleInput = () => {
+    if (onChange) onChange(editorRef.current?.innerHTML || "");
+  };
+
+  const fonts = ["Default","Arial","Georgia","Times New Roman","Courier New","Verdana","Trebuchet MS"];
+
+  return (
+    <div className="flex flex-col h-full" style={style}>
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-0.5 p-1 border-b border-slate-200 bg-slate-50 flex-shrink-0">
+        {[["bold","B"],["italic","I"],["underline","U"]].map(([cmd,lbl])=>(
+          <button key={cmd} onMouseDown={e=>{e.preventDefault();exec(cmd);}}
+            className="w-6 h-6 text-xs font-bold rounded hover:bg-slate-200 text-slate-700">{lbl}</button>
+        ))}
+        <div className="w-px h-4 bg-slate-300 mx-0.5"/>
+        {[["justifyLeft","≡L"],["justifyCenter","≡C"],["justifyRight","≡R"]].map(([cmd,lbl])=>(
+          <button key={cmd} onMouseDown={e=>{e.preventDefault();exec(cmd);}}
+            className="w-7 h-6 text-xs rounded hover:bg-slate-200 text-slate-600">{lbl}</button>
+        ))}
+        <div className="w-px h-4 bg-slate-300 mx-0.5"/>
+        <button onMouseDown={e=>{e.preventDefault();exec("insertUnorderedList");}} className="w-6 h-6 text-xs rounded hover:bg-slate-200 text-slate-700">•</button>
+        <button onMouseDown={e=>{e.preventDefault();exec("insertOrderedList");}} className="w-6 h-6 text-xs rounded hover:bg-slate-200 text-slate-700">1.</button>
+        <div className="w-px h-4 bg-slate-300 mx-0.5"/>
+        <input type="color" onMouseDown={e=>e.stopPropagation()} onChange={e=>exec("foreColor",e.target.value)}
+          className="w-6 h-6 rounded border-0 cursor-pointer p-0" title="Font color"/>
+        <select onMouseDown={e=>e.stopPropagation()} onChange={e=>{exec("fontName",e.target.value);}}
+          className="h-6 text-xs border border-slate-200 rounded px-1 max-w-[90px]">
+          {fonts.map(f=><option key={f} value={f}>{f}</option>)}
+        </select>
+        <select onMouseDown={e=>e.stopPropagation()} onChange={e=>{exec("fontSize",e.target.value);}}
+          className="h-6 text-xs border border-slate-200 rounded px-1 w-12">
+          {[1,2,3,4,5,6,7].map(n=><option key={n} value={n}>{[10,13,16,18,24,32,48][n-1]}px</option>)}
+        </select>
+        <div className="w-px h-4 bg-slate-300 mx-0.5"/>
+        <div className="relative">
+          <button onMouseDown={e=>{e.preventDefault();setShowVarMenu(v=>!v);}}
+            className="h-6 px-1.5 text-xs rounded bg-amber-100 hover:bg-amber-200 text-amber-700 font-mono font-bold">$var</button>
+          {showVarMenu && (
+            <div className="absolute top-7 left-0 z-50 w-44 bg-white border border-slate-200 rounded-xl shadow-xl max-h-52 overflow-y-auto">
+              <div className="px-2 py-1.5 text-xs font-bold text-slate-500 border-b">Insert Variable</div>
+              {(vars||[]).map(v=>(
+                <button key={v.id} onMouseDown={e=>{e.preventDefault();insertVar(v.identifier);}}
+                  className="w-full text-left px-3 py-1.5 text-xs font-mono hover:bg-amber-50 text-amber-700">${v.identifier}
+                  <span className="text-slate-400 font-sans ml-1">({v.name})</span>
+                </button>
+              ))}
+              {["customerName","projectSize","companyName","monthlySavings","systemCost","paybackYears"].map(k=>(
+                <button key={k} onMouseDown={e=>{e.preventDefault();insertVar(k);}}
+                  className="w-full text-left px-3 py-1.5 text-xs font-mono hover:bg-amber-50 text-amber-700">${k}</button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+      {/* Editable area */}
+      <div ref={editorRef} contentEditable={true} suppressContentEditableWarning
+        onInput={handleInput} onBlur={handleInput}
+        onClick={()=>setShowVarMenu(false)}
+        className="flex-1 p-2 text-slate-800 focus:outline-none overflow-auto"
+        style={{minHeight:60, wordBreak:"break-word"}}/>
+    </div>
+  );
+};
+
+// ── GRAPH RENDERER ─────────────────────────────────────────────────
+const GRAPH_TYPES = [
+  {id:"COST_BEFORE_AFTER", label:"Cost Before vs After"},
+  {id:"MONTHLY_SAVINGS", label:"Monthly Savings"},
+  {id:"MONTHLY_ENERGY_PRODUCTION", label:"Monthly Energy Production"},
+  {id:"YEARLY_SAVINGS", label:"Yearly Savings Projection"},
+  {id:"ROI_GRAPH", label:"ROI Graph"},
+];
+
+const GraphRenderer = ({ graphType, vals, w, h }) => {
+  const ms = vals.monthlySavings || 0;
+  const yg = vals.yearlyGeneration || 0;
+  const mg = vals.monthlyGeneration || 0;
+  const sc = vals.systemCost || 0;
+  const ys = vals.yearlySavings || 0;
+  const er = vals.electricityRate || 8;
+
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const genFactor = [0.7,0.8,0.95,1.1,1.2,1.15,1.1,1.1,1.0,0.9,0.75,0.65];
+
+  const barW = Math.max(10, (w - 60) / 12 - 4);
+  const chartH = h - 40;
+  const chartW = w - 50;
+
+  if (graphType === "MONTHLY_ENERGY_PRODUCTION") {
+    const vals2 = genFactor.map(f => Math.round(mg * f));
+    const max = Math.max(...vals2) * 1.2 || 1;
+    return (
+      <svg width={w} height={h} style={{background:"transparent"}}>
+        <text x={w/2} y={16} textAnchor="middle" fontSize={11} fontWeight={700} fill="#1e293b">Monthly Energy Production (kWh)</text>
+        {vals2.map((v, i) => {
+          const bh = (v/max) * (chartH - 30);
+          const bx = 40 + i * ((chartW)/12) + 2;
+          const by = 24 + (chartH - 30) - bh;
+          return (
+            <g key={i}>
+              <rect x={bx} y={by} width={barW} height={bh} fill="#0ea5e9" rx={2}/>
+              <text x={bx+barW/2} y={24+chartH-8} textAnchor="middle" fontSize={7} fill="#64748b">{months[i]}</text>
+              {bh>15&&<text x={bx+barW/2} y={by+bh/2+3} textAnchor="middle" fontSize={7} fill="white" fontWeight={700}>{v}</text>}
+            </g>
+          );
+        })}
+      </svg>
+    );
+  }
+
+  if (graphType === "MONTHLY_SAVINGS") {
+    const vals2 = genFactor.map(f => Math.round(ms * f));
+    const max = Math.max(...vals2) * 1.2 || 1;
+    return (
+      <svg width={w} height={h}>
+        <text x={w/2} y={16} textAnchor="middle" fontSize={11} fontWeight={700} fill="#1e293b">Monthly Savings (₹)</text>
+        {vals2.map((v, i) => {
+          const bh = (v/max) * (chartH - 30);
+          const bx = 40 + i * ((chartW)/12) + 2;
+          const by = 24 + (chartH - 30) - bh;
+          return (
+            <g key={i}>
+              <rect x={bx} y={by} width={barW} height={bh} fill="#10b981" rx={2}/>
+              <text x={bx+barW/2} y={24+chartH-8} textAnchor="middle" fontSize={7} fill="#64748b">{months[i]}</text>
+            </g>
+          );
+        })}
+      </svg>
+    );
+  }
+
+  if (graphType === "COST_BEFORE_AFTER") {
+    const before = Math.round(mg * er);
+    const after = Math.max(0, before - ms);
+    const max = before * 1.3 || 1;
+    const bh1 = (before/max)*(chartH-30);
+    const bh2 = (after/max)*(chartH-30);
+    const bw2 = (chartW-20)/2 - 10;
+    return (
+      <svg width={w} height={h}>
+        <text x={w/2} y={16} textAnchor="middle" fontSize={11} fontWeight={700} fill="#1e293b">Monthly Bill: Before vs After Solar</text>
+        <rect x={40} y={24+(chartH-30)-bh1} width={bw2} height={bh1} fill="#ef4444" rx={3}/>
+        <text x={40+bw2/2} y={24+(chartH-30)-bh1-5} textAnchor="middle" fontSize={9} fill="#ef4444" fontWeight={700}>₹{before.toLocaleString("en-IN")}</text>
+        <text x={40+bw2/2} y={22+chartH} textAnchor="middle" fontSize={9} fill="#64748b">Before Solar</text>
+        <rect x={60+bw2} y={24+(chartH-30)-bh2} width={bw2} height={bh2} fill="#10b981" rx={3}/>
+        <text x={60+bw2+bw2/2} y={24+(chartH-30)-bh2-5} textAnchor="middle" fontSize={9} fill="#10b981" fontWeight={700}>₹{after.toLocaleString("en-IN")}</text>
+        <text x={60+bw2+bw2/2} y={22+chartH} textAnchor="middle" fontSize={9} fill="#64748b">After Solar</text>
+      </svg>
+    );
+  }
+
+  if (graphType === "YEARLY_SAVINGS") {
+    const years = Array.from({length:10},(_,i)=>i+1);
+    const savArr = years.map(y => Math.round(ys * y * Math.pow(1.03, y)));
+    const max = Math.max(...savArr) * 1.1 || 1;
+    const pw = (chartW-10) / 9;
+    const points = savArr.map((v, i) => {
+      const x = 40 + i * pw;
+      const y = 24 + (chartH-30) - (v/max)*(chartH-30);
+      return `${x},${y}`;
+    }).join(" ");
+    return (
+      <svg width={w} height={h}>
+        <text x={w/2} y={16} textAnchor="middle" fontSize={11} fontWeight={700} fill="#1e293b">Cumulative Savings Over 10 Years</text>
+        <polyline points={points} fill="none" stroke="#f59e0b" strokeWidth={2.5} strokeLinejoin="round"/>
+        {savArr.map((v,i)=>{
+          const x = 40 + i * pw;
+          const y = 24 + (chartH-30) - (v/max)*(chartH-30);
+          return (
+            <g key={i}>
+              <circle cx={x} cy={y} r={3} fill="#f59e0b"/>
+              {i % 2===0&&<text x={x} y={22+chartH} textAnchor="middle" fontSize={7} fill="#64748b">Y{i+1}</text>}
+            </g>
+          );
+        })}
+        {/* System cost line */}
+        {sc>0&&(()=>{
+          const scY = 24 + (chartH-30) - (sc/max)*(chartH-30);
+          if(scY<24||scY>24+chartH-30) return null;
+          return <line x1={40} y1={scY} x2={40+(chartW-10)} y2={scY} stroke="#ef4444" strokeWidth={1} strokeDasharray="4,2"/>;
+        })()}
+      </svg>
+    );
+  }
+
+  if (graphType === "ROI_GRAPH") {
+    const pb = vals.paybackYears || 0;
+    return (
+      <svg width={w} height={h}>
+        <text x={w/2} y={16} textAnchor="middle" fontSize={11} fontWeight={700} fill="#1e293b">Return on Investment</text>
+        <circle cx={w/2} cy={h/2+10} r={Math.min(chartH/2-10, chartW/2-10)} fill="none" stroke="#e2e8f0" strokeWidth={18}/>
+        <circle cx={w/2} cy={h/2+10} r={Math.min(chartH/2-10, chartW/2-10)} fill="none" stroke="#10b981" strokeWidth={18}
+          strokeDasharray={`${Math.min(pb/25,1)*283} 283`} strokeLinecap="round" transform={`rotate(-90 ${w/2} ${h/2+10})`}/>
+        <text x={w/2} y={h/2+6} textAnchor="middle" fontSize={18} fontWeight={900} fill="#1e293b">{pb}yr</text>
+        <text x={w/2} y={h/2+20} textAnchor="middle" fontSize={10} fill="#64748b">Payback Period</text>
+        <text x={w/2} y={h-8} textAnchor="middle" fontSize={9} fill="#10b981" fontWeight={700}>25-Yr ROI: {vals.roi25||0}%</text>
+      </svg>
+    );
+  }
+
+  return (
+    <svg width={w} height={h}>
+      <rect x={5} y={5} width={w-10} height={h-10} fill="#f8fafc" stroke="#e2e8f0" rx={8}/>
+      <text x={w/2} y={h/2} textAnchor="middle" fontSize={12} fill="#94a3b8">📊 {graphType}</text>
+    </svg>
+  );
+};
+
+// ── CANVAS ELEMENT ─────────────────────────────────────────────────
+const CanvasElement = ({el, selected, onSelect, onPointerDown, vals, previewMode, generationVals}) => {
+  const handleDown = (e) => {
     if (previewMode) return;
     e.stopPropagation();
     onSelect(el.id);
-    onPointerDown(e, el.id, "move");
+    onPointerDown(e, el.id);
   };
 
+  const base = {
+    position:"absolute", left:el.x, top:el.y, width:el.w, height:el.h,
+    zIndex:el.zIndex||1, boxSizing:"border-box",
+    outline: selected && !previewMode ? "2px solid #0d9488" : "none",
+    outlineOffset:1, cursor: previewMode ? "default" : "grab",
+    overflow:"hidden",
+  };
+
+  const border = {
+    borderColor: el.borderColor||"transparent",
+    borderWidth: (el.borderWidth||0)+"px",
+    borderStyle: el.borderStyle||"none",
+    borderRadius: (el.borderRadius||0)+"px",
+  };
+
+  // ── TEXT ──
   if (el.type === "text") {
-    const displayContent = el.fieldType === "fill_later"
-      ? (el.fieldName || "Text Field")
-      : subVars(el.content || "", vals);
+    const isFL = el.fieldType === "fill_later";
+    const isList = el.fieldType === "text_list";
+    const fillVal = (generationVals||{})[`__fl_${el.id}`] || el.defaultValue || "";
+    const listVal = (generationVals||{})[`__list_${el.id}`] || (el.options||[])[0] || "";
+
+    let display;
+    if (previewMode && isFL) display = fillVal;
+    else if (previewMode && isList) display = listVal;
+    else if (previewMode) display = subVars(el.htmlContent||el.content||"", vals);
+    else if (isFL) display = null; // show badge
+    else if (isList) display = null; // show badge
+    else display = subVars(el.htmlContent||el.content||"", vals);
+
     return (
-      <div style={{
-        ...baseStyle,
-        fontSize: (el.fontSize || 14) + "px",
-        fontFamily: el.fontFamily === "Default" ? "inherit" : el.fontFamily,
-        fontWeight: el.fontWeight || "normal",
-        color: el.fontColor || "#000000",
-        backgroundColor: el.bgColor === "none" || !el.bgColor ? "transparent" : el.bgColor,
-        textAlign: el.textAlign || "left",
-        wordSpacing: (el.wordSpacing || 0) + "px",
-        lineHeight: el.lineHeight || 1,
-        borderColor: el.borderColor || "transparent",
-        borderWidth: (el.borderWidth || 0) + "px",
-        borderStyle: el.borderStyle || "none",
-        borderRadius: (el.borderRadius || 0) + "px",
-        overflow: "hidden",
-        display: "flex", alignItems: "center",
-        padding: "4px 6px",
-        whiteSpace: "pre-wrap", wordBreak: "break-word",
-      }} onPointerDown={handlePointerDown}>
-        {el.fieldType === "fill_later" && !previewMode
-          ? <span style={{ color: "#0d9488", fontStyle: "italic", fontSize: "0.85em" }}>📝 {displayContent}</span>
-          : displayContent || (selected && !previewMode ? <span style={{ opacity: 0.3 }}>Click to edit...</span> : "")}
+      <div style={{...base, ...border, background:el.bgColor&&el.bgColor!=="none"?el.bgColor:"transparent"}} onPointerDown={handleDown}>
+        {isFL && !previewMode
+          ? <div style={{padding:"4px 8px",color:"#0d9488",fontStyle:"italic",fontSize:12,display:"flex",alignItems:"center",gap:4,height:"100%"}}>
+              📝 {el.fieldName||"Fill Later Field"}
+            </div>
+          : isList && !previewMode
+          ? <div style={{padding:"4px 8px",color:"#7c3aed",fontStyle:"italic",fontSize:12,display:"flex",alignItems:"center",gap:4,height:"100%"}}>
+              ▾ {el.fieldName||"Dropdown Field"}
+            </div>
+          : <div style={{padding:"4px 8px",height:"100%",overflow:"hidden",fontSize:(el.fontSize||14)+"px",fontFamily:el.fontFamily&&el.fontFamily!=="Default"?el.fontFamily:"inherit"}}
+              dangerouslySetInnerHTML={{__html: previewMode ? (display||"") : (el.htmlContent||el.content||"<p style='opacity:0.3;font-size:12px'>Click to edit...</p>")}}/>
+        }
       </div>
     );
   }
 
-  if (el.type === "rect") {
-    return (
-      <div style={{
-        ...baseStyle,
-        backgroundColor: el.bgColor === "none" || !el.bgColor ? "transparent" : el.bgColor,
-        borderColor: el.borderColor || "transparent",
-        borderWidth: (el.borderWidth || 0) + "px",
-        borderStyle: el.borderStyle || "solid",
-        borderRadius: (el.borderRadius || 0) + "px",
-      }} onPointerDown={handlePointerDown}/>
-    );
-  }
+  // ── RECT ──
+  if (el.type === "rect") return (
+    <div style={{...base, ...border, background:el.bgColor&&el.bgColor!=="none"?el.bgColor:"transparent"}} onPointerDown={handleDown}/>
+  );
 
+  // ── IMAGE ──
   if (el.type === "image") {
+    const src = el.src
+      || (el.dataType==="placeholder" && el.placeholderKey==="$companylogo" ? vals.companyLogo : null)
+      || (generationVals||{})[`__img_${el.id}`]
+      || (generationVals||{})[`__dyn_${el.id}`];
     return (
-      <div style={{
-        ...baseStyle,
-        borderColor: el.borderColor || "transparent",
-        borderWidth: (el.borderWidth || 1) + "px",
-        borderStyle: el.borderStyle || "solid",
-        overflow: "hidden",
-      }} onPointerDown={handlePointerDown}>
-        {el.src
-          ? <img src={el.src} alt="" style={{ width: "100%", height: "100%", objectFit: el.imageFit || "contain" }}/>
-          : <div style={{ width: "100%", height: "100%", background: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 4 }}>
-              <span style={{ fontSize: 20 }}>🖼</span>
-              <span style={{ fontSize: 10, color: "#94a3b8" }}>{el.dataType === "placeholder" ? (el.fieldName || "Placeholder") : el.dataType === "dynamic" ? "Dynamic Image" : "Image"}</span>
+      <div style={{...base,...border}} onPointerDown={handleDown}>
+        {src
+          ? <img src={src} alt="" style={{width:"100%",height:"100%",objectFit:el.imageFit||"contain"}}/>
+          : <div style={{width:"100%",height:"100%",background:"#f1f5f9",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:4}}>
+              <span style={{fontSize:22}}>🖼</span>
+              <span style={{fontSize:10,color:"#94a3b8"}}>{el.dataType==="placeholder"?(el.fieldName||"Placeholder"):el.dataType==="dynamic"?"Dynamic":"Image"}</span>
             </div>}
       </div>
     );
   }
 
+  // ── IMAGE GRID ──
   if (el.type === "imagegrid") {
-    const brands = (BRAND_IMAGES[el.gridType || "panel"] || []).slice(0, el.maxCount || 5);
-    const iw = el.imageWidth || 100, ih = el.imageHeight || 50, im = el.imageMargin || 4;
+    const category = el.gridCategory || "panel";
+    const brands = BRAND_CATALOG[category]||[];
+    const sel = (generationVals||{})[`__grid_${el.id}`] || [];
+    const shown = (previewMode && sel.length > 0) ? brands.filter(b=>sel.includes(b.name)) : brands.slice(0, el.maxCount||5);
+    const iw = el.imgW||90, ih = el.imgH||45, gap = el.imgGap||6;
     return (
-      <div style={{ ...baseStyle, display: "flex", flexWrap: "wrap", gap: im, padding: 4, alignContent: "flex-start", overflow: "hidden" }} onPointerDown={handlePointerDown}>
-        {brands.map((b, i) => <BrandLogo key={i} name={b.name} color={b.color} w={iw} h={ih}/>)}
+      <div style={{...base, display:"flex",flexWrap:"wrap",gap,padding:6,alignContent:"flex-start"}} onPointerDown={handleDown}>
+        {shown.map((b,i)=>(
+          <div key={i} style={{width:iw,height:ih,background:b.col,borderRadius:5,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+            <span style={{color:"white",fontSize:Math.max(7,Math.min(10,iw/9)),fontWeight:700,textAlign:"center",padding:"0 3px",lineHeight:1.2}}>{b.name}</span>
+          </div>
+        ))}
       </div>
     );
   }
 
+  // ── GRAPH ──
   if (el.type === "graph") {
+    const gVals = {...vals, ...(generationVals||{})};
     return (
-      <div style={{ ...baseStyle, background: "#f8fafc", border: "2px dashed #cbd5e1", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 4 }} onPointerDown={handlePointerDown}>
-        <span style={{ fontSize: 24 }}>📊</span>
-        <span style={{ fontSize: 11, color: "#94a3b8" }}>Graph Placeholder</span>
+      <div style={{...base,...border,background:"white"}} onPointerDown={handleDown}>
+        <GraphRenderer graphType={el.graphType||"MONTHLY_SAVINGS"} vals={gVals} w={el.w} h={el.h}/>
       </div>
     );
   }
 
-  if (el.type === "paneldesign") {
+  // ── TABLE ──
+  if (el.type === "table") {
+    const headers = el.headers || ["Item","Value"];
+    const rows = el.rows || [["—","—"]];
     return (
-      <div style={{ ...baseStyle, background: "linear-gradient(135deg,#1e293b,#334155)", border: "none", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 4 }} onPointerDown={handlePointerDown}>
-        <span style={{ fontSize: 24 }}>🎨</span>
-        <span style={{ fontSize: 11, color: "#94a3b8" }}>Panel Design</span>
-      </div>
-    );
-  }
-
-  return null;
-};
-
-// ── RESIZE HANDLES ───────────────────────────────────────────────
-const ResizeHandles = ({ onPointerDown }) => {
-  const handles = [
-    { id: "se", style: { right: -5, bottom: -5, cursor: "se-resize" } },
-    { id: "sw", style: { left: -5, bottom: -5, cursor: "sw-resize" } },
-    { id: "ne", style: { right: -5, top: -5, cursor: "ne-resize" } },
-    { id: "nw", style: { left: -5, top: -5, cursor: "nw-resize" } },
-    { id: "e",  style: { right: -5, top: "50%", transform: "translateY(-50%)", cursor: "e-resize" } },
-    { id: "w",  style: { left: -5, top: "50%", transform: "translateY(-50%)", cursor: "w-resize" } },
-    { id: "s",  style: { bottom: -5, left: "50%", transform: "translateX(-50%)", cursor: "s-resize" } },
-    { id: "n",  style: { top: -5, left: "50%", transform: "translateX(-50%)", cursor: "n-resize" } },
-  ];
-  return (
-    <>
-      {handles.map(h => (
-        <div key={h.id} onPointerDown={e => { e.stopPropagation(); onPointerDown(e, h.id); }}
-          style={{ position: "absolute", width: 10, height: 10, background: "white", border: "2px solid #0d9488", borderRadius: 2, zIndex: 9999, ...h.style }}/>
-      ))}
-    </>
-  );
-};
-
-// ── PROPERTIES PANEL ─────────────────────────────────────────────
-const PropertiesPanel = ({ el, updateEl, dark, variables }) => {
-  if (!el) return (
-    <div className={`p-4 ${dark ? "text-slate-500" : "text-slate-400"} text-sm text-center pt-10`}>
-      <div className="text-3xl mb-2">👆</div>
-      Select a component to inspect its properties.
-    </div>
-  );
-
-  const inp = `w-full border rounded px-2 py-1 text-xs focus:outline-none ${dark ? "bg-slate-700 border-slate-600 text-white" : "bg-white border-slate-300 text-slate-800"}`;
-  const sel = inp + " cursor-pointer";
-  const Row = ({ label, children }) => (
-    <div className="mb-2.5">
-      <label className={`block text-xs mb-0.5 ${dark ? "text-slate-400" : "text-slate-500"}`}>{label}</label>
-      {children}
-    </div>
-  );
-  const ColorRow = ({ label, value, onChange }) => (
-    <div className="mb-2.5">
-      <label className={`block text-xs mb-0.5 ${dark ? "text-slate-400" : "text-slate-500"}`}>{label}</label>
-      <div className="flex gap-2 items-center">
-        <input type="color" value={value && value !== "none" && value !== "transparent" ? value : "#ffffff"} onChange={e => onChange(e.target.value)} className="w-8 h-7 rounded cursor-pointer border-0 bg-transparent flex-shrink-0"/>
-        <input value={value || "none"} onChange={e => onChange(e.target.value)} className={`${inp} flex-1`}/>
-      </div>
-    </div>
-  );
-  const NumRow = ({ label, value, onChange, unit = "px", min = 0 }) => (
-    <div className="mb-2.5">
-      <label className={`block text-xs mb-0.5 ${dark ? "text-slate-400" : "text-slate-500"}`}>{label}</label>
-      <div className="flex gap-1 items-center">
-        <input type="number" min={min} value={value || 0} onChange={e => onChange(Number(e.target.value))} className={inp}/>
-        {unit && <span className={`text-xs flex-shrink-0 ${dark ? "text-slate-500" : "text-slate-400"}`}>{unit}</span>}
-      </div>
-    </div>
-  );
-
-  const U = (changes) => updateEl(el.id, changes);
-
-  const borderProps = (
-    <>
-      <ColorRow label="Border Color" value={el.borderColor || "#000000"} onChange={v => U({ borderColor: v })}/>
-      <NumRow label="Border Width" value={el.borderWidth || 0} onChange={v => U({ borderWidth: v })}/>
-      <Row label="Border Style">
-        <select value={el.borderStyle || "none"} onChange={e => U({ borderStyle: e.target.value })} className={sel}>
-          {["none","solid","dashed","dotted","double","groove","ridge","inset","outset"].map(s => <option key={s}>{s}</option>)}
-        </select>
-      </Row>
-      <NumRow label="Border Radius" value={el.borderRadius || 0} onChange={v => U({ borderRadius: v })}/>
-    </>
-  );
-
-  return (
-    <div className="overflow-y-auto h-full">
-      <div className={`px-3 py-2 text-xs font-bold border-b ${dark ? "border-slate-700 text-slate-400" : "border-slate-200 text-slate-500"}`}>PROPERTIES</div>
-      <div className="p-3">
-        {el.type === "text" && <>
-          <Row label="Textfield Tag">
-            <select value={el.textfieldTag || "None"} onChange={e => U({ textfieldTag: e.target.value })} className={sel}>
-              <option>None</option>
-              {(variables || []).map(v => <option key={v.id} value={v.identifier}>{v.name}</option>)}
-            </select>
-          </Row>
-          <Row label="Type">
-            <select value={el.fieldType || "fill_now"} onChange={e => U({ fieldType: e.target.value })} className={sel}>
-              <option value="fill_now">Fill Now</option>
-              <option value="fill_later">Fill Later</option>
-            </select>
-          </Row>
-          {el.fieldType === "fill_later" && (
-            <Row label="Field Name">
-              <input value={el.fieldName || ""} onChange={e => U({ fieldName: e.target.value })} placeholder="e.g. Customer Name" className={inp}/>
-            </Row>
-          )}
-          <Row label="Content (use $varName)">
-            <textarea rows={3} value={el.content || ""} onChange={e => U({ content: e.target.value })} className={inp + " resize-none font-mono"}/>
-          </Row>
-          <ColorRow label="Font Color" value={el.fontColor || "#000000"} onChange={v => U({ fontColor: v })}/>
-          <ColorRow label="Background Color" value={el.bgColor || "none"} onChange={v => U({ bgColor: v })}/>
-          <Row label="Text Alignment">
-            <div className="flex gap-1">
-              {["left","center","right","justify"].map(a => (
-                <button key={a} onClick={() => U({ textAlign: a })}
-                  className={`flex-1 py-1 rounded text-xs capitalize ${el.textAlign === a ? "bg-teal-500 text-white" : dark ? "bg-slate-700 text-slate-400" : "bg-slate-100 text-slate-600"}`}>
-                  {a === "justify" ? "Just" : a.charAt(0).toUpperCase() + a.slice(1)}
-                </button>
-              ))}
-            </div>
-          </Row>
-          <NumRow label="Word Spacing" value={el.wordSpacing || 0} onChange={v => U({ wordSpacing: v })}/>
-          <NumRow label="Line Height" value={el.lineHeight || 1} unit="" onChange={v => U({ lineHeight: v })}/>
-          {borderProps}
-          <NumRow label="Font Size" value={el.fontSize || 14} onChange={v => U({ fontSize: v })}/>
-          <Row label="Font Family">
-            <select value={el.fontFamily || "Default"} onChange={e => U({ fontFamily: e.target.value })} className={sel}>
-              {["Default","Arial","Georgia","PT Sans Narrow","Roboto","Open Sans","Montserrat","Playfair Display","Lato","Oswald"].map(f => <option key={f}>{f}</option>)}
-            </select>
-          </Row>
-          <Row label="Font Weight">
-            <select value={el.fontWeight || "normal"} onChange={e => U({ fontWeight: e.target.value })} className={sel}>
-              <option value="normal">Normal</option>
-              <option value="bold">Bold</option>
-              <option value="600">Semi-Bold</option>
-              <option value="300">Light</option>
-            </select>
-          </Row>
-        </>}
-
-        {el.type === "rect" && <>
-          <ColorRow label="Background Color" value={el.bgColor || "#e2e8f0"} onChange={v => U({ bgColor: v })}/>
-          {borderProps}
-        </>}
-
-        {el.type === "image" && <>
-          <ColorRow label="Border Color" value={el.borderColor || "#03989e"} onChange={v => U({ borderColor: v })}/>
-          <NumRow label="Border Width" value={el.borderWidth || 1} onChange={v => U({ borderWidth: v })}/>
-          <Row label="Border Style">
-            <select value={el.borderStyle || "solid"} onChange={e => U({ borderStyle: e.target.value })} className={sel}>
-              {["none","solid","dashed","dotted"].map(s => <option key={s}>{s}</option>)}
-            </select>
-          </Row>
-          <NumRow label="Border Radius" value={el.borderRadius || 0} onChange={v => U({ borderRadius: v })}/>
-          <Row label="Image Fit">
-            <select value={el.imageFit || "contain"} onChange={e => U({ imageFit: e.target.value })} className={sel}>
-              {["contain","cover","fill"].map(f => <option key={f}>{f}</option>)}
-            </select>
-          </Row>
-          <Row label="Hyperlink">
-            <input value={el.hyperlink || ""} onChange={e => U({ hyperlink: e.target.value })} placeholder="https://..." className={inp}/>
-          </Row>
-        </>}
-
-        {el.type === "imagegrid" && <>
-          <Row label="Grid Type">
-            <select value={el.gridType || "panel"} onChange={e => U({ gridType: e.target.value })} className={sel}>
-              <option value="panel">Panel Images</option>
-              <option value="inverter">Inverter Images</option>
-              <option value="cable">Cable Images</option>
-            </select>
-          </Row>
-          <NumRow label="Max Image Count" value={el.maxCount || 5} min={1} onChange={v => U({ maxCount: v })} unit=""/>
-          <NumRow label="Image Width" value={el.imageWidth || 100} onChange={v => U({ imageWidth: v })}/>
-          <NumRow label="Image Height" value={el.imageHeight || 50} onChange={v => U({ imageHeight: v })}/>
-          <NumRow label="Image Margin" value={el.imageMargin || 4} onChange={v => U({ imageMargin: v })}/>
-          <Row label="Image Fit">
-            <select value={el.imageFit || "contain"} onChange={e => U({ imageFit: e.target.value })} className={sel}>
-              {["contain","cover","fill"].map(f => <option key={f}>{f}</option>)}
-            </select>
-          </Row>
-        </>}
-
-        <NumRow label="Z Index" value={el.zIndex || 1} min={0} unit="" onChange={v => U({ zIndex: v })}/>
-      </div>
-    </div>
-  );
-};
-
-// ── EDIT DATA MODAL (for Image component) ───────────────────────
-const EditDataModal = ({ el, updateEl, onClose, dark }) => {
-  const [dataType, setDataType] = useState(el.dataType || "static");
-  const [fieldName, setFieldName] = useState(el.fieldName || "");
-  const [src, setSrc] = useState(el.src || "");
-  const [dynOptions, setDynOptions] = useState(el.dynamicOptions || []);
-  const [newOptLabel, setNewOptLabel] = useState("");
-  const fileRef = useRef();
-  const optFileRef = useRef();
-
-  const save = () => {
-    updateEl(el.id, { dataType, fieldName, src: dataType === "static" ? src : el.src || "", dynamicOptions: dynOptions });
-    onClose();
-  };
-
-  const inp = `w-full border rounded px-3 py-2 text-sm focus:outline-none ${dark ? "bg-slate-700 border-slate-600 text-white" : "bg-white border-slate-300 text-slate-800"}`;
-
-  return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60" onClick={onClose}>
-      <div className={`w-full max-w-md rounded-2xl shadow-2xl p-6 ${dark ? "bg-[#0a1628]" : "bg-white"}`} onClick={e => e.stopPropagation()}>
-        <h3 className={`font-bold text-base mb-4 ${dark ? "text-white" : "text-slate-800"}`}>Edit Image Data</h3>
-
-        <div className="flex gap-2 mb-5">
-          {["static","placeholder","dynamic"].map(t => (
-            <button key={t} onClick={() => setDataType(t)}
-              className={`flex-1 py-2 rounded-lg text-xs font-bold capitalize transition-colors ${dataType === t ? "bg-teal-500 text-white" : dark ? "bg-slate-700 text-slate-400" : "bg-slate-100 text-slate-600"}`}>
-              {t}
-            </button>
-          ))}
-        </div>
-
-        {dataType === "static" && (
-          <div>
-            <p className={`text-xs mb-3 ${dark ? "text-slate-400" : "text-slate-500"}`}>Image stays the same for all proposals.</p>
-            <div className="mb-3">
-              <label className={`block text-xs font-semibold mb-1 ${dark ? "text-slate-300" : "text-slate-700"}`}>Image URL</label>
-              <input value={src} onChange={e => setSrc(e.target.value)} placeholder="https://... or paste base64" className={inp}/>
-            </div>
-            <label className="flex items-center gap-2 text-xs cursor-pointer text-teal-500 hover:text-teal-400">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M7 1v8M4 4l3-3 3 3M2 11h10"/></svg>
-              Upload file
-              <input ref={fileRef} type="file" className="hidden" accept="image/*" onChange={e => {
-                const f = e.target.files[0]; if (!f) return;
-                const r = new FileReader(); r.onload = ev => setSrc(ev.target.result); r.readAsDataURL(f);
-              }}/>
-            </label>
-          </div>
-        )}
-
-        {dataType === "placeholder" && (
-          <div>
-            <p className={`text-xs mb-3 ${dark ? "text-slate-400" : "text-slate-500"}`}>Customer uploads this image when creating the proposal.</p>
-            <div>
-              <label className={`block text-xs font-semibold mb-1 ${dark ? "text-slate-300" : "text-slate-700"}`}>Field Name <span className="text-slate-400">(shown to customer)</span></label>
-              <input value={fieldName} onChange={e => setFieldName(e.target.value)} placeholder="e.g. Customer Signature, Company Logo" className={inp}/>
-            </div>
-          </div>
-        )}
-
-        {dataType === "dynamic" && (
-          <div>
-            <p className={`text-xs mb-3 ${dark ? "text-slate-400" : "text-slate-500"}`}>Customer picks from a dropdown of images you provide.</p>
-            <div>
-              <label className={`block text-xs font-semibold mb-1 ${dark ? "text-slate-300" : "text-slate-700"}`}>Field Name</label>
-              <input value={fieldName} onChange={e => setFieldName(e.target.value)} placeholder="e.g. Brand Logo" className={`${inp} mb-3`}/>
-            </div>
-            <label className={`block text-xs font-semibold mb-2 ${dark ? "text-slate-300" : "text-slate-700"}`}>Image Options ({dynOptions.length})</label>
-            <div className="space-y-2 mb-3 max-h-40 overflow-y-auto">
-              {dynOptions.map((opt, i) => (
-                <div key={i} className={`flex items-center gap-2 p-2 rounded-lg border ${dark ? "border-slate-700 bg-slate-800" : "border-slate-200 bg-slate-50"}`}>
-                  {opt.src && <img src={opt.src} alt="" className="w-10 h-8 object-contain rounded flex-shrink-0"/>}
-                  <span className={`text-xs flex-1 truncate ${dark ? "text-slate-300" : "text-slate-600"}`}>{opt.label}</span>
-                  <button onClick={() => setDynOptions(opts => opts.filter((_, j) => j !== i))} className="text-red-400 text-sm">×</button>
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-2">
-              <input value={newOptLabel} onChange={e => setNewOptLabel(e.target.value)} placeholder="Option label..." className={`${inp} flex-1`}/>
-              <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-teal-500 hover:bg-teal-400 text-white cursor-pointer whitespace-nowrap">
-                + Add Image
-                <input ref={optFileRef} type="file" className="hidden" accept="image/*" onChange={e => {
-                  const f = e.target.files[0]; if (!f) return;
-                  const r = new FileReader(); r.onload = ev => {
-                    setDynOptions(opts => [...opts, { label: newOptLabel || f.name, src: ev.target.result }]);
-                    setNewOptLabel("");
-                  }; r.readAsDataURL(f);
-                }}/>
-              </label>
-            </div>
-          </div>
-        )}
-
-        <div className="flex gap-3 mt-5">
-          <button onClick={save} className="flex-1 py-2.5 rounded-lg font-bold text-sm bg-teal-600 hover:bg-teal-500 text-white">Save</button>
-          <button onClick={onClose} className={`px-5 py-2.5 rounded-lg text-sm ${dark ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>Cancel</button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ── PROPOSAL CANVAS EDITOR ───────────────────────────────────────
-const ProposalCanvasEditor = ({ template, onSave, onClose, variables, dark }) => {
-  const toast = useToast();
-  const canvasRef = useRef();
-
-  const [tname, setTname] = useState(template?.name || "Untitled Proposal");
-  const [pageColor, setPageColor] = useState(template?.pageColor || "#ffffff");
-  const [elements, setElements] = useState(template?.elements || []);
-  const [selectedId, setSelectedId] = useState(null);
-  const [mode, setMode] = useState("move"); // "move" | "resize"
-  const [gridSnap, setGridSnap] = useState(true);
-  const [editDataEl, setEditDataEl] = useState(null);
-  const [showGlobalVars, setShowGlobalVars] = useState(false);
-  const [previewMode, setPreviewMode] = useState(false);
-
-  const dragRef = useRef({ active: false, startX: 0, startY: 0, elX: 0, elY: 0, elW: 0, elH: 0, id: null, handle: null });
-
-  const SNAP = 10;
-  const CANVAS_W = 794; // A4 width at 96dpi
-  const CANVAS_H = 1123; // A4 height at 96dpi
-
-  const snap = v => gridSnap ? Math.round(v / SNAP) * SNAP : v;
-
-  const selected = elements.find(e => e.id === selectedId);
-  const previewVals = { customerName: "Robert Kim", companyName: "SunPower Solutions", projectSize: 5, monthlyGeneration: 600, currentTariff: 8, monthly_savings: 4800, total_cost: 275000, proposalDate: new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }) };
-
-  const addElement = (type) => {
-    const defaults = {
-      text: { w: 200, h: 50, content: "Click to edit", fieldType: "fill_now", fontColor: "#000000", bgColor: "none", textAlign: "left", fontSize: 14, fontFamily: "Default", fontWeight: "normal", borderStyle: "none", borderWidth: 0, borderColor: "#000000", borderRadius: 0, wordSpacing: 0, lineHeight: 1 },
-      rect: { w: 200, h: 80, bgColor: "#e2e8f0", borderColor: "#000000", borderWidth: 0, borderStyle: "solid", borderRadius: 0 },
-      image: { w: 150, h: 100, src: "", dataType: "static", imageFit: "contain", borderColor: "#03989e", borderWidth: 1, borderStyle: "solid", hyperlink: "" },
-      imagegrid: { w: 400, h: 120, gridType: "panel", maxCount: 5, imageWidth: 100, imageHeight: 50, imageMargin: 4, imageFit: "contain" },
-      graph: { w: 300, h: 200 },
-      paneldesign: { w: 300, h: 150 },
-    };
-    const newEl = { id: `el${Date.now()}`, type, x: 50, y: 50, zIndex: elements.length + 1, ...defaults[type] };
-    setElements(es => [...es, newEl]);
-    setSelectedId(newEl.id);
-  };
-
-  const updateEl = (id, changes) => setElements(es => es.map(e => e.id === id ? { ...e, ...changes } : e));
-
-  const deleteSelected = () => {
-    if (!selectedId) return;
-    setElements(es => es.filter(e => e.id !== selectedId));
-    setSelectedId(null);
-  };
-
-  // Pointer drag handling
-  const onElPointerDown = (e, id, handleType) => {
-    if (previewMode) return;
-    e.preventDefault();
-    setSelectedId(id);
-    const el = elements.find(x => x.id === id);
-    if (!el) return;
-    dragRef.current = { active: true, startX: e.clientX, startY: e.clientY, elX: el.x, elY: el.y, elW: el.w, elH: el.h, id, handle: "move" };
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
-  };
-
-  const onResizePointerDown = (e, id, handle) => {
-    e.preventDefault();
-    const el = elements.find(x => x.id === id);
-    if (!el) return;
-    dragRef.current = { active: true, startX: e.clientX, startY: e.clientY, elX: el.x, elY: el.y, elW: el.w, elH: el.h, id, handle };
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
-  };
-
-  const onPointerMove = (e) => {
-    const d = dragRef.current;
-    if (!d.active) return;
-    const dx = e.clientX - d.startX;
-    const dy = e.clientY - d.startY;
-
-    if (d.handle === "move") {
-      updateEl(d.id, { x: snap(Math.max(0, d.elX + dx)), y: snap(Math.max(0, d.elY + dy)) });
-    } else {
-      // Resize handles
-      let nx = d.elX, ny = d.elY, nw = d.elW, nh = d.elH;
-      if (d.handle.includes("e")) nw = snap(Math.max(20, d.elW + dx));
-      if (d.handle.includes("s")) nh = snap(Math.max(20, d.elH + dy));
-      if (d.handle.includes("w")) { nx = snap(d.elX + dx); nw = snap(Math.max(20, d.elW - dx)); }
-      if (d.handle.includes("n")) { ny = snap(d.elY + dy); nh = snap(Math.max(20, d.elH - dy)); }
-      updateEl(d.id, { x: nx, y: ny, w: nw, h: nh });
-    }
-  };
-
-  const onPointerUp = () => {
-    dragRef.current.active = false;
-    window.removeEventListener("pointermove", onPointerMove);
-    window.removeEventListener("pointerup", onPointerUp);
-  };
-
-  useEffect(() => () => {
-    window.removeEventListener("pointermove", onPointerMove);
-    window.removeEventListener("pointerup", onPointerUp);
-  }, []);
-
-  const toolbarBtn = (active, onClick, children, title = "") => (
-    <button onClick={onClick} title={title}
-      className={`w-8 h-8 flex items-center justify-center rounded transition-colors ${active ? "bg-teal-500 text-white" : dark ? "text-slate-400 hover:bg-slate-700" : "text-slate-500 hover:bg-slate-100"}`}>
-      {children}
-    </button>
-  );
-
-  const COMPONENTS = [
-    { type: "text", label: "Text Field", icon: "Tx" },
-    { type: "rect", label: "Rectangle", icon: "⬜" },
-    { type: "image", label: "Image", icon: "🖼" },
-    { type: "imagegrid", label: "Image Grid", icon: "⊞" },
-    { type: "graph", label: "Graphs", icon: "📊" },
-    { type: "paneldesign", label: "Panel Designs", icon: "🎨" },
-  ];
-
-  return (
-    <div className="fixed inset-0 z-[100] flex flex-col" style={{ background: dark ? "#0a1628" : "#f1f5f9" }}>
-      {/* ── TOP BAR ── */}
-      <div className={`flex items-center gap-2 px-4 h-12 flex-shrink-0 border-b ${dark ? "bg-[#070e1c] border-slate-800" : "bg-white border-slate-200 shadow-sm"}`}>
-        <span className={`text-xs font-bold mr-2 ${dark ? "text-slate-300" : "text-slate-700"}`}>PROPOSAL EDITOR</span>
-        <div className={`flex items-center gap-1 border rounded-lg px-1 py-0.5 ${dark ? "border-slate-700" : "border-slate-200"}`}>
-          {/* Move mode */}
-          {toolbarBtn(mode === "move", () => setMode("move"),
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M7 1v12M1 7h12M4 4l-3 3 3 3M10 4l3 3-3 3"/></svg>, "Move")}
-          {/* Resize mode */}
-          {toolbarBtn(mode === "resize", () => setMode("resize"),
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 1h5M1 1v5M13 13h-5M13 13v-5"/></svg>, "Resize")}
-          {/* Grid toggle */}
-          {toolbarBtn(gridSnap, () => setGridSnap(v => !v),
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2"><path d="M1 5h12M1 9h12M5 1v12M9 1v12"/></svg>, gridSnap ? "Grid On" : "Grid Off")}
-          {/* Delete */}
-          {toolbarBtn(false, deleteSelected,
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 4h10M5 4V2h4v2M6 7v4M8 7v4M3 4l1 8h6l1-8"/></svg>, "Delete selected")}
-        </div>
-        {/* Page counter */}
-        <div className={`flex items-center gap-1 px-2 py-0.5 rounded border text-xs ${dark ? "border-slate-700 text-slate-400" : "border-slate-200 text-slate-500"}`}>1 / 1</div>
-        <div className="flex-1"/>
-        {/* Preview */}
-        <button onClick={() => setPreviewMode(v => !v)}
-          className={`px-3 h-7 rounded text-xs font-medium transition-colors ${previewMode ? "bg-amber-500 text-slate-900" : dark ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>
-          {previewMode ? "✏ Edit" : "👁 Preview"}
-        </button>
-        {/* Save */}
-        <button onClick={() => { onSave({ ...template, name: tname, pageColor, elements }); toast.show({ message: `"${tname}" saved!` }); }}
-          className="flex items-center gap-1.5 px-3 h-7 rounded text-xs font-bold bg-teal-600 hover:bg-teal-500 text-white transition-colors">
-          💾 Save
-        </button>
-        <button onClick={onClose} className={`w-7 h-7 flex items-center justify-center rounded text-lg ${dark ? "text-slate-400 hover:bg-slate-700" : "text-slate-400 hover:bg-slate-100"}`}>×</button>
-      </div>
-
-      <div className="flex flex-1 overflow-hidden">
-        {/* ── LEFT PANEL ── */}
-        {!previewMode && (
-          <div className={`w-44 flex-shrink-0 border-r flex flex-col overflow-hidden ${dark ? "bg-[#0c1929] border-slate-700" : "bg-white border-slate-200"}`}>
-            <div className={`px-3 py-2 text-xs font-bold border-b ${dark ? "border-slate-700 text-slate-400" : "border-slate-200 text-slate-500"}`}>Components</div>
-            <div className="flex-1 overflow-y-auto py-1">
-              {COMPONENTS.map(c => (
-                <button key={c.type} onClick={() => addElement(c.type)}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left transition-colors ${dark ? "text-slate-300 hover:bg-slate-700" : "text-slate-600 hover:bg-slate-50"}`}>
-                  <span className="w-5 text-center">{c.icon}</span>{c.label}
-                </button>
-              ))}
-            </div>
-            <div className={`border-t p-2 space-y-1 ${dark ? "border-slate-700" : "border-slate-200"}`}>
-              <button onClick={() => setShowGlobalVars(v => !v)}
-                className="w-full py-1.5 rounded text-xs font-bold bg-teal-600 hover:bg-teal-500 text-white transition-colors">
-                GLOBAL VARIABLES
-              </button>
-              <button className={`w-full py-1.5 rounded text-xs font-medium border ${dark ? "border-slate-600 text-slate-400 hover:bg-slate-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
-                VARIABLES ORDER
-              </button>
-            </div>
-            {/* Global Vars dropdown */}
-            {showGlobalVars && (
-              <div className={`border-t p-2 max-h-52 overflow-y-auto ${dark ? "border-slate-700" : "border-slate-200"}`}>
-                <p className={`text-xs font-bold mb-1.5 ${dark ? "text-slate-400" : "text-slate-500"}`}>Click to insert into selected text:</p>
-                {(variables || []).map(v => (
-                  <button key={v.id} onClick={() => {
-                    if (selected?.type === "text") {
-                      updateEl(selected.id, { content: (selected.content || "") + " $" + v.identifier });
-                    }
-                    setShowGlobalVars(false);
-                  }}
-                    className={`w-full text-left px-2 py-1.5 rounded text-xs font-mono transition-colors ${dark ? "text-amber-400 hover:bg-slate-700" : "text-amber-600 hover:bg-amber-50"}`}>
-                    ${v.identifier}
-                  </button>
-                ))}
-                {(!variables || variables.length === 0) && <p className={`text-xs ${dark ? "text-slate-600" : "text-slate-400"}`}>No variables defined yet.</p>}
-              </div>
-            )}
-            <div className={`border-t p-2 ${dark ? "border-slate-700" : "border-slate-200"}`}>
-              <p className={`text-xs font-bold mb-1 ${dark ? "text-slate-400" : "text-slate-500"}`}>Private Formulas</p>
-              <button className={`w-full text-left text-xs ${dark ? "text-teal-400" : "text-teal-600"}`}>+ New Formula</button>
-              <input placeholder="Search" className={`mt-1 w-full border rounded px-2 py-1 text-xs ${dark ? "bg-slate-700 border-slate-600 text-white" : "bg-white border-slate-300"}`}/>
-            </div>
-          </div>
-        )}
-
-        {/* ── CANVAS AREA ── */}
-        <div className={`flex-1 overflow-auto flex items-start justify-center p-8 ${dark ? "bg-slate-900" : "bg-slate-200"}`}
-          onClick={() => setSelectedId(null)}>
-          <div ref={canvasRef} style={{ position: "relative", width: CANVAS_W, minHeight: CANVAS_H, background: pageColor, boxShadow: "0 4px 32px rgba(0,0,0,0.18)", flexShrink: 0 }}
-            onClick={e => e.stopPropagation()}>
-            {/* Elements */}
-            {[...elements].sort((a, b) => (a.zIndex || 1) - (b.zIndex || 1)).map(el => (
-              <div key={el.id} style={{ position: "absolute", left: el.x, top: el.y, width: el.w, height: el.h, zIndex: el.zIndex || 1 }}>
-                <CanvasElement el={el} selected={selectedId === el.id} onSelect={setSelectedId} onPointerDown={onElPointerDown} mode={mode} vals={previewVals} previewMode={previewMode}/>
-                {selectedId === el.id && !previewMode && (
-                  <ResizeHandles onPointerDown={(e, handle) => onResizePointerDown(e, el.id, handle)}/>
-                )}
-              </div>
-            ))}
-            {elements.length === 0 && !previewMode && (
-              <div className="absolute inset-0 flex items-center justify-center flex-col gap-3 opacity-30">
-                <div className="text-5xl">📄</div>
-                <p className="text-slate-400 text-sm font-medium">Add components from the left panel</p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* ── RIGHT PANEL ── */}
-        {!previewMode && (
-          <div className={`w-56 flex-shrink-0 border-l flex flex-col overflow-hidden ${dark ? "bg-[#0c1929] border-slate-700" : "bg-white border-slate-200"}`}>
-            {/* Template name */}
-            <div className={`p-3 border-b ${dark ? "border-slate-700" : "border-slate-200"}`}>
-              <label className={`block text-xs mb-0.5 ${dark ? "text-slate-400" : "text-slate-500"}`}>Template Name</label>
-              <input value={tname} onChange={e => setTname(e.target.value)} className={`w-full border rounded px-2 py-1.5 text-xs focus:outline-none focus:border-teal-400 ${dark ? "bg-slate-700 border-slate-600 text-white" : "bg-white border-slate-300 text-slate-800"}`}/>
-              <label className={`block text-xs mt-2 mb-0.5 ${dark ? "text-slate-400" : "text-slate-500"}`}>Page Color</label>
-              <div className="flex gap-2 items-center">
-                <input type="color" value={pageColor} onChange={e => setPageColor(e.target.value)} className="w-8 h-7 rounded cursor-pointer border-0"/>
-                <input value={pageColor} onChange={e => setPageColor(e.target.value)} className={`flex-1 border rounded px-2 py-1 text-xs focus:outline-none ${dark ? "bg-slate-700 border-slate-600 text-white" : "bg-white border-slate-300"}`}/>
-              </div>
-            </div>
-            {/* Data section */}
-            {selected && selected.type === "image" && (
-              <div className={`p-3 border-b ${dark ? "border-slate-700" : "border-slate-200"}`}>
-                <p className={`text-xs font-bold mb-2 ${dark ? "text-slate-400" : "text-slate-500"}`}>Data</p>
-                <button onClick={() => setEditDataEl(selected)}
-                  className="w-full py-2 rounded-lg text-xs font-bold bg-teal-600 hover:bg-teal-500 text-white transition-colors">
-                  EDIT DATA
-                </button>
-                <p className={`text-xs mt-1 text-center ${dark ? "text-slate-500" : "text-slate-400"}`}>{selected.dataType || "static"}</p>
-              </div>
-            )}
-            {selected && !["image"].includes(selected.type) && (
-              <div className={`px-3 py-2 border-b ${dark ? "border-slate-700" : "border-slate-200"}`}>
-                <p className={`text-xs ${dark ? "text-slate-500" : "text-slate-400"}`}>Data: No Data</p>
-              </div>
-            )}
-            {/* Properties */}
-            <div className="flex-1 overflow-hidden">
-              <PropertiesPanel el={selected} updateEl={updateEl} dark={dark} variables={variables}/>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Edit Data Modal */}
-      {editDataEl && (
-        <EditDataModal el={editDataEl} updateEl={updateEl} onClose={() => setEditDataEl(null)} dark={dark}/>
-      )}
-    </div>
-  );
-};
-
-// ── VARIABLE MANAGER ─────────────────────────────────────────────
-const VariableManager = ({ variables, setVariables, devId, dark }) => {
-  const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ name: "", identifier: "", type: "text", defaultValue: "", formula: "", unit: "", source: "manual" });
-  const toast = useToast();
-  const SF = (k, v) => setForm(f => ({ ...f, [k]: v }));
-
-  const save = () => {
-    if (!form.name.trim() || !form.identifier.trim()) return;
-    const id_clean = form.identifier.trim().replace(/\s+/g, "_").replace(/[^a-z0-9_]/gi, "").toLowerCase();
-    setVariables(vs => [...vs, { ...form, id: `pv${Date.now()}`, devId, identifier: id_clean, createdAt: new Date().toISOString() }]);
-    setShowAdd(false);
-    setForm({ name: "", identifier: "", type: "text", defaultValue: "", formula: "", unit: "", source: "manual" });
-    toast.show({ message: `Variable "$${id_clean}" added.` });
-  };
-
-  const del = id => { if (!window.confirm("Delete this variable?")) return; setVariables(vs => vs.filter(v => v.id !== id)); };
-  const inp = `w-full border rounded-lg px-3 py-2 text-sm focus:outline-none ${dark ? "bg-slate-800 border-slate-600 text-white focus:border-amber-400" : "bg-white border-slate-300 text-slate-800 focus:border-amber-500"}`;
-  const myVars = (variables || []).filter(v => v.devId === devId);
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h3 className={`font-bold text-sm ${dark ? "text-white" : "text-slate-800"}`}>Variables & Formulas</h3>
-          <p className={`text-xs ${dark ? "text-slate-400" : "text-slate-500"}`}>Use <code className="font-mono">$identifier</code> inside template text fields</p>
-        </div>
-        <button onClick={() => setShowAdd(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-900">+ Add Variable</button>
-      </div>
-      <div className={`border rounded-xl overflow-hidden ${dark ? "border-slate-700/50" : "border-slate-200 shadow-sm"}`}>
-        <table className="w-full text-sm" style={{ minWidth: 600 }}>
-          <thead><tr className={`border-b text-xs font-medium ${dark ? "border-slate-700 bg-slate-800/30 text-slate-400" : "border-slate-200 bg-slate-50 text-slate-500"}`}>
-            {["Name", "Identifier ($)", "Type", "Formula / Default", "Unit", ""].map(h => <th key={h} className="text-left px-4 py-2.5">{h}</th>)}
-          </tr></thead>
+      <div style={{...base,...border,background:"white",overflow:"hidden"}} onPointerDown={handleDown}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:el.fontSize||12}}>
+          <thead>
+            <tr style={{background:el.headerColor||"#1e293b"}}>
+              {headers.map((h,i)=><th key={i} style={{padding:"5px 8px",color:"white",textAlign:"left",fontSize:(el.fontSize||12)+"px",fontWeight:700}}>{subVars(h,vals)}</th>)}
+            </tr>
+          </thead>
           <tbody>
-            {myVars.length === 0 && <tr><td colSpan={6} className={`text-center py-8 text-sm ${dark ? "text-slate-500" : "text-slate-400"}`}>No variables yet. Add your first variable to use in templates.</td></tr>}
-            {myVars.map(v => (
-              <tr key={v.id} className={`border-b ${dark ? "border-slate-700/30 hover:bg-slate-800/20" : "border-slate-100 hover:bg-slate-50"}`}>
-                <td className={`px-4 py-2.5 font-medium ${dark ? "text-white" : "text-slate-800"}`}>{v.name}</td>
-                <td className="px-4 py-2.5"><code className={`text-xs px-1.5 py-0.5 rounded font-mono ${dark ? "bg-slate-700 text-amber-400" : "bg-amber-50 text-amber-700"}`}>${v.identifier}</code></td>
-                <td className={`px-4 py-2.5 text-xs capitalize ${dark ? "text-slate-400" : "text-slate-500"}`}>{v.type}</td>
-                <td className={`px-4 py-2.5 text-xs font-mono ${dark ? "text-sky-400" : "text-sky-700"}`}>{v.type === "formula" ? v.formula : v.defaultValue || "—"}</td>
-                <td className={`px-4 py-2.5 text-xs ${dark ? "text-slate-500" : "text-slate-400"}`}>{v.unit || "—"}</td>
-                <td className="px-4 py-2.5"><button onClick={() => del(v.id)} className={`text-xs ${dark ? "text-red-400" : "text-red-500"}`}>✕</button></td>
+            {rows.map((row,ri)=>(
+              <tr key={ri} style={{borderBottom:"1px solid #e2e8f0",background:ri%2===0?"white":"#f8fafc"}}>
+                {row.map((cell,ci)=><td key={ci} style={{padding:"4px 8px",color:"#334155",fontSize:(el.fontSize||12)+"px"}}>{subVars(cell,vals)}</td>)}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      {showAdd && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowAdd(false)}>
-          <div className={`w-full max-w-lg rounded-2xl shadow-2xl p-6 ${dark ? "bg-[#0a1628]" : "bg-white"}`} onClick={e => e.stopPropagation()}>
-            <h3 className={`font-bold text-lg mb-5 ${dark ? "text-white" : "text-slate-800"}`}>Add Variable</h3>
+    );
+  }
+
+  // ── PANEL DESIGN / PLACEHOLDER ──
+  return (
+    <div style={{...base,background:"#f8fafc",border:"2px dashed #cbd5e1",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:4}} onPointerDown={handleDown}>
+      <span style={{fontSize:24}}>{el.type==="graph"?"📊":"🎨"}</span>
+      <span style={{fontSize:10,color:"#94a3b8"}}>{el.type}</span>
+    </div>
+  );
+};
+
+// ── RESIZE HANDLES ─────────────────────────────────────────────────
+const ResizeHandles = ({onDown}) => (
+  <>
+    {[["se","right:-5px,bottom:-5px,cursor:se-resize"],["sw","left:-5px,bottom:-5px,cursor:sw-resize"],
+      ["ne","right:-5px,top:-5px,cursor:ne-resize"],["nw","left:-5px,top:-5px,cursor:nw-resize"],
+      ["e","right:-5px,top:calc(50%-5px),cursor:e-resize"],["w","left:-5px,top:calc(50%-5px),cursor:w-resize"],
+      ["s","bottom:-5px,left:calc(50%-5px),cursor:s-resize"],["n","top:-5px,left:calc(50%-5px),cursor:n-resize"],
+    ].map(([id,styleStr])=>{
+      const style = {position:"absolute",width:10,height:10,background:"white",border:"2px solid #0d9488",borderRadius:2,zIndex:9999};
+      styleStr.split(",").forEach(s=>{const[k,v]=s.split(":");style[k]=v;});
+      return <div key={id} style={style} onPointerDown={e=>{e.stopPropagation();onDown(e,id);}}/>;
+    })}
+  </>
+);
+
+// ── PROPERTIES PANEL ──────────────────────────────────────────────
+const PropertiesPanel = ({el, updateEl, dark, variables, setEditingText, setEditDataEl}) => {
+  if (!el) return (
+    <div className="p-4 text-center pt-12" style={{color:"#94a3b8"}}>
+      <div style={{fontSize:28,marginBottom:8}}>👆</div>
+      <div style={{fontSize:12}}>Select a component to inspect properties</div>
+    </div>
+  );
+
+  const inp = `w-full border rounded px-2 py-1 text-xs focus:outline-none ${dark?"bg-slate-700 border-slate-600 text-white":"bg-white border-slate-300 text-slate-800"}`;
+  const sel = inp + " cursor-pointer";
+  const U = ch => updateEl(el.id, ch);
+  const Row = ({label, children}) => (
+    <div className="mb-2">
+      <label className={`block text-xs mb-0.5 ${dark?"text-slate-400":"text-slate-500"}`}>{label}</label>
+      {children}
+    </div>
+  );
+  const ColorRow = ({label, value, onChange}) => (
+    <div className="mb-2">
+      <label className={`block text-xs mb-0.5 ${dark?"text-slate-400":"text-slate-500"}`}>{label}</label>
+      <div className="flex gap-1.5 items-center">
+        <input type="color" value={value&&value!=="none"&&value!=="transparent"?value:"#ffffff"}
+          onChange={e=>onChange(e.target.value)} className="w-7 h-6 rounded border-0 cursor-pointer bg-transparent flex-shrink-0"/>
+        <input value={value||"none"} onChange={e=>onChange(e.target.value)} className={`${inp} flex-1`}/>
+      </div>
+    </div>
+  );
+  const NumRow = ({label, value, onChange, unit="px", min=0}) => (
+    <div className="mb-2">
+      <label className={`block text-xs mb-0.5 ${dark?"text-slate-400":"text-slate-500"}`}>{label}</label>
+      <div className="flex gap-1 items-center">
+        <input type="number" min={min} value={value||0} onChange={e=>onChange(Number(e.target.value))} className={inp}/>
+        {unit&&<span className={`text-xs flex-shrink-0 ${dark?"text-slate-500":"text-slate-400"}`}>{unit}</span>}
+      </div>
+    </div>
+  );
+  const borderSection = (
+    <>
+      <div className={`text-xs font-bold mb-1.5 mt-3 ${dark?"text-slate-400":"text-slate-500"}`}>BORDER</div>
+      <ColorRow label="Border Color" value={el.borderColor||"#000000"} onChange={v=>U({borderColor:v})}/>
+      <NumRow label="Border Width" value={el.borderWidth||0} onChange={v=>U({borderWidth:v})}/>
+      <Row label="Border Style">
+        <select value={el.borderStyle||"none"} onChange={e=>U({borderStyle:e.target.value})} className={sel}>
+          {["none","solid","dashed","dotted","double","groove","ridge","inset","outset"].map(s=><option key={s}>{s}</option>)}
+        </select>
+      </Row>
+      <NumRow label="Border Radius" value={el.borderRadius||0} onChange={v=>U({borderRadius:v})}/>
+    </>
+  );
+
+  return (
+    <div className="overflow-y-auto h-full">
+      <div className={`px-3 py-2 text-xs font-bold border-b sticky top-0 z-10 ${dark?"border-slate-700 bg-[#0c1929] text-slate-400":"border-slate-200 bg-slate-50 text-slate-500"}`}>
+        PROPERTIES — {el.type.toUpperCase()}
+      </div>
+      <div className="p-3">
+
+        {/* TEXT */}
+        {el.type==="text"&&<>
+          <div className={`text-xs font-bold mb-1.5 ${dark?"text-slate-400":"text-slate-500"}`}>TEXT TYPE</div>
+          <Row label="Type">
+            <select value={el.fieldType||"fixed"} onChange={e=>U({fieldType:e.target.value})} className={sel}>
+              <option value="fixed">Fixed Text</option>
+              <option value="fill_later">Fill Later (user input)</option>
+              <option value="text_list">Text List (dropdown)</option>
+            </select>
+          </Row>
+          {el.fieldType==="fill_later"&&<>
+            <Row label="Field Name (shown to user)"><input value={el.fieldName||""} onChange={e=>U({fieldName:e.target.value})} placeholder="e.g. Customer Address" className={inp}/></Row>
+            <Row label="Default Value"><input value={el.defaultValue||""} onChange={e=>U({defaultValue:e.target.value})} placeholder="Optional default" className={inp}/></Row>
+            <Row label="Input Type">
+              <select value={el.inputType||"text"} onChange={e=>U({inputType:e.target.value})} className={sel}>
+                <option value="text">Text</option><option value="number">Number</option><option value="textarea">Textarea</option>
+              </select>
+            </Row>
+          </>}
+          {el.fieldType==="text_list"&&<>
+            <Row label="Field Name"><input value={el.fieldName||""} onChange={e=>U({fieldName:e.target.value})} className={inp}/></Row>
+            <Row label="Options (one per line)">
+              <textarea rows={4} value={(el.options||[]).join("\n")} onChange={e=>U({options:e.target.value.split("\n").filter(Boolean)})}
+                className={inp+" resize-none"} placeholder="Option 1&#10;Option 2&#10;Option 3"/>
+            </Row>
+          </>}
+          <button onClick={()=>setEditingText(el.id)}
+            className="w-full py-1.5 rounded text-xs font-bold bg-teal-600 hover:bg-teal-500 text-white mb-3 transition-colors">
+            ✏ Open Rich Text Editor
+          </button>
+          <div className={`text-xs font-bold mb-1.5 ${dark?"text-slate-400":"text-slate-500"}`}>STYLE</div>
+          <ColorRow label="Background Color" value={el.bgColor||"none"} onChange={v=>U({bgColor:v})}/>
+          {borderSection}
+        </>}
+
+        {/* RECT */}
+        {el.type==="rect"&&<>
+          <ColorRow label="Background Color" value={el.bgColor||"#e2e8f0"} onChange={v=>U({bgColor:v})}/>
+          {borderSection}
+        </>}
+
+        {/* IMAGE */}
+        {el.type==="image"&&<>
+          <div className={`text-xs font-bold mb-1.5 ${dark?"text-slate-400":"text-slate-500"}`}>IMAGE DATA</div>
+          <button onClick={()=>setEditDataEl(el)}
+            className="w-full py-1.5 rounded text-xs font-bold bg-teal-600 hover:bg-teal-500 text-white mb-3">
+            EDIT DATA ({el.dataType||"static"})
+          </button>
+          <Row label="Image Fit">
+            <select value={el.imageFit||"contain"} onChange={e=>U({imageFit:e.target.value})} className={sel}>
+              {["contain","cover","fill"].map(f=><option key={f}>{f}</option>)}
+            </select>
+          </Row>
+          {borderSection}
+          <Row label="Hyperlink"><input value={el.hyperlink||""} onChange={e=>U({hyperlink:e.target.value})} placeholder="https://..." className={inp}/></Row>
+        </>}
+
+        {/* IMAGE GRID */}
+        {el.type==="imagegrid"&&<>
+          <Row label="Brand Category">
+            <select value={el.gridCategory||"panel"} onChange={e=>U({gridCategory:e.target.value})} className={sel}>
+              {["panel","inverter","cable","ups","battery"].map(c=><option key={c} className="capitalize">{c}</option>)}
+            </select>
+          </Row>
+          <NumRow label="Max Selection" value={el.maxCount||5} min={1} unit="" onChange={v=>U({maxCount:v})}/>
+          <NumRow label="Image Width" value={el.imgW||90} onChange={v=>U({imgW:v})}/>
+          <NumRow label="Image Height" value={el.imgH||45} onChange={v=>U({imgH:v})}/>
+          <NumRow label="Gap (px)" value={el.imgGap||6} onChange={v=>U({imgGap:v})}/>
+        </>}
+
+        {/* GRAPH */}
+        {el.type==="graph"&&<>
+          <Row label="Graph Type">
+            <select value={el.graphType||"MONTHLY_SAVINGS"} onChange={e=>U({graphType:e.target.value})} className={sel}>
+              {GRAPH_TYPES.map(g=><option key={g.id} value={g.id}>{g.label}</option>)}
+            </select>
+          </Row>
+          {borderSection}
+        </>}
+
+        {/* TABLE */}
+        {el.type==="table"&&<>
+          <div className={`text-xs font-bold mb-1.5 ${dark?"text-slate-400":"text-slate-500"}`}>TABLE STRUCTURE</div>
+          <Row label="Header Row (comma-sep)">
+            <input value={(el.headers||["Item","Value"]).join(",")} onChange={e=>U({headers:e.target.value.split(",").map(h=>h.trim())})} className={inp}/>
+          </Row>
+          <Row label="Rows (one row per line, cells comma-sep)">
+            <textarea rows={5} value={(el.rows||[]).map(r=>r.join(",")).join("\n")} onChange={e=>U({rows:e.target.value.split("\n").filter(Boolean).map(r=>r.split(",").map(c=>c.trim()))})}
+              className={inp+" resize-none"} placeholder="Item 1,$projectSize kW&#10;Cost,₹$systemCost"/>
+          </Row>
+          <ColorRow label="Header Color" value={el.headerColor||"#1e293b"} onChange={v=>U({headerColor:v})}/>
+          <NumRow label="Font Size" value={el.fontSize||12} onChange={v=>U({fontSize:v})}/>
+          {borderSection}
+        </>}
+
+        {/* COMMON Z-INDEX */}
+        <div className={`text-xs font-bold mb-1.5 mt-3 ${dark?"text-slate-400":"text-slate-500"}`}>LAYER</div>
+        <NumRow label="Z-Index" value={el.zIndex||1} min={0} unit="" onChange={v=>U({zIndex:v})}/>
+      </div>
+    </div>
+  );
+};
+
+// ── EDIT TEXT MODAL (Rich Text) ───────────────────────────────────
+const EditTextModal = ({el, updateEl, onClose, dark, variables}) => {
+  const [html, setHtml] = useState(el?.htmlContent || el?.content || "");
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60" onClick={onClose}>
+      <div className={`w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden ${dark?"bg-[#0a1628]":"bg-white"}`} style={{height:"80vh"}} onClick={e=>e.stopPropagation()}>
+        <div className={`flex items-center justify-between px-5 py-3 border-b ${dark?"border-slate-700":"border-slate-200"}`}>
+          <h3 className={`font-bold text-sm ${dark?"text-white":"text-slate-800"}`}>Edit Text Content</h3>
+          <div className="flex gap-2">
+            <button onClick={()=>{updateEl(el.id,{htmlContent:html,content:html});onClose();}}
+              className="px-4 py-1.5 rounded-lg text-xs font-bold bg-teal-600 hover:bg-teal-500 text-white">Save & Close</button>
+            <button onClick={onClose} className={`px-3 py-1.5 rounded-lg text-xs ${dark?"bg-slate-700 text-slate-300":"bg-slate-100 text-slate-600"}`}>Cancel</button>
+          </div>
+        </div>
+        <div className={`flex-1 overflow-hidden`} style={{height:"calc(80vh - 56px)"}}>
+          <RichTextEditor value={html} onChange={setHtml} vars={variables} style={{height:"100%",display:"flex",flexDirection:"column"}}/>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── EDIT DATA MODAL (Image) ────────────────────────────────────────
+const EditDataModal = ({el, updateEl, onClose, dark}) => {
+  const [dataType, setDataType] = useState(el.dataType||"static");
+  const [src, setSrc] = useState(el.src||"");
+  const [fieldName, setFieldName] = useState(el.fieldName||"");
+  const [placeholderKey, setPlaceholderKey] = useState(el.placeholderKey||"");
+  const [dynOptions, setDynOptions] = useState(el.dynamicOptions||[]);
+  const [newLabel, setNewLabel] = useState("");
+  const fileRef = useRef();
+  const optFileRef = useRef();
+
+  const save = () => {
+    updateEl(el.id,{dataType,src:dataType==="static"?src:el.src||"",fieldName,placeholderKey,dynamicOptions:dynOptions});
+    onClose();
+  };
+  const inp = `w-full border rounded-lg px-3 py-2 text-sm focus:outline-none ${dark?"bg-slate-700 border-slate-600 text-white":"bg-white border-slate-300 text-slate-800"}`;
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60" onClick={onClose}>
+      <div className={`w-full max-w-md rounded-2xl shadow-2xl p-6 ${dark?"bg-[#0a1628]":"bg-white"}`} onClick={e=>e.stopPropagation()}>
+        <h3 className={`font-bold text-base mb-4 ${dark?"text-white":"text-slate-800"}`}>Image Data</h3>
+        <div className="flex gap-2 mb-5 p-1 rounded-xl bg-slate-100">
+          {["static","placeholder","dynamic"].map(t=>(
+            <button key={t} onClick={()=>setDataType(t)}
+              className={`flex-1 py-2 rounded-lg text-xs font-bold capitalize transition-all ${dataType===t?"bg-teal-500 text-white":"text-slate-500 hover:bg-white"}`}>{t}</button>
+          ))}
+        </div>
+
+        {dataType==="static"&&<>
+          <div className="mb-3">
+            <label className={`block text-xs font-semibold mb-1 ${dark?"text-slate-300":"text-slate-700"}`}>Image URL</label>
+            <input value={src} onChange={e=>setSrc(e.target.value)} placeholder="https://..." className={`${inp} mb-2`}/>
+          </div>
+          <label className="flex items-center gap-2 text-xs text-teal-500 hover:text-teal-400 cursor-pointer">
+            📤 Upload image file
+            <input ref={fileRef} type="file" className="hidden" accept="image/*" onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>setSrc(ev.target.result);r.readAsDataURL(f);}}/>
+          </label>
+          {src&&<img src={src} alt="" className="mt-3 max-h-32 rounded border border-slate-200 object-contain mx-auto block"/>}
+        </>}
+
+        {dataType==="placeholder"&&<>
+          <p className={`text-xs mb-3 ${dark?"text-slate-400":"text-slate-500"}`}>System variable → auto-filled. Custom name → user uploads.</p>
+          <div className="mb-3">
+            <label className={`block text-xs font-semibold mb-1 ${dark?"text-slate-300":"text-slate-700"}`}>System Variable (optional)</label>
+            <select value={placeholderKey} onChange={e=>setPlaceholderKey(e.target.value)} className={inp}>
+              <option value="">— None (user upload) —</option>
+              <option value="$companylogo">$companylogo — Company Logo</option>
+              <option value="$signatureimage">$signatureimage — Signature</option>
+              <option value="$projectlocation">$projectlocation — Project Location</option>
+            </select>
+          </div>
+          {!placeholderKey&&<div>
+            <label className={`block text-xs font-semibold mb-1 ${dark?"text-slate-300":"text-slate-700"}`}>Field Name (shown to user)</label>
+            <input value={fieldName} onChange={e=>setFieldName(e.target.value)} placeholder="e.g. Customer Signature" className={inp}/>
+          </div>}
+        </>}
+
+        {dataType==="dynamic"&&<>
+          <div className="mb-3">
+            <label className={`block text-xs font-semibold mb-1 ${dark?"text-slate-300":"text-slate-700"}`}>Field Name</label>
+            <input value={fieldName} onChange={e=>setFieldName(e.target.value)} placeholder="e.g. Brand Logo" className={`${inp} mb-3`}/>
+          </div>
+          <div className="space-y-2 mb-3 max-h-40 overflow-y-auto">
+            {dynOptions.map((opt,i)=>(
+              <div key={i} className={`flex items-center gap-2 p-2 rounded-lg border ${dark?"border-slate-700 bg-slate-800":"border-slate-100 bg-slate-50"}`}>
+                {opt.src&&<img src={opt.src} alt="" className="w-9 h-7 object-contain rounded flex-shrink-0"/>}
+                <span className={`text-xs flex-1 truncate ${dark?"text-slate-300":"text-slate-600"}`}>{opt.label}</span>
+                <button onClick={()=>setDynOptions(o=>o.filter((_,j)=>j!==i))} className="text-red-400 text-sm flex-shrink-0">×</button>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <input value={newLabel} onChange={e=>setNewLabel(e.target.value)} placeholder="Label..." className={`${inp} flex-1`}/>
+            <label className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-teal-500 text-white cursor-pointer whitespace-nowrap">
+              + Add
+              <input ref={optFileRef} type="file" className="hidden" accept="image/*" onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{setDynOptions(o=>[...o,{label:newLabel||f.name,src:ev.target.result}]);setNewLabel("");};r.readAsDataURL(f);}}/>
+            </label>
+          </div>
+        </>}
+
+        <div className="flex gap-3 mt-5">
+          <button onClick={save} className="flex-1 py-2.5 rounded-lg font-bold text-sm bg-teal-600 hover:bg-teal-500 text-white">Save</button>
+          <button onClick={onClose} className={`px-5 py-2.5 rounded-lg text-sm ${dark?"bg-slate-700 text-slate-300":"bg-slate-100 text-slate-600"}`}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── MAIN CANVAS EDITOR ────────────────────────────────────────────
+const ProposalCanvasEditor = ({template, onSave, onClose, variables, dark}) => {
+  const toast = useToast();
+  const [tname, setTname] = useState(template?.name||"Untitled Proposal");
+  const [pageColor, setPageColor] = useState(template?.pageColor||"#ffffff");
+  const [pageSize, setPageSize] = useState(template?.pageSize||"A4");
+  const [orientation, setOrientation] = useState(template?.orientation||"portrait");
+  const [elements, setElements] = useState(template?.elements||[]);
+  const [selectedId, setSelectedId] = useState(null);
+  const [mode, setMode] = useState("move");
+  const [gridSnap, setGridSnap] = useState(true);
+  const [previewMode, setPreviewMode] = useState(false);
+  const [editingText, setEditingText] = useState(null); // element id
+  const [editDataEl, setEditDataEl] = useState(null);
+  const [showVarPanel, setShowVarPanel] = useState(false);
+  const SNAP = 10;
+
+  const PAGE_SIZES = {
+    A4:   {w:794,  h:1123},
+    A3:   {w:1123, h:1587},
+    Custom:{w:800, h:1000},
+  };
+  const page = PAGE_SIZES[pageSize]||PAGE_SIZES.A4;
+  const CW = orientation==="landscape" ? page.h : page.w;
+  const CH = orientation==="landscape" ? page.w : page.h;
+
+  const snap = v => gridSnap ? Math.round(v/SNAP)*SNAP : v;
+  const selected = elements.find(e=>e.id===selectedId);
+  const dragRef = useRef({active:false,startX:0,startY:0,elX:0,elY:0,elW:0,elH:0,id:null,handle:null});
+
+  const previewVals = resolveVars(variables||[], {}, {customerName:"Robert Kim",projectSize:5,projectType:"Residential",customerEmail:"r@email.com",customerPhone:"+91-98000-00000",customerAddress:"Mumbai, MH"}, {companyName:"SunPower Solutions",electricityPrice:8,costPerKW:55000,solarGenerationFactor:1400});
+
+  const COMPONENTS = [
+    {type:"text",label:"Text Field",icon:"Tx"},
+    {type:"rect",label:"Rectangle",icon:"⬜"},
+    {type:"image",label:"Image",icon:"🖼"},
+    {type:"imagegrid",label:"Image Grid",icon:"⊞"},
+    {type:"graph",label:"Graph",icon:"📊"},
+    {type:"table",label:"Table",icon:"▦"},
+    {type:"paneldesign",label:"Panel Design",icon:"🎨"},
+  ];
+
+  const EL_DEFAULTS = {
+    text:  {w:200,h:60,fieldType:"fixed",htmlContent:"<p>Enter text here</p>",fontFamily:"Default",fontSize:14,bgColor:"none",borderStyle:"none",borderWidth:0,borderColor:"#000000",borderRadius:0},
+    rect:  {w:200,h:80,bgColor:"#e2e8f0",borderColor:"#000000",borderWidth:0,borderStyle:"solid",borderRadius:0},
+    image: {w:150,h:120,src:"",dataType:"static",imageFit:"contain",borderColor:"#03989e",borderWidth:1,borderStyle:"solid"},
+    imagegrid:{w:420,h:130,gridCategory:"panel",maxCount:5,imgW:90,imgH:45,imgGap:6},
+    graph: {w:350,h:220,graphType:"MONTHLY_SAVINGS",borderStyle:"none",borderWidth:0},
+    table: {w:400,h:160,headers:["Item","Details"],rows:[["System Size","$projectSize kW"],["Monthly Generation","$monthlyGeneration kWh"],["Monthly Savings","₹$monthlySavings"],["Total Cost","₹$systemCost"],["Payback Period","$paybackYears years"]],headerColor:"#1e293b",fontSize:12,borderStyle:"solid",borderWidth:1,borderColor:"#e2e8f0"},
+    paneldesign:{w:300,h:150},
+  };
+
+  const addEl = (type) => {
+    const el = {id:`el${Date.now()}`,type,x:40,y:40,zIndex:elements.length+1,...EL_DEFAULTS[type]};
+    setElements(es=>[...es,el]);
+    setSelectedId(el.id);
+    if (type==="text") setTimeout(()=>setEditingText(el.id),100);
+  };
+
+  const updateEl = (id, ch) => setElements(es=>es.map(e=>e.id===id?{...e,...ch}:e));
+  const deleteSelected = () => { if(!selectedId)return; setElements(es=>es.filter(e=>e.id!==selectedId)); setSelectedId(null); };
+  const copySelected = () => {
+    if(!selectedId) return;
+    const el=elements.find(e=>e.id===selectedId);
+    if(!el) return;
+    const copy={...el,id:`el${Date.now()}`,x:el.x+20,y:el.y+20,zIndex:elements.length+1};
+    setElements(es=>[...es,copy]); setSelectedId(copy.id);
+  };
+
+  const onElDown = (e,id) => {
+    if(previewMode) return;
+    e.preventDefault(); e.stopPropagation();
+    setSelectedId(id);
+    const el=elements.find(x=>x.id===id); if(!el) return;
+    dragRef.current={active:true,startX:e.clientX,startY:e.clientY,elX:el.x,elY:el.y,elW:el.w,elH:el.h,id,handle:"move"};
+    window.addEventListener("pointermove",onMove);
+    window.addEventListener("pointerup",onUp);
+  };
+  const onResDown = (e,id,handle) => {
+    e.preventDefault();
+    const el=elements.find(x=>x.id===id); if(!el) return;
+    dragRef.current={active:true,startX:e.clientX,startY:e.clientY,elX:el.x,elY:el.y,elW:el.w,elH:el.h,id,handle};
+    window.addEventListener("pointermove",onMove);
+    window.addEventListener("pointerup",onUp);
+  };
+  const onMove = (e) => {
+    const d=dragRef.current; if(!d.active) return;
+    const dx=e.clientX-d.startX, dy=e.clientY-d.startY;
+    if(d.handle==="move"){
+      updateEl(d.id,{x:snap(Math.max(0,d.elX+dx)),y:snap(Math.max(0,d.elY+dy))});
+    } else {
+      let nx=d.elX,ny=d.elY,nw=d.elW,nh=d.elH;
+      if(d.handle.includes("e")) nw=snap(Math.max(20,d.elW+dx));
+      if(d.handle.includes("s")) nh=snap(Math.max(20,d.elH+dy));
+      if(d.handle.includes("w")){ nx=snap(d.elX+dx); nw=snap(Math.max(20,d.elW-dx)); }
+      if(d.handle.includes("n")){ ny=snap(d.elY+dy); nh=snap(Math.max(20,d.elH-dy)); }
+      updateEl(d.id,{x:nx,y:ny,w:nw,h:nh});
+    }
+  };
+  const onUp = () => { dragRef.current.active=false; window.removeEventListener("pointermove",onMove); window.removeEventListener("pointerup",onUp); };
+  useEffect(()=>()=>{window.removeEventListener("pointermove",onMove);window.removeEventListener("pointerup",onUp);},[]);
+
+  useEffect(()=>{
+    const handleKey = (e) => {
+      if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA"||e.target.contentEditable==="true") return;
+      if((e.key==="Delete"||e.key==="Backspace")&&selectedId){ e.preventDefault(); deleteSelected(); }
+      if(e.key==="Escape") setSelectedId(null);
+      if(e.ctrlKey&&e.key==="d"){ e.preventDefault(); copySelected(); }
+    };
+    window.addEventListener("keydown",handleKey);
+    return ()=>window.removeEventListener("keydown",handleKey);
+  },[selectedId,elements]);
+
+  const TB = (active,onClick,children,title="") => (
+    <button onClick={onClick} title={title}
+      className={`w-8 h-8 flex items-center justify-center rounded transition-colors ${active?"bg-teal-500 text-white":dark?"text-slate-400 hover:bg-slate-700":"text-slate-500 hover:bg-slate-100"}`}>
+      {children}
+    </button>
+  );
+
+  const editingEl = elements.find(e=>e.id===editingText);
+
+  return (
+    <div className="fixed inset-0 z-[100] flex flex-col" style={{background:dark?"#0a1628":"#f1f5f9"}}>
+      {/* TOP BAR */}
+      <div className={`flex items-center gap-2 px-4 h-11 flex-shrink-0 border-b ${dark?"bg-[#070e1c] border-slate-800":"bg-white border-slate-200 shadow-sm"}`}>
+        <span className={`text-xs font-black tracking-wider mr-1 ${dark?"text-amber-400":"text-amber-600"}`}>PROPOSAL EDITOR</span>
+        <div className={`flex items-center gap-0.5 border rounded-lg px-1 py-0.5 ${dark?"border-slate-700":"border-slate-200"}`}>
+          {TB(mode==="move",()=>setMode("move"),<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M7 1v12M1 7h12M4 4l-3 3 3 3M10 4l3 3-3 3"/></svg>,"Move (V)")}
+          {TB(mode==="resize",()=>setMode("resize"),<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 1h5M1 1v5M13 13h-5M13 13v-5"/></svg>,"Resize (R)")}
+          {TB(gridSnap,()=>setGridSnap(v=>!v),<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2"><path d="M1 5h12M1 9h12M5 1v12M9 1v12"/></svg>,gridSnap?"Grid ON":"Grid OFF")}
+          {TB(false,deleteSelected,<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 4h10M5 4V2h4v2M6 7v4M8 7v4M3 4l1 8h6l1-8"/></svg>,"Delete (Del)")}
+          {TB(false,copySelected,<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="4" y="4" width="8" height="8" rx="1"/><path d="M2 10V3a1 1 0 011-1h7"/></svg>,"Duplicate (Ctrl+D)")}
+        </div>
+        <select value={pageSize} onChange={e=>setPageSize(e.target.value)} className={`h-7 text-xs border rounded px-1.5 ${dark?"bg-slate-700 border-slate-600 text-white":"bg-white border-slate-200 text-slate-700"}`}>
+          <option>A4</option><option>A3</option><option>Custom</option>
+        </select>
+        <select value={orientation} onChange={e=>setOrientation(e.target.value)} className={`h-7 text-xs border rounded px-1.5 ${dark?"bg-slate-700 border-slate-600 text-white":"bg-white border-slate-200 text-slate-700"}`}>
+          <option value="portrait">Portrait</option><option value="landscape">Landscape</option>
+        </select>
+        <div className="flex-1"/>
+        <button onClick={()=>setPreviewMode(v=>!v)}
+          className={`px-3 h-7 rounded text-xs font-medium ${previewMode?"bg-amber-500 text-slate-900":dark?"bg-slate-700 text-slate-300":"bg-slate-100 text-slate-600"}`}>
+          {previewMode?"✏ Edit":"👁 Preview"}
+        </button>
+        <button onClick={()=>onSave({...template,name:tname,pageColor,pageSize,orientation,elements})}
+          className="flex items-center gap-1.5 px-3 h-7 rounded text-xs font-bold bg-teal-600 hover:bg-teal-500 text-white">
+          💾 Save
+        </button>
+        <button onClick={onClose} className={`w-7 h-7 flex items-center justify-center rounded text-lg ${dark?"text-slate-400 hover:bg-slate-700":"text-slate-400 hover:bg-slate-100"}`}>×</button>
+      </div>
+
+      <div className="flex flex-1 overflow-hidden">
+        {/* LEFT PANEL */}
+        {!previewMode&&(
+          <div className={`w-40 flex-shrink-0 border-r flex flex-col overflow-hidden ${dark?"bg-[#0c1929] border-slate-700":"bg-white border-slate-200"}`}>
+            <div className={`px-3 py-2 text-xs font-bold border-b ${dark?"border-slate-700 text-slate-400":"border-slate-200 text-slate-500"}`}>Components</div>
+            <div className="flex-1 overflow-y-auto py-1">
+              {COMPONENTS.map(c=>(
+                <button key={c.type} onClick={()=>addEl(c.type)}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left transition-colors ${dark?"text-slate-300 hover:bg-slate-700":"text-slate-600 hover:bg-slate-50"}`}>
+                  <span className="w-5 text-center text-base">{c.icon}</span>{c.label}
+                </button>
+              ))}
+            </div>
+            {/* GLOBAL VARIABLES */}
+            <div className={`border-t p-2 space-y-1 ${dark?"border-slate-700":"border-slate-200"}`}>
+              <button onClick={()=>setShowVarPanel(v=>!v)}
+                className={`w-full py-1.5 rounded text-xs font-bold transition-colors ${showVarPanel?"bg-amber-500 text-slate-900":"bg-teal-600 hover:bg-teal-500 text-white"}`}>
+                GLOBAL VARIABLES
+              </button>
+              {showVarPanel&&(
+                <div className={`rounded-lg border p-1 mt-1 max-h-48 overflow-y-auto ${dark?"border-slate-700 bg-slate-800":"border-slate-200 bg-slate-50"}`}>
+                  {[...["customerName","projectSize","companyName","monthlySavings","systemCost","paybackYears","yearlySavings","electricityRate"].map(k=>({identifier:k,name:k})),
+                    ...(variables||[]).filter(v=>v.devId===variables[0]?.devId)
+                  ].map(v=>(
+                    <button key={v.identifier} onClick={()=>{
+                      if(selected?.type==="text"){
+                        const cur=selected.htmlContent||selected.content||"";
+                        updateEl(selected.id,{htmlContent:cur+"$"+v.identifier,content:cur+"$"+v.identifier});
+                      }
+                    }}
+                      className={`w-full text-left px-2 py-1 rounded text-xs font-mono transition-colors ${dark?"text-amber-400 hover:bg-slate-700":"text-amber-700 hover:bg-amber-50"}`}
+                      title={`Insert $${v.identifier}`}>${v.identifier}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* CANVAS */}
+        <div className={`flex-1 overflow-auto flex items-start justify-center p-8 ${dark?"bg-[#090f1e]":"bg-slate-300"}`}
+          onClick={()=>{setSelectedId(null);setShowVarPanel(false);}}>
+          <div style={{position:"relative",width:CW,minHeight:CH,background:pageColor,boxShadow:"0 8px 40px rgba(0,0,0,0.2)",flexShrink:0}}
+            onClick={e=>e.stopPropagation()}>
+            {/* Grid overlay */}
+            {gridSnap&&!previewMode&&(
+              <div style={{position:"absolute",inset:0,pointerEvents:"none",zIndex:0,backgroundImage:`linear-gradient(rgba(0,0,0,0.04) 1px, transparent 1px),linear-gradient(90deg, rgba(0,0,0,0.04) 1px, transparent 1px)`,backgroundSize:`${SNAP}px ${SNAP}px`}}/>
+            )}
+            {[...elements].sort((a,b)=>(a.zIndex||1)-(b.zIndex||1)).map(el=>(
+              <div key={el.id} style={{position:"absolute",left:el.x,top:el.y,width:el.w,height:el.h,zIndex:el.zIndex||1}}>
+                <CanvasElement el={el} selected={selectedId===el.id} onSelect={setSelectedId} onPointerDown={onElDown} vals={previewVals} previewMode={previewMode}/>
+                {selectedId===el.id&&!previewMode&&(
+                  <ResizeHandles onDown={(e,handle)=>onResDown(e,el.id,handle)}/>
+                )}
+              </div>
+            ))}
+            {elements.length===0&&!previewMode&&(
+              <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:8,opacity:0.3,pointerEvents:"none"}}>
+                <div style={{fontSize:40}}>📄</div>
+                <div style={{fontSize:13,color:"#64748b",fontWeight:600}}>Add components from the left panel</div>
+                <div style={{fontSize:11,color:"#94a3b8"}}>Shortcut: Del to delete · Ctrl+D to duplicate · Esc to deselect</div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* RIGHT PANEL */}
+        {!previewMode&&(
+          <div className={`w-52 flex-shrink-0 border-l flex flex-col overflow-hidden ${dark?"bg-[#0c1929] border-slate-700":"bg-white border-slate-200"}`}>
+            <div className={`p-3 border-b flex-shrink-0 ${dark?"border-slate-700":"border-slate-200"}`}>
+              <label className={`block text-xs mb-0.5 ${dark?"text-slate-400":"text-slate-500"}`}>Template Name</label>
+              <input value={tname} onChange={e=>setTname(e.target.value)} className={`w-full border rounded px-2 py-1.5 text-xs focus:outline-none mb-2 ${dark?"bg-slate-700 border-slate-600 text-white":"bg-white border-slate-300 text-slate-800"}`}/>
+              <label className={`block text-xs mb-0.5 ${dark?"text-slate-400":"text-slate-500"}`}>Page Color</label>
+              <div className="flex gap-1.5 items-center">
+                <input type="color" value={pageColor} onChange={e=>setPageColor(e.target.value)} className="w-7 h-6 rounded border-0 cursor-pointer"/>
+                <input value={pageColor} onChange={e=>setPageColor(e.target.value)} className={`flex-1 border rounded px-2 py-1 text-xs ${dark?"bg-slate-700 border-slate-600 text-white":"bg-white border-slate-300"}`}/>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <PropertiesPanel el={selected} updateEl={updateEl} dark={dark} variables={variables} setEditingText={setEditingText} setEditDataEl={setEditDataEl}/>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Modals */}
+      {editingEl&&(
+        <EditTextModal el={editingEl} updateEl={updateEl} onClose={()=>setEditingText(null)} dark={dark} variables={variables}/>
+      )}
+      {editDataEl&&(
+        <EditDataModal el={editDataEl} updateEl={updateEl} onClose={()=>setEditDataEl(null)} dark={dark}/>
+      )}
+    </div>
+  );
+};
+
+// ── VARIABLE MANAGER ──────────────────────────────────────────────
+const VariableManager = ({variables, setVariables, devId, dark}) => {
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({name:"",identifier:"",type:"text",defaultValue:"",formula:"",unit:""});
+  const toast = useToast();
+  const SF = (k,v) => setForm(f=>({...f,[k]:v}));
+  const inp = `w-full border rounded-lg px-3 py-2 text-sm focus:outline-none ${dark?"bg-slate-800 border-slate-600 text-white":"bg-white border-slate-300 text-slate-800"}`;
+  const myVars = (variables||[]).filter(v=>v.devId===devId);
+
+  const save = () => {
+    if(!form.name.trim()||!form.identifier.trim()) return;
+    const clean = form.identifier.trim().replace(/\s+/g,"_").replace(/[^a-z0-9_]/gi,"").toLowerCase();
+    setVariables(vs=>[...vs,{...form,id:`pv${Date.now()}`,devId,identifier:clean,createdAt:new Date().toISOString()}]);
+    setShowAdd(false); setForm({name:"",identifier:"",type:"text",defaultValue:"",formula:"",unit:""});
+    toast.show({message:`Variable "$${clean}" added.`});
+  };
+
+  const BUILTIN_VARS = [
+    {group:"Account",vars:["companyName","companyEmail","companyPhone","electricityRate","costPerKW","generationPerKW"]},
+    {group:"Project",vars:["customerName","customerPhone","customerEmail","projectSize","projectType","systemCost"]},
+    {group:"Calculated",vars:["monthlyGeneration","monthlySavings","yearlySavings","paybackYears","roi25","yearlyGeneration"]},
+  ];
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className={`font-bold text-sm ${dark?"text-white":"text-slate-800"}`}>Variables & Formulas</h3>
+          <p className={`text-xs ${dark?"text-slate-400":"text-slate-500"}`}>Use <code className="font-mono">$identifier</code> anywhere in template text</p>
+        </div>
+        <button onClick={()=>setShowAdd(true)} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-900">+ Add Variable</button>
+      </div>
+
+      {/* Built-in vars reference */}
+      <div className={`border rounded-xl p-4 mb-4 ${dark?"border-slate-700/50 bg-slate-800/30":"border-slate-200 bg-slate-50"}`}>
+        <p className={`text-xs font-bold mb-3 ${dark?"text-slate-400":"text-slate-500"}`}>BUILT-IN VARIABLES (always available)</p>
+        <div className="space-y-2">
+          {BUILTIN_VARS.map(g=>(
+            <div key={g.group}>
+              <p className={`text-xs font-semibold mb-1 ${dark?"text-teal-400":"text-teal-700"}`}>{g.group}</p>
+              <div className="flex flex-wrap gap-1">
+                {g.vars.map(k=>(
+                  <code key={k} className={`text-xs px-1.5 py-0.5 rounded font-mono ${dark?"bg-slate-700 text-amber-400":"bg-amber-50 text-amber-700 border border-amber-200"}`}>${k}</code>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Custom vars table */}
+      <div className={`border rounded-xl overflow-hidden ${dark?"border-slate-700/50":"border-slate-200 shadow-sm"}`}>
+        <table className="w-full text-sm" style={{minWidth:560}}>
+          <thead><tr className={`border-b text-xs font-medium ${dark?"border-slate-700 bg-slate-800/30 text-slate-400":"border-slate-200 bg-slate-50 text-slate-500"}`}>
+            {["Name","Identifier","Type","Formula / Default","Unit",""].map(h=><th key={h} className="text-left px-3 py-2.5">{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {myVars.length===0&&<tr><td colSpan={6} className={`text-center py-8 text-sm ${dark?"text-slate-500":"text-slate-400"}`}>No custom variables yet.</td></tr>}
+            {myVars.map(v=>(
+              <tr key={v.id} className={`border-b ${dark?"border-slate-700/30 hover:bg-slate-800/20":"border-slate-100 hover:bg-slate-50"}`}>
+                <td className={`px-3 py-2.5 font-medium text-sm ${dark?"text-white":"text-slate-800"}`}>{v.name}</td>
+                <td className="px-3 py-2.5"><code className={`text-xs px-1.5 py-0.5 rounded font-mono ${dark?"bg-slate-700 text-amber-400":"bg-amber-50 text-amber-700"}`}>${v.identifier}</code></td>
+                <td className={`px-3 py-2.5 text-xs capitalize ${dark?"text-slate-400":"text-slate-500"}`}>{v.type}</td>
+                <td className={`px-3 py-2.5 text-xs font-mono max-w-32 truncate ${dark?"text-sky-400":"text-sky-700"}`} title={v.type==="formula"?v.formula:v.defaultValue}>{v.type==="formula"?v.formula:v.defaultValue||"—"}</td>
+                <td className={`px-3 py-2.5 text-xs ${dark?"text-slate-500":"text-slate-400"}`}>{v.unit||"—"}</td>
+                <td className="px-3 py-2.5"><button onClick={()=>{if(window.confirm("Delete?"))setVariables(vs=>vs.filter(x=>x.id!==v.id));}} className={`text-xs ${dark?"text-red-400":"text-red-500"}`}>✕</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {showAdd&&(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={()=>setShowAdd(false)}>
+          <div className={`w-full max-w-lg rounded-2xl shadow-2xl p-6 ${dark?"bg-[#0a1628]":"bg-white"}`} onClick={e=>e.stopPropagation()}>
+            <h3 className={`font-bold text-lg mb-5 ${dark?"text-white":"text-slate-800"}`}>Add Custom Variable</h3>
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div>
-                <label className={`block text-xs font-semibold mb-1 ${dark ? "text-slate-300" : "text-slate-700"}`}>Variable Name</label>
-                <input value={form.name} onChange={e => { SF("name", e.target.value); SF("identifier", e.target.value.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "")); }} placeholder="e.g. Monthly Savings" className={inp}/>
+                <label className={`block text-xs font-semibold mb-1 ${dark?"text-slate-300":"text-slate-700"}`}>Name</label>
+                <input value={form.name} onChange={e=>{SF("name",e.target.value);SF("identifier",e.target.value.toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,""));}} placeholder="e.g. Monthly Savings" className={inp}/>
               </div>
               <div>
-                <label className={`block text-xs font-semibold mb-1 ${dark ? "text-slate-300" : "text-slate-700"}`}>Identifier</label>
-                <input value={form.identifier} onChange={e => SF("identifier", e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))} className={`${inp} font-mono`}/>
-                <p className={`text-xs mt-0.5 ${dark ? "text-slate-500" : "text-slate-400"}`}>Use as: ${form.identifier || "identifier"}</p>
+                <label className={`block text-xs font-semibold mb-1 ${dark?"text-slate-300":"text-slate-700"}`}>Identifier ($)</label>
+                <input value={form.identifier} onChange={e=>SF("identifier",e.target.value.toLowerCase().replace(/[^a-z0-9_]/g,""))} className={`${inp} font-mono`}/>
               </div>
               <div>
-                <label className={`block text-xs font-semibold mb-1 ${dark ? "text-slate-300" : "text-slate-700"}`}>Type</label>
-                <select value={form.type} onChange={e => SF("type", e.target.value)} className={inp}>
-                  <option value="text">Text</option><option value="number">Number</option>
-                  <option value="formula">Formula (calculated)</option>
+                <label className={`block text-xs font-semibold mb-1 ${dark?"text-slate-300":"text-slate-700"}`}>Type</label>
+                <select value={form.type} onChange={e=>SF("type",e.target.value)} className={inp}>
+                  <option value="text">Text</option><option value="number">Number</option><option value="formula">Formula (auto-calc)</option>
                 </select>
               </div>
               <div>
-                <label className={`block text-xs font-semibold mb-1 ${dark ? "text-slate-300" : "text-slate-700"}`}>Unit (optional)</label>
-                <input value={form.unit} onChange={e => SF("unit", e.target.value)} placeholder="kW, ₹, kWh..." className={inp}/>
+                <label className={`block text-xs font-semibold mb-1 ${dark?"text-slate-300":"text-slate-700"}`}>Unit</label>
+                <input value={form.unit} onChange={e=>SF("unit",e.target.value)} placeholder="kW, ₹, kWh…" className={inp}/>
               </div>
             </div>
-            {form.type === "formula" ? (
-              <div className="mb-4">
-                <label className={`block text-xs font-semibold mb-1 ${dark ? "text-slate-300" : "text-slate-700"}`}>Formula Expression</label>
-                <input value={form.formula} onChange={e => SF("formula", e.target.value)} className={`${inp} font-mono`} placeholder="e.g. monthlyGeneration * currentTariff"/>
-                <p className={`text-xs mt-1 ${dark ? "text-slate-500" : "text-slate-400"}`}>Use other variable identifiers in the expression.</p>
-              </div>
-            ) : (
-              <div className="mb-4">
-                <label className={`block text-xs font-semibold mb-1 ${dark ? "text-slate-300" : "text-slate-700"}`}>Default Value</label>
-                <input value={form.defaultValue} onChange={e => SF("defaultValue", e.target.value)} placeholder="Default value (optional)" className={inp}/>
-              </div>
-            )}
+            {form.type==="formula"
+              ? <div className="mb-4"><label className={`block text-xs font-semibold mb-1 ${dark?"text-slate-300":"text-slate-700"}`}>Formula <span className="font-normal text-slate-400">(use $identifiers or plain names)</span></label>
+                  <input value={form.formula} onChange={e=>SF("formula",e.target.value)} className={`${inp} font-mono`} placeholder="monthlyGeneration * electricityRate"/>
+                  <p className={`text-xs mt-1 ${dark?"text-slate-500":"text-slate-400"}`}>Supported: + − * / and parentheses.</p>
+                </div>
+              : <div className="mb-4"><label className={`block text-xs font-semibold mb-1 ${dark?"text-slate-300":"text-slate-700"}`}>Default Value</label>
+                  <input value={form.defaultValue} onChange={e=>SF("defaultValue",e.target.value)} className={inp}/>
+                </div>
+            }
             <div className="flex gap-3">
-              <button onClick={save} disabled={!form.name.trim() || !form.identifier.trim()} className={`flex-1 py-2.5 rounded-lg font-bold text-sm ${form.name.trim() && form.identifier.trim() ? "bg-amber-500 hover:bg-amber-400 text-slate-900" : "bg-slate-200 text-slate-400 cursor-not-allowed"}`}>Add Variable</button>
-              <button onClick={() => setShowAdd(false)} className={`px-4 py-2.5 rounded-lg text-sm ${dark ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>Cancel</button>
+              <button onClick={save} disabled={!form.name.trim()||!form.identifier.trim()} className={`flex-1 py-2.5 rounded-lg font-bold text-sm ${form.name.trim()&&form.identifier.trim()?"bg-amber-500 hover:bg-amber-400 text-slate-900":"bg-slate-200 text-slate-400 cursor-not-allowed"}`}>Add Variable</button>
+              <button onClick={()=>setShowAdd(false)} className={`px-4 py-2.5 rounded-lg text-sm ${dark?"bg-slate-700 text-slate-300":"bg-slate-100 text-slate-600"}`}>Cancel</button>
             </div>
           </div>
         </div>
@@ -3147,223 +3424,268 @@ const VariableManager = ({ variables, setVariables, devId, dark }) => {
   );
 };
 
-// ── PROPOSAL GENERATOR (Fill form for customer) ──────────────────
-const ProposalGeneratorNew = ({ template, variables, project, developer, onGenerate, onClose }) => {
-  const { dark } = useTheme();
-  const initVals = resolveVars(variables || [], {}, project, developer);
-  const fillLaterFields = (template?.elements || []).filter(e => e.type === "text" && e.fieldType === "fill_later");
-  const placeholderImages = (template?.elements || []).filter(e => e.type === "image" && e.dataType === "placeholder");
-  const dynamicImages = (template?.elements || []).filter(e => e.type === "image" && e.dataType === "dynamic");
+// ── PROPOSAL GENERATOR FORM ────────────────────────────────────────
+const ProposalGeneratorNew = ({template, variables, project, developer, onGenerate, onClose}) => {
+  const {dark}=useTheme();
+  const toast=useToast();
+  const elements = template?.elements||[];
+  const allVals = resolveVars(variables||[], {}, project, developer);
+  const fillLaterEls = elements.filter(e=>e.type==="text"&&e.fieldType==="fill_later");
+  const textListEls  = elements.filter(e=>e.type==="text"&&e.fieldType==="text_list");
+  const imgPlaceholders = elements.filter(e=>e.type==="image"&&e.dataType==="placeholder"&&!e.placeholderKey);
+  const imgDynamic   = elements.filter(e=>e.type==="image"&&e.dataType==="dynamic");
+  const imageGrids   = elements.filter(e=>e.type==="imagegrid");
 
-  const [fillValues, setFillValues] = useState(Object.fromEntries(fillLaterFields.map(e => [e.id, ""])));
-  const [uploadedImages, setUploadedImages] = useState({});
-  const [selectedDynamic, setSelectedDynamic] = useState({});
-  const [selectedBrands, setSelectedBrands] = useState({});
+  const [fillVals,  setFillVals]  = useState(Object.fromEntries(fillLaterEls.map(e=>[e.id,e.defaultValue||""])));
+  const [listVals,  setListVals]  = useState(Object.fromEntries(textListEls.map(e=>[e.id,(e.options||[])[0]||""])));
+  const [imgUploads,setImgUploads]= useState({});
+  const [dynSel,    setDynSel]    = useState({});
+  const [gridSel,   setGridSel]   = useState({});
+  const [tab,       setTab]       = useState("inputs");
   const fileRefs = useRef({});
-
-  const allVals = resolveVars(variables || [], initVals, project, developer);
-  const inp = `w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none ${dark ? "bg-slate-800 border-slate-600 text-white focus:border-teal-400" : "bg-white border-slate-300 text-slate-800 focus:border-teal-500"}`;
+  const inp = `w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none ${dark?"bg-slate-800 border-slate-600 text-white focus:border-teal-400":"bg-white border-slate-300 text-slate-800 focus:border-teal-500"}`;
 
   const generate = () => {
-    const finalVals = { ...allVals };
-    fillLaterFields.forEach(e => { finalVals[`__fill_${e.id}`] = fillValues[e.id] || ""; });
-    onGenerate(finalVals, template, uploadedImages, selectedDynamic, selectedBrands);
+    const genVals = {...allVals};
+    fillLaterEls.forEach(e=>{ genVals[`__fl_${e.id}`]=fillVals[e.id]||""; });
+    textListEls.forEach(e=>{  genVals[`__list_${e.id}`]=listVals[e.id]||""; });
+    onGenerate(genVals, template, imgUploads, dynSel, gridSel);
   };
+
+  const hasInputs = fillLaterEls.length>0||textListEls.length>0;
+  const hasImages = imgPlaceholders.length>0||imgDynamic.length>0;
+  const hasGrids  = imageGrids.length>0;
 
   return (
     <div className="fixed inset-0 z-50 flex" onClick={onClose}>
       <div className="flex-1 bg-black/60 backdrop-blur-sm"/>
-      <div className={`w-full sm:w-[520px] h-full flex flex-col overflow-hidden shadow-2xl ${dark ? "bg-[#0a1628]" : "bg-white"}`} onClick={e => e.stopPropagation()}>
-        <div className={`flex items-center gap-3 px-5 py-4 border-b flex-shrink-0 ${dark ? "border-slate-700" : "border-slate-200"}`}>
+      <div className={`w-full sm:w-[540px] h-full flex flex-col shadow-2xl ${dark?"bg-[#0a1628]":"bg-white"}`} onClick={e=>e.stopPropagation()}>
+        <div className={`flex items-center gap-3 px-5 py-4 border-b flex-shrink-0 ${dark?"border-slate-700":"border-slate-200"}`}>
           <div className="flex-1">
-            <h2 className={`text-base font-bold ${dark ? "text-white" : "text-slate-800"}`}>Create Proposal</h2>
-            <p className={`text-xs ${dark ? "text-slate-400" : "text-slate-500"}`}>{template?.name} · {project?.customerName}</p>
+            <h2 className={`text-base font-bold ${dark?"text-white":"text-slate-800"}`}>Create Proposal</h2>
+            <p className={`text-xs ${dark?"text-slate-400":"text-slate-500"}`}>{template?.name} · {project?.customerName||"Customer"}</p>
           </div>
-          <button onClick={onClose} className={`p-1.5 rounded-lg ${dark ? "text-slate-400 hover:bg-slate-700" : "text-slate-400 hover:bg-slate-100"}`}>✕</button>
+          <button onClick={onClose} className={`p-1.5 rounded-lg ${dark?"text-slate-400 hover:bg-slate-700":"text-slate-400 hover:bg-slate-100"}`}>✕</button>
         </div>
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-          {/* Auto-filled values */}
-          <div className={`border rounded-xl p-4 ${dark ? "border-slate-700/50 bg-slate-800/30" : "border-slate-200 bg-slate-50"}`}>
-            <p className={`text-xs font-bold mb-3 ${dark ? "text-slate-400" : "text-slate-500"}`}>AUTO-FILLED FROM PROJECT</p>
-            <div className="grid grid-cols-2 gap-y-1.5 gap-x-4">
-              {[["Customer", allVals.customerName], ["System Size", `${allVals.projectSize} kW`], ["Company", allVals.companyName], ["Tariff", `₹${allVals.currentTariff}/kWh`]].map(([k, v]) => (
+
+        {/* Tabs */}
+        <div className={`flex border-b flex-shrink-0 ${dark?"border-slate-700":"border-slate-200"}`}>
+          {[["inputs","📝 Inputs",hasInputs],["images","🖼 Images",hasImages],["brands","⊞ Brands",hasGrids],["preview","👁 Preview",true]].map(([v,l,show])=>show&&(
+            <button key={v} onClick={()=>setTab(v)}
+              className={`flex-1 py-2.5 text-xs font-medium transition-colors ${tab===v?dark?"border-b-2 border-teal-400 text-teal-400":"border-b-2 border-teal-500 text-teal-600":dark?"text-slate-400 hover:text-white":"text-slate-500 hover:text-slate-700"}`}>
+              {l}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+          {/* AUTO-FILLED */}
+          <div className={`border rounded-xl p-3 mb-4 ${dark?"border-slate-700/50 bg-slate-800/30":"border-slate-200 bg-slate-50"}`}>
+            <p className={`text-xs font-bold mb-2 ${dark?"text-slate-400":"text-slate-500"}`}>AUTO-FILLED FROM PROJECT</p>
+            <div className="grid grid-cols-2 gap-y-1 gap-x-4">
+              {[["Customer",allVals.customerName],["Size",`${allVals.projectSize} kW`],["Company",allVals.companyName],["Tariff",`₹${allVals.electricityRate}/kWh`],["Monthly Gen",`${allVals.monthlyGeneration} kWh`],["Monthly Savings",`₹${(allVals.monthlySavings||0).toLocaleString("en-IN")}`]].map(([k,v])=>(
                 <div key={k} className="flex justify-between gap-2">
-                  <span className={`text-xs ${dark ? "text-slate-400" : "text-slate-500"}`}>{k}:</span>
-                  <span className={`text-xs font-medium truncate ${dark ? "text-white" : "text-slate-800"}`}>{v || "—"}</span>
+                  <span className={`text-xs ${dark?"text-slate-400":"text-slate-500"}`}>{k}:</span>
+                  <span className={`text-xs font-medium truncate ${dark?"text-white":"text-slate-800"}`}>{v||"—"}</span>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Fill Later fields */}
-          {fillLaterFields.length > 0 && (
-            <div>
-              <p className={`text-xs font-bold mb-3 ${dark ? "text-slate-300" : "text-slate-700"}`}>FILL IN FIELDS</p>
-              <div className="space-y-3">
-                {fillLaterFields.map(e => (
-                  <div key={e.id}>
-                    <label className={`block text-xs font-semibold mb-1 ${dark ? "text-slate-300" : "text-slate-700"}`}>{e.fieldName || "Text Field"}</label>
-                    <input value={fillValues[e.id] || ""} onChange={ev => setFillValues(v => ({ ...v, [e.id]: ev.target.value }))} placeholder={`Enter ${(e.fieldName || "text").toLowerCase()}...`} className={inp}/>
-                  </div>
-                ))}
-              </div>
+          {tab==="inputs"&&(
+            <div className="space-y-4">
+              {fillLaterEls.map(e=>(
+                <div key={e.id}>
+                  <label className={`block text-xs font-semibold mb-1 ${dark?"text-slate-300":"text-slate-700"}`}>{e.fieldName||"Text Field"}</label>
+                  {e.inputType==="textarea"
+                    ? <textarea rows={3} value={fillVals[e.id]||""} onChange={ev=>setFillVals(v=>({...v,[e.id]:ev.target.value}))} className={`${inp} resize-none`}/>
+                    : <input type={e.inputType||"text"} value={fillVals[e.id]||""} onChange={ev=>setFillVals(v=>({...v,[e.id]:ev.target.value}))} className={inp}/>
+                  }
+                </div>
+              ))}
+              {textListEls.map(e=>(
+                <div key={e.id}>
+                  <label className={`block text-xs font-semibold mb-1 ${dark?"text-slate-300":"text-slate-700"}`}>{e.fieldName||"Select"}</label>
+                  <select value={listVals[e.id]||""} onChange={ev=>setListVals(v=>({...v,[e.id]:ev.target.value}))} className={inp}>
+                    {(e.options||[]).map(opt=><option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                </div>
+              ))}
+              {!hasInputs&&<p className={`text-sm text-center py-8 ${dark?"text-slate-500":"text-slate-400"}`}>No fill-later fields in this template.</p>}
             </div>
           )}
 
-          {/* Dynamic image dropdowns */}
-          {dynamicImages.length > 0 && (
-            <div>
-              <p className={`text-xs font-bold mb-3 ${dark ? "text-slate-300" : "text-slate-700"}`}>SELECT IMAGES</p>
-              <div className="space-y-3">
-                {dynamicImages.map(e => (
+          {tab==="images"&&(
+            <div className="space-y-4">
+              {imgPlaceholders.map(e=>(
+                <div key={e.id}>
+                  <label className={`block text-xs font-semibold mb-2 ${dark?"text-slate-300":"text-slate-700"}`}>{e.fieldName||"Upload Image"}</label>
+                  <div className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors ${dark?"border-slate-600 hover:border-teal-500":"border-slate-200 hover:border-teal-400"}`}
+                    onClick={()=>fileRefs.current[e.id]?.click()}>
+                    {imgUploads[`__img_${e.id}`]
+                      ? <img src={imgUploads[`__img_${e.id}`]} alt="" className="max-h-28 mx-auto rounded object-contain"/>
+                      : <><div className="text-2xl mb-1">📤</div><p className={`text-xs ${dark?"text-slate-500":"text-slate-400"}`}>Click to upload</p></>}
+                    <input ref={el=>fileRefs.current[e.id]=el} type="file" className="hidden" accept="image/*"
+                      onChange={ev=>{const f=ev.target.files[0];if(!f)return;const r=new FileReader();r.onload=ex=>setImgUploads(s=>({...s,[`__img_${e.id}`]:ex.target.result}));r.readAsDataURL(f);}}/>
+                  </div>
+                </div>
+              ))}
+              {imgDynamic.map(e=>(
+                <div key={e.id}>
+                  <label className={`block text-xs font-semibold mb-2 ${dark?"text-slate-300":"text-slate-700"}`}>{e.fieldName||"Select Image"}</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(e.dynamicOptions||[]).map((opt,i)=>(
+                      <button key={i} onClick={()=>setDynSel(s=>({...s,[`__dyn_${e.id}`]:opt.src}))}
+                        className={`p-2 rounded-xl border transition-all ${dynSel[`__dyn_${e.id}`]===opt.src?`border-teal-500 ${dark?"bg-teal-500/10":"bg-teal-50"}`:dark?"border-slate-700 hover:border-slate-500":"border-slate-200 hover:border-slate-300"}`}>
+                        <img src={opt.src} alt={opt.label} className="w-full h-12 object-contain rounded"/>
+                        <p className={`text-xs mt-1 truncate ${dark?"text-slate-400":"text-slate-500"}`}>{opt.label}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {!hasImages&&<p className={`text-sm text-center py-8 ${dark?"text-slate-500":"text-slate-400"}`}>No image upload fields in this template.</p>}
+            </div>
+          )}
+
+          {tab==="brands"&&(
+            <div className="space-y-5">
+              {imageGrids.map(e=>{
+                const cat = e.gridCategory||"panel";
+                const brands = BRAND_CATALOG[cat]||[];
+                const sel = gridSel[`__grid_${e.id}`]||[];
+                return (
                   <div key={e.id}>
-                    <label className={`block text-xs font-semibold mb-2 ${dark ? "text-slate-300" : "text-slate-700"}`}>{e.fieldName || "Dynamic Image"}</label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {(e.dynamicOptions || []).map((opt, i) => (
-                        <button key={i} onClick={() => setSelectedDynamic(s => ({ ...s, [e.id]: opt.src }))}
-                          className={`p-2 rounded-xl border transition-all ${selectedDynamic[e.id] === opt.src ? "border-teal-500 bg-teal-500/10" : dark ? "border-slate-700 hover:border-slate-500" : "border-slate-200 hover:border-slate-300"}`}>
-                          <img src={opt.src} alt={opt.label} className="w-full h-12 object-contain rounded"/>
-                          <p className={`text-xs mt-1 truncate ${dark ? "text-slate-400" : "text-slate-500"}`}>{opt.label}</p>
-                        </button>
-                      ))}
+                    <p className={`text-xs font-bold mb-2 capitalize ${dark?"text-slate-300":"text-slate-700"}`}>
+                      Select {cat} Brands <span className={`font-normal ${dark?"text-slate-500":"text-slate-400"}`}>(max {e.maxCount||5})</span>
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {brands.map((b,i)=>{
+                        const isS = sel.includes(b.name);
+                        return (
+                          <button key={i} onClick={()=>setGridSel(s=>{
+                            const cur=s[`__grid_${e.id}`]||[];
+                            const max=e.maxCount||5;
+                            return {...s,[`__grid_${e.id}`]:isS?cur.filter(n=>n!==b.name):cur.length<max?[...cur,b.name]:cur};
+                          })}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${isS?"border-teal-500 bg-teal-50 text-teal-700":dark?"border-slate-700 text-slate-400 hover:border-slate-500":"border-slate-200 text-slate-600 hover:border-slate-300"}`}>
+                            {b.name}
+                          </button>
+                        );
+                      })}
                     </div>
+                    <p className={`text-xs mt-1 ${dark?"text-slate-600":"text-slate-400"}`}>{sel.length}/{e.maxCount||5} selected</p>
                   </div>
-                ))}
-              </div>
+                );
+              })}
+              {!hasGrids&&<p className={`text-sm text-center py-8 ${dark?"text-slate-500":"text-slate-400"}`}>No image grids in this template.</p>}
             </div>
           )}
 
-          {/* Placeholder image uploads */}
-          {placeholderImages.length > 0 && (
-            <div>
-              <p className={`text-xs font-bold mb-3 ${dark ? "text-slate-300" : "text-slate-700"}`}>UPLOAD IMAGES</p>
-              <div className="space-y-3">
-                {placeholderImages.map(e => (
-                  <div key={e.id}>
-                    <label className={`block text-xs font-semibold mb-1 ${dark ? "text-slate-300" : "text-slate-700"}`}>{e.fieldName || "Upload Image"}</label>
-                    <div className={`border-2 border-dashed rounded-xl p-4 text-center ${dark ? "border-slate-600 hover:border-teal-500" : "border-slate-200 hover:border-teal-400"} transition-colors cursor-pointer`}
-                      onClick={() => fileRefs.current[e.id]?.click()}>
-                      {uploadedImages[e.id]
-                        ? <img src={uploadedImages[e.id]} alt="" className="max-h-24 mx-auto rounded object-contain"/>
-                        : <><div className="text-2xl mb-1">📤</div><p className={`text-xs ${dark ? "text-slate-500" : "text-slate-400"}`}>Click to upload</p></>}
-                      <input ref={el => fileRefs.current[e.id] = el} type="file" className="hidden" accept="image/*"
-                        onChange={ev => { const f = ev.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = ex => setUploadedImages(s => ({ ...s, [e.id]: ex.target.result })); r.readAsDataURL(f); }}/>
+          {tab==="preview"&&(
+            <div className={`border rounded-xl overflow-hidden ${dark?"border-slate-700":"border-slate-200"}`}>
+              <div className={`px-3 py-2 text-xs font-bold border-b ${dark?"border-slate-700 bg-slate-800 text-slate-400":"border-slate-200 bg-slate-50 text-slate-500"}`}>
+                LIVE PREVIEW (sample data)
+              </div>
+              <div style={{position:"relative",width:"100%",paddingBottom:"120%",background:template?.pageColor||"white",overflow:"hidden"}}>
+                <div style={{position:"absolute",inset:0,transform:`scale(${(280/794).toFixed(3)})`,transformOrigin:"top left",width:794}}>
+                  {(template?.elements||[]).sort((a,b)=>(a.zIndex||1)-(b.zIndex||1)).map(el=>(
+                    <div key={el.id} style={{position:"absolute",left:el.x,top:el.y,width:el.w,height:el.h,zIndex:el.zIndex||1}}>
+                      <CanvasElement el={el} selected={false} onSelect={()=>{}} onPointerDown={()=>{}} vals={allVals} previewMode={true} generationVals={{...fillVals,...listVals,...imgUploads,...dynSel,...gridSel}}/>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             </div>
           )}
-
-          {/* Image grid brand selection */}
-          {(template?.elements || []).filter(e => e.type === "imagegrid").map(e => (
-            <div key={e.id}>
-              <p className={`text-xs font-bold mb-3 ${dark ? "text-slate-300" : "text-slate-700"}`}>SELECT {(e.gridType || "panel").toUpperCase()} BRANDS (max {e.maxCount || 5})</p>
-              <div className="flex flex-wrap gap-2">
-                {(BRAND_IMAGES[e.gridType || "panel"] || []).map((b, i) => {
-                  const selected = (selectedBrands[e.id] || []).includes(b.name);
-                  return (
-                    <button key={i} onClick={() => {
-                      setSelectedBrands(s => {
-                        const cur = s[e.id] || [];
-                        const max = e.maxCount || 5;
-                        return { ...s, [e.id]: selected ? cur.filter(n => n !== b.name) : cur.length < max ? [...cur, b.name] : cur };
-                      });
-                    }} className={`px-2 py-1 rounded-lg text-xs font-medium border transition-all ${selected ? "border-teal-500 text-teal-600 bg-teal-50" : dark ? "border-slate-700 text-slate-400" : "border-slate-200 text-slate-600"}`}>
-                      {b.name}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
         </div>
-        <div className={`px-5 py-4 border-t flex gap-3 flex-shrink-0 ${dark ? "border-slate-700" : "border-slate-200"}`}>
-          <button onClick={generate} className="flex-1 py-2.5 rounded-lg font-bold text-sm bg-amber-500 hover:bg-amber-400 text-slate-900 transition-colors">⚡ Generate Proposal</button>
-          <button onClick={onClose} className={`px-5 py-2.5 rounded-lg text-sm ${dark ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-600"}`}>Cancel</button>
+
+        <div className={`px-5 py-4 border-t flex gap-3 flex-shrink-0 ${dark?"border-slate-700":"border-slate-200"}`}>
+          <button onClick={generate} className="flex-1 py-2.5 rounded-lg font-bold text-sm bg-amber-500 hover:bg-amber-400 text-slate-900">
+            ⚡ Generate Proposal
+          </button>
+          <button onClick={onClose} className={`px-5 py-2.5 rounded-lg text-sm ${dark?"bg-slate-700 text-slate-300":"bg-slate-100 text-slate-600"}`}>Cancel</button>
         </div>
       </div>
     </div>
   );
 };
 
-// ── TEMPLATE STUDIO PAGE ─────────────────────────────────────────
-const TemplateStudioPage = ({ propVariables, setPropVariables, propTemplates, setPropTemplates, developers, currentUser }) => {
-  const { dark } = useTheme();
-  const toast = useToast();
+// ── TEMPLATE STUDIO PAGE ──────────────────────────────────────────
+const TemplateStudioPage = ({propVariables, setPropVariables, propTemplates, setPropTemplates, developers, currentUser}) => {
+  const {dark}=useTheme();
+  const toast=useToast();
   const [activeTab, setActiveTab] = useState("templates");
-  const [editing, setEditing] = useState(null); // template obj or "new"
-  const isSA = currentUser.role === ROLES.SUPER_ADMIN;
-  const devId = currentUser.developerId || (isSA && developers[0]?.id) || "";
-  const myVars = (propVariables || []).filter(v => v.devId === devId || isSA);
-  const myTemplates = (propTemplates || []).filter(t => t.devId === devId || isSA);
+  const [editing, setEditing] = useState(null);
+  const isSA = currentUser.role===ROLES.SUPER_ADMIN;
+  const devId = currentUser.developerId||(isSA&&developers[0]?.id)||"";
+  const myVars = (propVariables||[]).filter(v=>v.devId===devId||isSA);
+  const myTemplates = (propTemplates||[]).filter(t=>t.devId===devId||isSA);
 
-  const saveTemplate = tmpl => {
-    const isNew = !propTemplates.find(t => t.id === tmpl.id);
-    if (isNew) {
-      setPropTemplates(ts => [...ts, { ...tmpl, id: `pt${Date.now()}`, devId, createdAt: new Date().toISOString() }]);
+  const saveTemplate = t => {
+    const isNew = !propTemplates.find(x=>x.id===t.id);
+    if(isNew) {
+      setPropTemplates(ts=>[...ts,{...t,id:`pt${Date.now()}`,devId,createdAt:new Date().toISOString()}]);
+      toast.show({message:`"${t.name}" created!`});
     } else {
-      setPropTemplates(ts => ts.map(t => t.id === tmpl.id ? { ...t, ...tmpl } : t));
+      setPropTemplates(ts=>ts.map(x=>x.id===t.id?{...x,...t}:x));
+      toast.show({message:`"${t.name}" saved.`});
     }
     setEditing(null);
   };
 
-  const delTemplate = id => { if (!window.confirm("Delete this template?")) return; setPropTemplates(ts => ts.filter(t => t.id !== id)); };
-
-  if (editing) {
-    return <ProposalCanvasEditor template={editing === "new" ? null : editing} variables={myVars} dark={dark} onSave={saveTemplate} onClose={() => setEditing(null)}/>;
-  }
+  if(editing) return (
+    <ProposalCanvasEditor template={editing==="new"?null:editing} variables={myVars} dark={dark} onSave={saveTemplate} onClose={()=>setEditing(null)}/>
+  );
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
+      <div className="flex items-center justify-between mb-5">
         <div>
-          <h1 className={`text-xl font-bold ${dark ? "text-white" : "text-slate-800"}`}>Template Studio</h1>
-          <p className={`text-sm ${dark ? "text-slate-400" : "text-slate-500"}`}>Design proposal templates with free-position canvas + smart variables</p>
+          <h1 className={`text-xl font-bold ${dark?"text-white":"text-slate-800"}`}>Template Studio</h1>
+          <p className={`text-sm ${dark?"text-slate-400":"text-slate-500"}`}>Canva-like proposal editor · free-position canvas · rich text · graphs · tables</p>
         </div>
-        {activeTab === "templates" && <button onClick={() => setEditing("new")} className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm bg-amber-500 hover:bg-amber-400 text-slate-900">✏️ New Template</button>}
+        {activeTab==="templates"&&<button onClick={()=>setEditing("new")} className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm bg-amber-500 hover:bg-amber-400 text-slate-900">✏️ New Template</button>}
       </div>
 
-      <div className={`flex gap-1 rounded-xl p-1 mb-5 w-fit border ${dark ? "bg-[#070e1c] border-slate-800" : "bg-slate-100 border-slate-200"}`}>
-        {[["templates", "📄 Templates"], ["variables", "⚙ Variables & Formulas"]].map(([v, l]) => (
-          <button key={v} onClick={() => setActiveTab(v)} className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${activeTab === v ? "bg-amber-500 text-slate-900" : dark ? "text-slate-400 hover:text-white" : "text-slate-500 hover:text-slate-700"}`}>{l}</button>
+      <div className={`flex gap-1 rounded-xl p-1 mb-5 w-fit border ${dark?"bg-[#070e1c] border-slate-800":"bg-slate-100 border-slate-200"}`}>
+        {[["templates","📄 Templates"],["variables","⚙ Variables & Formulas"]].map(([v,l])=>(
+          <button key={v} onClick={()=>setActiveTab(v)} className={`px-4 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap ${activeTab===v?"bg-amber-500 text-slate-900":dark?"text-slate-400 hover:text-white":"text-slate-500 hover:text-slate-700"}`}>{l}</button>
         ))}
       </div>
 
-      {activeTab === "variables" && <VariableManager variables={propVariables || []} setVariables={setPropVariables} devId={devId} dark={dark}/>}
+      {activeTab==="variables"&&<VariableManager variables={propVariables||[]} setVariables={setPropVariables} devId={devId} dark={dark}/>}
 
-      {activeTab === "templates" && (
-        myTemplates.length === 0 ? (
-          <div className={`text-center py-20 border-2 border-dashed rounded-2xl ${dark ? "border-slate-800 text-slate-600" : "border-slate-200 text-slate-400"}`}>
-            <div className="text-5xl mb-4">📄</div>
-            <p className={`text-lg font-bold mb-2 ${dark ? "text-white" : "text-slate-800"}`}>No templates yet</p>
-            <p className="text-sm opacity-60 mb-5">Build your first proposal template with the free-position canvas editor</p>
-            <button onClick={() => setEditing("new")} className="px-6 py-3 rounded-xl font-bold text-sm bg-amber-500 hover:bg-amber-400 text-slate-900">✏️ Build First Template</button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {myTemplates.map(t => (
-              <div key={t.id} className={`border rounded-xl p-4 ${dark ? "bg-[#0c1929] border-slate-700/50" : "bg-white border-slate-200 shadow-sm"}`}>
-                <div className="flex items-start gap-3 mb-3">
-                  <div className="w-9 h-9 rounded-lg bg-amber-500/15 flex items-center justify-center text-amber-400 flex-shrink-0 text-lg">📄</div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className={`font-bold truncate ${dark ? "text-white" : "text-slate-800"}`}>{t.name}</h3>
-                    <p className={`text-xs ${dark ? "text-slate-400" : "text-slate-500"}`}>{(t.elements || []).length} elements · {new Date(t.createdAt).toLocaleDateString("en-IN")}</p>
+      {activeTab==="templates"&&(
+        myTemplates.length===0
+          ? <div className={`text-center py-20 border-2 border-dashed rounded-2xl ${dark?"border-slate-800 text-slate-600":"border-slate-200 text-slate-400"}`}>
+              <div className="text-5xl mb-4">📄</div>
+              <p className={`text-lg font-bold mb-2 ${dark?"text-white":"text-slate-800"}`}>No templates yet</p>
+              <p className="text-sm opacity-60 mb-5">Build your first proposal template with the free-position canvas editor</p>
+              <button onClick={()=>setEditing("new")} className="px-6 py-3 rounded-xl font-bold text-sm bg-amber-500 hover:bg-amber-400 text-slate-900">✏️ Build First Template</button>
+            </div>
+          : <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {myTemplates.map(t=>(
+                <div key={t.id} className={`border rounded-xl p-4 ${dark?"bg-[#0c1929] border-slate-700/50":"bg-white border-slate-200 shadow-sm"}`}>
+                  <div className="flex items-start gap-3 mb-3">
+                    <div className="w-9 h-9 rounded-lg bg-amber-500/15 flex items-center justify-center text-amber-400 flex-shrink-0 text-lg">📄</div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className={`font-bold truncate ${dark?"text-white":"text-slate-800"}`}>{t.name}</h3>
+                      <p className={`text-xs ${dark?"text-slate-400":"text-slate-500"}`}>{(t.elements||[]).length} elements · {t.pageSize||"A4"} · {new Date(t.createdAt||Date.now()).toLocaleDateString("en-IN")}</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1 mb-3">
+                    {[...new Set((t.elements||[]).map(e=>e.type))].map(tp=>(
+                      <span key={tp} className={`text-xs px-1.5 py-0.5 rounded capitalize ${dark?"bg-slate-700 text-slate-400":"bg-slate-100 text-slate-500"}`}>{tp}</span>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={()=>setEditing(t)} className={`flex-1 py-1.5 rounded-lg text-xs font-medium ${dark?"bg-slate-700 text-slate-300 hover:bg-slate-600":"bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>✏️ Edit</button>
+                    <button onClick={()=>{if(window.confirm("Delete?"))setPropTemplates(ts=>ts.filter(x=>x.id!==t.id));}} className={`px-2.5 py-1.5 rounded-lg text-xs ${dark?"text-red-400 hover:bg-red-500/10":"text-red-500 hover:bg-red-50"}`}>✕</button>
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-1 mb-3">
-                  {[...new Set((t.elements || []).map(e => e.type))].map(tp => (
-                    <span key={tp} className={`text-xs px-1.5 py-0.5 rounded capitalize ${dark ? "bg-slate-700 text-slate-400" : "bg-slate-100 text-slate-500"}`}>{tp}</span>
-                  ))}
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={() => setEditing(t)} className={`flex-1 py-1.5 rounded-lg text-xs font-medium ${dark ? "bg-slate-700 text-slate-300 hover:bg-slate-600" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>✏️ Edit</button>
-                  <button onClick={() => delTemplate(t.id)} className={`px-2.5 py-1.5 rounded-lg text-xs ${dark ? "text-red-400 hover:bg-red-500/10" : "text-red-500 hover:bg-red-50"}`}>✕</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )
+              ))}
+            </div>
       )}
     </div>
   );
