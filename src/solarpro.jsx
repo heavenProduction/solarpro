@@ -2,7 +2,7 @@
 // SOLARPRO v3 - PART 1: CONSTANTS, DATA, UTILITIES
 // ============================================================
 
-import React, { useState, useEffect, useRef, createContext, useContext } from "react";
+import React, { useState, useEffect, useRef, useMemo, createContext, useContext } from "react";
 
 // ── ROLES ────────────────────────────────────────────────────
 const ROLES = { SUPER_ADMIN: "super_admin", DEV_ADMIN: "dev_admin", USER: "user" };
