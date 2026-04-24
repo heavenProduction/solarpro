@@ -2634,16 +2634,21 @@ const GraphRenderer = ({ graphType, vals, w, h }) => {
 };
 
 // ── CANVAS ELEMENT ─────────────────────────────────────────────────
-const CanvasElement = ({el, selected, onSelect, onPointerDown, vals, previewMode, generationVals}) => {
+const CanvasElement = ({el, selected, onSelect, onPointerDown, onDoubleClick, vals, previewMode, generationVals}) => {
   const handleDown = (e) => {
     if (previewMode) return;
     e.stopPropagation();
     onSelect(el.id);
     onPointerDown(e, el.id);
   };
+  const handleDblClick = (e) => {
+    if (previewMode || el.type !== "text") return;
+    e.stopPropagation();
+    onDoubleClick && onDoubleClick(el.id);
+  };
 
   const base = {
-    position:"absolute", left:el.x, top:el.y, width:el.w, height:el.h,
+    position:"relative", width:"100%", height:"100%",
     zIndex:el.zIndex||1, boxSizing:"border-box",
     outline: selected && !previewMode ? "2px solid #0d9488" : "none",
     outlineOffset:1, cursor: previewMode ? "default" : "grab",
@@ -2673,7 +2678,7 @@ const CanvasElement = ({el, selected, onSelect, onPointerDown, vals, previewMode
     else display = subVars(el.htmlContent||el.content||"", vals);
 
     return (
-      <div style={{...base, ...border, background:el.bgColor&&el.bgColor!=="none"?el.bgColor:"transparent"}} onPointerDown={handleDown}>
+      <div style={{...base, ...border, background:el.bgColor&&el.bgColor!=="none"?el.bgColor:"transparent"}} onPointerDown={handleDown} onDoubleClick={handleDblClick}>
         {isFL && !previewMode
           ? <div style={{padding:"4px 8px",color:"#0d9488",fontStyle:"italic",fontSize:12,display:"flex",alignItems:"center",gap:4,height:"100%"}}>
               📝 {el.fieldName||"Fill Later Field"}
@@ -2790,6 +2795,41 @@ const ResizeHandles = ({onDown}) => (
 
 // ── PROPERTIES PANEL ──────────────────────────────────────────────
 const PropertiesPanel = ({el, updateEl, dark, variables, setEditingText, setEditDataEl}) => {
+  const inp = `w-full border rounded px-2 py-1 text-xs focus:outline-none ${dark?"bg-slate-700 border-slate-600 text-white":"bg-white border-slate-300 text-slate-800"}`;
+  const sel = inp + " cursor-pointer";
+  // Memoize sub-components keyed only by dark mode — prevents React from treating
+  // them as new component types on every element update, which would remount their
+  // DOM nodes and cause inputs to lose focus after each keystroke.
+  const {Row, NumRow, ColorRow} = useMemo(()=>{
+    const _inp = `w-full border rounded px-2 py-1 text-xs focus:outline-none ${dark?"bg-slate-700 border-slate-600 text-white":"bg-white border-slate-300 text-slate-800"}`;
+    const Row = ({label, children}) => (
+      <div className="mb-2">
+        <label className={`block text-xs mb-0.5 ${dark?"text-slate-400":"text-slate-500"}`}>{label}</label>
+        {children}
+      </div>
+    );
+    const ColorRow = ({label, value, onChange}) => (
+      <div className="mb-2">
+        <label className={`block text-xs mb-0.5 ${dark?"text-slate-400":"text-slate-500"}`}>{label}</label>
+        <div className="flex gap-1.5 items-center">
+          <input type="color" value={value&&value!=="none"&&value!=="transparent"?value:"#ffffff"}
+            onChange={e=>onChange(e.target.value)} className="w-7 h-6 rounded border-0 cursor-pointer bg-transparent flex-shrink-0"/>
+          <input value={value||"none"} onChange={e=>onChange(e.target.value)} className={`${_inp} flex-1`}/>
+        </div>
+      </div>
+    );
+    const NumRow = ({label, value, onChange, unit="px", min=0}) => (
+      <div className="mb-2">
+        <label className={`block text-xs mb-0.5 ${dark?"text-slate-400":"text-slate-500"}`}>{label}</label>
+        <div className="flex gap-1 items-center">
+          <input type="number" min={min} value={value||0} onChange={e=>onChange(Number(e.target.value))} className={_inp}/>
+          {unit&&<span className={`text-xs flex-shrink-0 ${dark?"text-slate-500":"text-slate-400"}`}>{unit}</span>}
+        </div>
+      </div>
+    );
+    return {Row, NumRow, ColorRow};
+  }, [dark]);
+
   if (!el) return (
     <div className="p-4 text-center pt-12" style={{color:"#94a3b8"}}>
       <div style={{fontSize:28,marginBottom:8}}>👆</div>
@@ -2797,34 +2837,7 @@ const PropertiesPanel = ({el, updateEl, dark, variables, setEditingText, setEdit
     </div>
   );
 
-  const inp = `w-full border rounded px-2 py-1 text-xs focus:outline-none ${dark?"bg-slate-700 border-slate-600 text-white":"bg-white border-slate-300 text-slate-800"}`;
-  const sel = inp + " cursor-pointer";
   const U = ch => updateEl(el.id, ch);
-  const Row = ({label, children}) => (
-    <div className="mb-2">
-      <label className={`block text-xs mb-0.5 ${dark?"text-slate-400":"text-slate-500"}`}>{label}</label>
-      {children}
-    </div>
-  );
-  const ColorRow = ({label, value, onChange}) => (
-    <div className="mb-2">
-      <label className={`block text-xs mb-0.5 ${dark?"text-slate-400":"text-slate-500"}`}>{label}</label>
-      <div className="flex gap-1.5 items-center">
-        <input type="color" value={value&&value!=="none"&&value!=="transparent"?value:"#ffffff"}
-          onChange={e=>onChange(e.target.value)} className="w-7 h-6 rounded border-0 cursor-pointer bg-transparent flex-shrink-0"/>
-        <input value={value||"none"} onChange={e=>onChange(e.target.value)} className={`${inp} flex-1`}/>
-      </div>
-    </div>
-  );
-  const NumRow = ({label, value, onChange, unit="px", min=0}) => (
-    <div className="mb-2">
-      <label className={`block text-xs mb-0.5 ${dark?"text-slate-400":"text-slate-500"}`}>{label}</label>
-      <div className="flex gap-1 items-center">
-        <input type="number" min={min} value={value||0} onChange={e=>onChange(Number(e.target.value))} className={inp}/>
-        {unit&&<span className={`text-xs flex-shrink-0 ${dark?"text-slate-500":"text-slate-400"}`}>{unit}</span>}
-      </div>
-    </div>
-  );
   const borderSection = (
     <>
       <div className={`text-xs font-bold mb-1.5 mt-3 ${dark?"text-slate-400":"text-slate-500"}`}>BORDER</div>
@@ -3262,7 +3275,7 @@ const ProposalCanvasEditor = ({template, onSave, onClose, variables, dark}) => {
             )}
             {[...elements].sort((a,b)=>(a.zIndex||1)-(b.zIndex||1)).map(el=>(
               <div key={el.id} style={{position:"absolute",left:el.x,top:el.y,width:el.w,height:el.h,zIndex:el.zIndex||1}}>
-                <CanvasElement el={el} selected={selectedId===el.id} onSelect={setSelectedId} onPointerDown={onElDown} vals={previewVals} previewMode={previewMode}/>
+                <CanvasElement el={el} selected={selectedId===el.id} onSelect={setSelectedId} onPointerDown={onElDown} onDoubleClick={setEditingText} vals={previewVals} previewMode={previewMode}/>
                 {selectedId===el.id&&!previewMode&&(
                   <ResizeHandles onDown={(e,handle)=>onResDown(e,el.id,handle)}/>
                 )}
@@ -3756,6 +3769,9 @@ const SettingsPage = (props) => {
   const [tsDragId, setTsDragId]     = useState(null);
   const [tsDragOver, setTsDragOver] = useState(null);
   const [deleteModal, setDeleteModal] = useState(null); // {laneId, transferTo}
+  const [editTpl, setEditTpl] = useState(null);
+  const [editTplName, setEditTplName] = useState("");
+  const [viewTpl, setViewTpl] = useState(null);
   const F = (k,v) => setForm(f=>({...f,[k]:v}));
   const save = () => { setDevelopers(ds=>ds.map(d=>d.id===developer.id?{...d,...form}:d)); toast.show({message:"Settings saved!"}); };
 
@@ -5989,6 +6005,7 @@ const ProjectDetailPage = ({ project, notes, setNotes, documents, setDocuments, 
   const [noteDateFrom, setNoteDateFrom] = useState("");
   const [noteDateTo, setNoteDateTo] = useState("");
   const [showGen, setShowGen] = useState(false);
+  const [showGenNewTmpl, setShowGenNewTmpl] = useState(null);
   const [selectedTmpl, setSelectedTmpl] = useState("");
   const [pForm, setPForm] = useState({});
   const [viewProposal, setViewProposal] = useState(null);
@@ -8395,6 +8412,7 @@ const PmTaskDrawer = ({task:taskSnap, pmTasks, setPmTasks, pmSubtasks, setPmSubt
   const commentFileRef=useRef();
   // Access-level-aware canEdit for PM tasks
   const pmAccessLevel = projectCollection?.accessLevel || 'Task-Level';
+  const category=pmCategories?.find(c=>c.id===task.categoryId);
   const inCatHeadings = (category?.assigneeIds||[]).includes(currentUser.id);
   const isDirectlyAssigned = task.assignedTo===currentUser.id || (task.collaborators||[]).includes(currentUser.id);
   const canEdit =
@@ -8407,7 +8425,6 @@ const PmTaskDrawer = ({task:taskSnap, pmTasks, setPmTasks, pmSubtasks, setPmSubt
     isDirectlyAssigned; // fallback: always allow editing your own assigned tasks
   const devTeam=users.filter(u=>u.developerId===task.developerId&&u.active);
   const project=projects?.find(p=>p.id===task.projectId);
-  const category=pmCategories?.find(c=>c.id===task.categoryId);
   const subtasks=pmSubtasks.filter(s=>s.taskId===task.id);
   const comments=pmComments.filter(c=>c.entityType==="task"&&c.entityId===task.id).sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt));
   const done=subtasks.filter(s=>s.status==="Completed").length;
